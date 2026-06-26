@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>检测时段推荐 - 建筑外墙巡检智能报告平台</title>
+    <link rel="stylesheet" href="styles.css?v=20260623-8" />
+  </head>
+  <body class="detail-page recommendation-page">
+    <header class="site-header centered-nav" aria-label="顶部导航">
+      <a class="brand" href="index.html#top" aria-label="建筑外墙巡检智能报告平台首页">
+        <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
+        <span class="brand-name">建筑外墙巡检智能报告平台</span>
+      </a>
+      <nav class="main-nav" aria-label="主导航">
+        <a href="index.html#top">首页</a>
+        <div class="nav-menu">
+          <button class="nav-menu-trigger current" type="button" aria-expanded="false" aria-controls="ai-submenu">
+            AI检测能力<i data-lucide="chevron-down" aria-hidden="true"></i>
+          </button>
+          <div class="nav-submenu" id="ai-submenu" role="menu" aria-label="AI检测能力">
+            <a href="crack-detection.html" role="menuitem">裂缝检测</a>
+            <a href="spalling-detection.html" role="menuitem">剥落检测</a>
+            <a href="hollow-detection.html" role="menuitem">空鼓检测</a>
+            <a href="leakage-detection.html" role="menuitem">渗漏检测</a>
+            <a href="corrosion-detection.html" role="menuitem">锈蚀检测</a>
+            <a href="detection-time.html" role="menuitem" aria-current="page">检测时段推荐</a>
+          </div>
+        </div>
+        <a href="project-management.html">项目管理</a>
+        <a href="review-workbench.html">审核工作台</a>
+        <a href="detection-report.html">检测报告</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="detail-hero recommendation-hero">
+        <div class="detail-hero-copy">
+          <h1>检测时段推荐</h1>
+          <p>综合项目位置、计划时间、立面朝向与气象条件，提前筛选更稳定、更安全的无人机采集窗口。</p>
+          <div class="detail-actions">
+            <button class="button primary" id="open-time-recommendation" type="button">
+              <i data-lucide="calendar-plus" aria-hidden="true"></i>
+              创建检测项目
+            </button>
+            <a class="button secondary" href="#recommendation-example">
+              <i data-lucide="clock-3" aria-hidden="true"></i>
+              查看推荐示例
+            </a>
+          </div>
+        </div>
+      </section>
+
+      <section class="detail-section">
+        <div class="detail-intro">
+          <div>
+            <h2>让每次采集从合适的时间开始</h2>
+            <p class="detail-lead">系统结合已选项目、计划时间、立面朝向和逐小时环境条件，对候选时段进行分级，减少强反光、温差不足与大风对采集质量的影响。</p>
+          </div>
+          <div class="detail-facts">
+            <div><span>判断维度</span><strong>朝向、温度、风速风向、太阳辐照</strong></div>
+            <div><span>推荐结果</span><strong>优选时段、可用时段与风险提示</strong></div>
+            <div><span>适用任务</span><strong>可见光巡检、红外热成像、复飞补采</strong></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="detail-process-band">
+        <div class="detail-section-inner">
+          <h2>三步生成采集计划</h2>
+          <div class="detail-process-grid">
+            <article><span class="process-number">01</span><h3>选择计算对象</h3><p>点击创建检测项目，选择项目、计划时间与立面朝向，明确本次推荐目标。</p></article>
+            <article><span class="process-number">02</span><h3>分析环境条件</h3><p>逐小时评估光照、温度、风速与风向，识别影响飞行和成像的风险。</p></article>
+            <article><span class="process-number">03</span><h3>输出作业窗口</h3><p>按推荐等级列出适合作业的时间段，并附上对应立面与注意事项。</p></article>
+          </div>
+        </div>
+      </section>
+
+      <section class="detail-section" id="recommendation-example">
+        <div class="recommendation-example">
+          <div class="recommendation-copy">
+            <h2>深圳南山区 · 东南立面</h2>
+            <p class="detail-lead">2026 年 6 月 19 日，可见光外墙巡检。上午光照稳定、风速较低，优先安排主要立面采集。</p>
+            <ul class="detail-check-list">
+              <li><i data-lucide="circle-check" aria-hidden="true"></i><span>08:00–10:00 为优选窗口，适合连续航线采集</span></li>
+              <li><i data-lucide="circle-check" aria-hidden="true"></i><span>14:30–16:00 可用于北立面复飞与补采</span></li>
+              <li><i data-lucide="triangle-alert" aria-hidden="true"></i><span>11:00 后东南立面反光增强，建议避开正午时段</span></li>
+            </ul>
+          </div>
+          <div class="schedule-panel" aria-label="推荐时段示例">
+            <div class="schedule-panel-head"><span>时段</span><span>综合条件</span><span>建议</span></div>
+            <div class="schedule-row best"><strong>08:00–10:00</strong><span>风速 2.1 m/s · 光照稳定</span><em>优选</em></div>
+            <div class="schedule-row"><strong>10:00–11:00</strong><span>反光逐步增强</span><em>可用</em></div>
+            <div class="schedule-row risk"><strong>11:00–14:30</strong><span>强光 · 地表升温</span><em>避开</em></div>
+            <div class="schedule-row"><strong>14:30–16:00</strong><span>北立面光照均匀</span><em>可用</em></div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <dialog class="project-dialog recommendation-dialog detection-time-dialog" id="time-recommendation-dialog">
+      <div class="dialog-heading">
+        <div><h2>检测时段推荐</h2></div>
+        <button class="icon-button" type="button" data-close-time-recommendation aria-label="关闭"><i data-lucide="x" aria-hidden="true"></i></button>
+      </div>
+      <div class="recommendation-content">
+        <div class="recommendation-form-grid">
+          <label class="recommendation-date-field">
+            <span>项目</span>
+            <select id="recommendation-project">
+              <option value="sunshine-garden">阳光花园3栋外墙巡检</option>
+              <option value="river-tower">滨江商务楼外墙巡检</option>
+              <option value="bay-school">湾区学校教学楼外墙巡检</option>
+            </select>
+          </label>
+          <label class="recommendation-date-field">
+            <span>时间</span>
+            <input id="recommendation-date" type="date" />
+          </label>
+          <label class="recommendation-date-field">
+            <span>立面朝向</span>
+            <select id="recommendation-orientation">
+              <option value="东">东</option>
+              <option value="南">南</option>
+              <option value="西">西</option>
+              <option value="北">北</option>
+              <option value="东南">东南</option>
+              <option value="东北">东北</option>
+              <option value="西南">西南</option>
+              <option value="西北">西北</option>
+            </select>
+          </label>
+        </div>
+        <div class="recommendation-results" id="time-recommendation-results" hidden>
+          <div class="recommendation-primary">
+            <span>最佳采集时段</span>
+            <strong id="primary-time">07:30–09:00</strong>
+            <small id="recommendation-summary">光照均匀，风速与温差条件适合采集</small>
+          </div>
+          <div class="recommendation-meta">
+            <div><span>备选时段</span><strong id="backup-time">15:30–17:00</strong></div>
+            <div><span>立面朝向</span><strong id="recommendation-result-orientation">东</strong></div>
+          </div>
+        </div>
+      </div>
+      <div class="dialog-actions">
+        <button class="button secondary" type="button" data-close-time-recommendation>取消</button>
+        <button class="button primary" id="calculate-time-recommendation" type="button">开始计算</button>
+      </div>
+    </dialog>
+
+    <script src="assets/lucide.min.js"></script>
+    <script src="script.js?v=20260623-1"></script>
+    <script src="detection-time.js?v=20260625-1"></script>
+  </body>
+</html>

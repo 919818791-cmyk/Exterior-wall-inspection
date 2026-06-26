@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>检测报告 - 建筑外墙巡检智能报告平台</title>
+    <link rel="stylesheet" href="styles.css?v=20260623-10" />
+  </head>
+  <body class="project-page report-list-page">
+    <header class="site-header centered-nav" aria-label="顶部导航">
+      <a class="brand" href="index.html#top" aria-label="建筑外墙巡检智能报告平台首页">
+        <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
+        <span class="brand-name">建筑外墙巡检智能报告平台</span>
+      </a>
+      <nav class="main-nav" aria-label="主导航">
+        <a href="index.html#top">首页</a>
+        <div class="nav-menu">
+          <button class="nav-menu-trigger" type="button" aria-expanded="false" aria-controls="ai-submenu">
+            AI检测能力<i data-lucide="chevron-down" aria-hidden="true"></i>
+          </button>
+          <div class="nav-submenu" id="ai-submenu" role="menu" aria-label="AI检测能力">
+            <a href="crack-detection.html" role="menuitem">裂缝检测</a>
+            <a href="spalling-detection.html" role="menuitem">剥落检测</a>
+            <a href="hollow-detection.html" role="menuitem">空鼓检测</a>
+            <a href="leakage-detection.html" role="menuitem">渗漏检测</a>
+            <a href="corrosion-detection.html" role="menuitem">锈蚀检测</a>
+            <a href="detection-time.html" role="menuitem">检测时段推荐</a>
+          </div>
+        </div>
+        <a href="project-management.html">项目管理</a>
+        <a href="review-workbench.html">审核工作台</a>
+        <a class="active" href="detection-report.html" aria-current="page">检测报告</a>
+      </nav>
+    </header>
+
+    <main class="project-workspace">
+      <section class="project-hero">
+        <div>
+          <h1>检测报告</h1>
+          <p>集中查看已生成的建筑外墙巡检报告，按项目、位置与生成时间快速检索。</p>
+        </div>
+      </section>
+
+      <section class="project-toolbar report-toolbar" aria-label="报告检索">
+        <label class="search-control">
+          <span class="sr-only">搜索报告名称、项目名称或建筑位置</span>
+          <input id="report-search" type="search" placeholder="搜索报告名称 / 项目名称 / 建筑位置" autocomplete="off" />
+          <i data-lucide="search" aria-hidden="true"></i>
+        </label>
+      </section>
+
+      <section class="project-list-panel" aria-label="检测报告列表">
+        <div class="project-table-wrap">
+          <table class="project-table">
+            <thead><tr><th>报告名称</th><th>关联项目</th><th>建筑位置</th><th>生成时间</th><th>操作</th></tr></thead>
+            <tbody id="report-table-body"></tbody>
+          </table>
+          <div class="project-empty" id="report-empty" hidden><i data-lucide="search-x" aria-hidden="true"></i><strong>没有匹配的报告</strong><span>已生成报告会在这里统一排列</span></div>
+        </div>
+        <div class="project-pagination"><span>共 <strong id="footer-count">0</strong> 份</span><div><button type="button" aria-label="上一页" disabled><i data-lucide="chevron-left" aria-hidden="true"></i></button><button type="button" class="current-page" aria-current="page">1</button><button type="button" aria-label="下一页" disabled><i data-lucide="chevron-right" aria-hidden="true"></i></button><span class="page-size">10 条/页<i data-lucide="chevron-down" aria-hidden="true"></i></span></div></div>
+      </section>
+    </main>
+
+    <script src="assets/lucide.min.js"></script>
+    <script src="script.js?v=20260623-1"></script>
+    <script src="report-preview.js?v=20260623-1"></script>
+    <script src="detection-reports.js?v=20260624-2"></script>
+  </body>
+</html>

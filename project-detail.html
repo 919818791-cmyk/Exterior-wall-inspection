@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>项目详情 - 建筑外墙巡检智能报告平台</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+    <link rel="stylesheet" href="styles.css?v=20260624-2" />
+  </head>
+  <body class="project-page new-project-page project-detail-page">
+    <header class="site-header" aria-label="顶部导航">
+      <a class="brand" href="index.html#top" aria-label="建筑外墙巡检智能报告平台首页">
+        <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
+        <span class="brand-name">建筑外墙巡检智能报告平台</span>
+      </a>
+      <nav class="main-nav" aria-label="主导航">
+        <a href="index.html#top">首页</a>
+        <div class="nav-menu">
+          <button class="nav-menu-trigger" type="button" aria-expanded="false" aria-controls="ai-submenu">
+            AI检测能力<i data-lucide="chevron-down" aria-hidden="true"></i>
+          </button>
+          <div class="nav-submenu" id="ai-submenu" role="menu" aria-label="AI检测能力">
+            <a href="crack-detection.html" role="menuitem">裂缝检测</a>
+            <a href="spalling-detection.html" role="menuitem">剥落检测</a>
+            <a href="hollow-detection.html" role="menuitem">空鼓检测</a>
+            <a href="leakage-detection.html" role="menuitem">渗漏检测</a>
+            <a href="corrosion-detection.html" role="menuitem">锈蚀检测</a>
+            <a href="detection-time.html" role="menuitem">检测时段推荐</a>
+          </div>
+        </div>
+        <a class="active" href="project-management.html" aria-current="page">项目管理</a>
+        <a href="review-workbench.html">审核工作台</a>
+        <a href="detection-report.html">检测报告</a>
+      </nav>
+    </header>
+
+    <main class="create-workspace" id="project-detail-workspace">
+      <form id="project-detail-form" novalidate>
+        <section class="create-section basic-section" aria-labelledby="basic-title">
+          <div class="create-section-heading">
+            <span class="section-index">01</span>
+            <div><h2 id="basic-title">项目基础信息</h2></div>
+          </div>
+
+          <div class="basic-layout">
+            <div class="project-fields">
+              <label class="form-field full-field">
+                <span>项目名称<b>*</b></span>
+                <input id="project-name" name="name" required />
+                <small class="field-error"></small>
+              </label>
+
+              <fieldset class="form-field full-field division-fieldset">
+                <legend>行政区划<b>*</b></legend>
+                <div class="division-selects">
+                  <label><span class="sr-only">省级行政区</span><select id="province" required></select></label>
+                  <label><span class="sr-only">城市</span><select id="city" required></select></label>
+                  <label><span class="sr-only">区县</span><select id="district" required></select></label>
+                </div>
+              </fieldset>
+
+              <label class="form-field full-field">
+                <span>项目位置<b>*</b></span>
+                <span class="location-control">
+                  <input id="project-location" name="location" required />
+                  <button id="locate-button" type="button"><i data-lucide="map-pin" aria-hidden="true"></i><span>定位</span></button>
+                </span>
+                <small class="field-hint edit-only">输入详细位置后点击“定位”，也可直接拖动地图标记。</small>
+                <small class="field-error"></small>
+              </label>
+
+              <label class="form-field full-field"><span>委托单位<b>*</b></span><input id="client-name" name="client" required /><small class="field-error"></small></label>
+              <label class="form-field"><span>联系人<b>*</b></span><input id="contact-name" name="contact" required /><small class="field-error"></small></label>
+              <label class="form-field"><span>联系电话<b>*</b></span><input id="contact-phone" name="phone" inputmode="tel" required /><small class="field-error"></small></label>
+              <input id="longitude" name="longitude" type="hidden" />
+              <input id="latitude" name="latitude" type="hidden" />
+            </div>
+
+            <div class="map-panel">
+              <div class="map-panel-heading">
+                <strong>在线地图</strong>
+                <span class="sr-only" id="map-status" aria-live="polite"></span>
+                <button id="reset-map-button" type="button"><i data-lucide="crosshair" aria-hidden="true"></i>回到标记</button>
+              </div>
+              <div id="project-map" aria-label="项目位置地图"></div>
+              <div class="map-credit">地图数据 © OpenStreetMap contributors</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="create-section buildings-section" aria-labelledby="buildings-title">
+          <div class="create-section-heading buildings-heading">
+            <span class="section-index">02</span>
+            <div><h2 id="buildings-title">建筑与检测立面</h2></div>
+            <button class="add-building-button edit-only" id="add-building-button" type="button"><i data-lucide="plus" aria-hidden="true"></i>添加建筑</button>
+          </div>
+          <div class="building-list" id="building-list"></div>
+        </section>
+
+        <section class="create-section model-section" aria-labelledby="model-title">
+          <div class="create-section-heading">
+            <span class="section-index">03</span>
+            <div><h2 id="model-title">AI检测配置</h2></div>
+          </div>
+          <div class="model-settings-layout">
+            <div class="model-config-panel">
+              <div class="model-config-head">
+                <span>检测模型筛选</span>
+                <strong><em id="selected-model-count">5</em>/5</strong>
+              </div>
+              <div class="model-option-grid" id="model-types" role="group" aria-label="检测模型">
+                <label class="model-option">
+                  <input type="checkbox" name="modelTypes" value="crack" data-model-type />
+                  <span class="model-option-check"><i data-lucide="check" aria-hidden="true"></i></span>
+                  <span class="model-option-icon"><i data-lucide="git-branch" aria-hidden="true"></i></span>
+                  <span class="model-option-copy"><strong>裂缝</strong><small>线状缺陷</small></span>
+                </label>
+                <label class="model-option">
+                  <input type="checkbox" name="modelTypes" value="hollow" data-model-type />
+                  <span class="model-option-check"><i data-lucide="check" aria-hidden="true"></i></span>
+                  <span class="model-option-icon"><i data-lucide="thermometer-sun" aria-hidden="true"></i></span>
+                  <span class="model-option-copy"><strong>空鼓</strong><small>热异常</small></span>
+                </label>
+                <label class="model-option">
+                  <input type="checkbox" name="modelTypes" value="spalling" data-model-type />
+                  <span class="model-option-check"><i data-lucide="check" aria-hidden="true"></i></span>
+                  <span class="model-option-icon"><i data-lucide="layers-3" aria-hidden="true"></i></span>
+                  <span class="model-option-copy"><strong>剥落</strong><small>面层缺损</small></span>
+                </label>
+                <label class="model-option">
+                  <input type="checkbox" name="modelTypes" value="leakage" data-model-type />
+                  <span class="model-option-check"><i data-lucide="check" aria-hidden="true"></i></span>
+                  <span class="model-option-icon"><i data-lucide="droplets" aria-hidden="true"></i></span>
+                  <span class="model-option-copy"><strong>渗漏</strong><small>水迹污染</small></span>
+                </label>
+                <label class="model-option">
+                  <input type="checkbox" name="modelTypes" value="corrosion" data-model-type />
+                  <span class="model-option-check"><i data-lucide="check" aria-hidden="true"></i></span>
+                  <span class="model-option-icon"><i data-lucide="shield-alert" aria-hidden="true"></i></span>
+                  <span class="model-option-copy"><strong>锈蚀</strong><small>金属构件</small></span>
+                </label>
+              </div>
+              <small class="field-error" id="model-types-error"></small>
+            </div>
+            <div class="detection-mode-panel" role="radiogroup" aria-label="检测模式">
+              <span class="detection-mode-title">检测模式</span>
+              <label class="detection-mode-option">
+                <input id="standard-detection" name="detectionMode" type="radio" value="standard" />
+                <span class="mode-radio" aria-hidden="true"></span>
+                <span class="mode-copy"><strong>标准检测</strong></span>
+              </label>
+              <label class="detection-mode-option">
+                <input id="high-precision" name="detectionMode" type="radio" value="high" />
+                <span class="mode-radio" aria-hidden="true"></span>
+                <span class="mode-copy"><strong>高精度检测<span>（此选项会增加推理时间）</span></strong></span>
+              </label>
+            </div>
+          </div>
+        </section>
+
+        <div class="create-action-bar detail-action-bar">
+          <div class="create-summary"><i data-lucide="building-2" aria-hidden="true"></i><span id="structure-summary"></span></div>
+          <div class="detail-view-actions">
+            <a class="button secondary" href="project-management.html">返回列表</a>
+            <button class="button secondary" id="save-project-button" type="submit"><i data-lucide="save" aria-hidden="true"></i>保存修改</button>
+            <button class="button primary start-ai-detection-button" id="start-ai-detection-button" type="button"><i data-lucide="scan-line" aria-hidden="true"></i>开始AI检测</button>
+          </div>
+        </div>
+      </form>
+    </main>
+
+    <section class="project-not-found" id="project-not-found" hidden>
+      <i data-lucide="folder-x" aria-hidden="true"></i><h1>未找到项目</h1><a class="button primary" href="project-management.html">返回项目列表</a>
+    </section>
+
+    <template id="detail-building-template">
+      <article class="building-card" data-building>
+        <header class="building-card-header">
+          <button class="building-toggle" type="button" aria-expanded="true">
+            <span class="building-number">建筑 01</span>
+            <span class="building-heading-copy"><strong>建筑名称</strong></span>
+            <i data-lucide="chevron-up" aria-hidden="true"></i>
+          </button>
+          <button class="remove-building-button edit-only" type="button"><i data-lucide="trash-2" aria-hidden="true"></i>删除建筑</button>
+        </header>
+        <div class="building-card-body">
+          <div class="building-fields">
+            <label class="form-field"><span>建筑名称<b>*</b></span><input data-building-name required /><small class="field-error"></small></label>
+            <label class="form-field"><span>建筑层数<b>*</b></span><span class="unit-control"><input data-building-floors type="number" min="1" max="300" step="1" required /><em>层</em></span><small class="field-error"></small></label>
+            <label class="form-field"><span>建筑高度<b>*</b></span><span class="unit-control"><input data-building-height type="number" min="0.1" max="1500" step="0.1" required /><em>m</em></span><small class="field-error"></small></label>
+          </div>
+          <div class="facade-editor detail-facade-editor">
+            <div class="facade-editor-heading"><div><h3>检测立面配置</h3></div><button class="add-facade-button edit-only" type="button"><i data-lucide="plus" aria-hidden="true"></i>新增立面</button></div>
+            <div class="facade-table detail-facade-table">
+              <div class="facade-table-head detail-facade-head"><span>序号</span><span>立面名称</span><span>照片</span><span>照片管理</span><span>编辑</span></div>
+              <div class="facade-list" data-facade-list></div>
+            </div>
+          </div>
+        </div>
+      </article>
+    </template>
+
+    <template id="detail-facade-template">
+      <div class="facade-row detail-facade-row" data-facade>
+        <span class="facade-index">01</span>
+        <label><span class="sr-only">立面名称</span><input data-facade-name required /></label>
+        <button class="facade-operation-button upload-photo-button" type="button"><i data-lucide="upload" aria-hidden="true"></i><span>上传照片</span></button>
+        <button class="facade-operation-button photo-manage-button" type="button"><i data-lucide="image" aria-hidden="true"></i><span>照片管理</span></button>
+        <button class="remove-facade-button edit-only" type="button" aria-label="删除立面"><i data-lucide="trash-2" aria-hidden="true"></i></button>
+      </div>
+    </template>
+
+    <dialog class="project-dialog upload-dialog" id="upload-dialog">
+      <form id="upload-form">
+        <div class="dialog-heading"><div><h2 id="upload-facade-name">立面名称</h2></div><button class="icon-button" type="button" data-close-upload aria-label="关闭"><i data-lucide="x" aria-hidden="true"></i></button></div>
+        <label class="upload-model-field">无人机型号<select id="drone-model"><option value="dji">大疆型号</option><option value="other">其他型号</option></select></label>
+
+        <div class="upload-section" id="dji-upload-section">
+          <label class="upload-dropzone" for="dji-photo-input"><i data-lucide="images" aria-hidden="true"></i><strong>上传无人机照片</strong><span>无需区分可见光与热成像，支持多选</span><em data-upload-summary="dji">尚未选择文件</em></label>
+          <input class="sr-only" id="dji-photo-input" type="file" accept="image/*" multiple />
+        </div>
+
+        <div class="split-upload-section" id="other-upload-section" hidden>
+          <div><span class="upload-type-label">可见光图片<b>*</b></span><label class="upload-dropzone compact" for="visible-photo-input"><i data-lucide="camera" aria-hidden="true"></i><strong>上传可见光图片</strong><em data-upload-summary="visible">尚未选择文件</em></label><input class="sr-only" id="visible-photo-input" type="file" accept="image/*" multiple /></div>
+          <div><span class="upload-type-label">热成像图片<b>*</b></span><label class="upload-dropzone compact" for="thermal-photo-input"><i data-lucide="thermometer-sun" aria-hidden="true"></i><strong>上传热成像图片</strong><em data-upload-summary="thermal">尚未选择文件</em></label><input class="sr-only" id="thermal-photo-input" type="file" accept="image/*" multiple /></div>
+        </div>
+
+        <div class="dialog-actions"><button class="button secondary" type="button" data-close-upload>取消</button><button class="button primary" type="submit"><i data-lucide="upload-cloud" aria-hidden="true"></i>确认上传</button></div>
+      </form>
+    </dialog>
+
+    <dialog class="project-dialog photo-manage-dialog" id="photo-manage-dialog">
+      <div class="dialog-heading"><div><h2 id="photo-manage-facade-name">照片管理</h2></div><button class="icon-button" type="button" data-close-photo-manage aria-label="关闭"><i data-lucide="x" aria-hidden="true"></i></button></div>
+      <div class="photo-manager-layout">
+        <aside class="photo-list-panel" aria-label="照片文件名称列表">
+          <div class="photo-panel-title">照片文件名称</div>
+          <div class="photo-file-list" id="photo-file-list"></div>
+        </aside>
+        <section class="photo-preview-panel" aria-live="polite">
+          <div class="photo-preview-empty" id="photo-preview-empty"><i data-lucide="image-off" aria-hidden="true"></i><span>暂无可预览图片</span></div>
+          <img class="photo-preview-image" id="photo-preview-image" alt="" hidden />
+        </section>
+      </div>
+      <div class="dialog-actions"><button class="button secondary" type="button" data-close-photo-manage>关闭</button><button class="button secondary danger-action" id="delete-selected-photo" type="button"><i data-lucide="trash-2" aria-hidden="true"></i>删除</button></div>
+    </dialog>
+
+    <dialog class="project-dialog photo-manage-dialog review-dialog" id="review-dialog">
+      <div class="dialog-heading"><div><h2>人工复核</h2></div><button class="icon-button" type="button" data-close-review aria-label="关闭"><i data-lucide="x" aria-hidden="true"></i></button></div>
+      <div class="photo-manager-layout">
+        <aside class="photo-list-panel" aria-label="待复核照片列表">
+          <div class="photo-panel-title">待复核照片</div>
+          <div class="photo-file-list" id="review-photo-list"></div>
+        </aside>
+        <section class="photo-preview-panel" aria-live="polite">
+          <div class="photo-preview-empty" id="review-preview-empty"><i data-lucide="image-off" aria-hidden="true"></i><span>暂无可复核图片</span></div>
+          <img class="photo-preview-image" id="review-preview-image" alt="" hidden />
+        </section>
+      </div>
+      <div class="dialog-actions review-actions">
+        <button class="button secondary" id="review-edit-button" type="button"><i data-lucide="square-pen" aria-hidden="true"></i>修改</button>
+        <button class="button primary" id="review-confirm-button" type="button"><i data-lucide="check" aria-hidden="true"></i>确认</button>
+        <button class="button secondary" id="review-reset-button" type="button" hidden><i data-lucide="rotate-ccw" aria-hidden="true"></i>重新审核</button>
+        <button class="button primary" id="generate-report-button" type="button" hidden><i data-lucide="file-check-2" aria-hidden="true"></i>完成审核并生成报告</button>
+      </div>
+    </dialog>
+
+    <dialog class="project-dialog report-dialog" id="report-dialog">
+      <div class="report-dialog-heading">
+        <div>
+          <h2 id="report-title">检测报告预览</h2>
+          <span id="report-subtitle">建筑外墙巡检智能报告</span>
+        </div>
+        <div class="report-header-actions">
+          <a class="button secondary" id="export-report-button" href="示例报告.pdf" download="示例报告.pdf"><i data-lucide="download" aria-hidden="true"></i>导出PDF</a>
+          <button class="button secondary" id="push-report-button" type="button" hidden><i data-lucide="send" aria-hidden="true"></i>推送</button>
+          <button class="icon-button" type="button" data-close-report aria-label="关闭"><i data-lucide="x" aria-hidden="true"></i></button>
+        </div>
+      </div>
+      <div class="report-preview" id="report-preview" aria-label="报告预览内容"></div>
+    </dialog>
+
+    <div class="toast" id="project-toast" role="status" aria-live="polite"></div>
+    <script src="assets/lucide.min.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+    <script src="script.js?v=20260623-1"></script>
+    <script src="project-detail.js?v=20260625-1"></script>
+  </body>
+</html>

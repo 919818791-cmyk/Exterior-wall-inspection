@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>新增项目 - 建筑外墙巡检智能报告平台</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+    <link rel="stylesheet" href="styles.css?v=20260624-2" />
+  </head>
+  <body class="project-page new-project-page">
+    <header class="site-header" aria-label="顶部导航">
+      <a class="brand" href="index.html#top" aria-label="建筑外墙巡检智能报告平台首页">
+        <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
+        <span class="brand-name">建筑外墙巡检智能报告平台</span>
+      </a>
+      <nav class="main-nav" aria-label="主导航">
+        <a href="index.html#top">首页</a>
+        <div class="nav-menu">
+          <button class="nav-menu-trigger" type="button" aria-expanded="false" aria-controls="ai-submenu">
+            AI检测能力<i data-lucide="chevron-down" aria-hidden="true"></i>
+          </button>
+          <div class="nav-submenu" id="ai-submenu" role="menu" aria-label="AI检测能力">
+            <a href="crack-detection.html" role="menuitem">裂缝检测</a>
+            <a href="spalling-detection.html" role="menuitem">剥落检测</a>
+            <a href="hollow-detection.html" role="menuitem">空鼓检测</a>
+            <a href="leakage-detection.html" role="menuitem">渗漏检测</a>
+            <a href="corrosion-detection.html" role="menuitem">锈蚀检测</a>
+            <a href="detection-time.html" role="menuitem">检测时段推荐</a>
+          </div>
+        </div>
+        <a class="active" href="project-management.html" aria-current="page">项目管理</a>
+        <a href="review-workbench.html">审核工作台</a>
+        <a href="detection-report.html">检测报告</a>
+      </nav>
+    </header>
+
+    <main class="create-workspace">
+      <form id="new-project-form" novalidate>
+        <section class="create-section basic-section" aria-labelledby="basic-title">
+          <div class="create-section-heading">
+            <span class="section-index">01</span>
+            <div><h2 id="basic-title">项目基础信息</h2></div>
+          </div>
+
+          <div class="basic-layout">
+            <div class="project-fields">
+              <label class="form-field full-field">
+                <span>项目名称<b>*</b></span>
+                <input id="project-name" name="name" required placeholder="例如：阳光花园外墙年度巡检" />
+                <small class="field-error"></small>
+              </label>
+
+              <fieldset class="form-field full-field division-fieldset">
+                <legend>行政区划<b>*</b></legend>
+                <div class="division-selects">
+                  <label><span class="sr-only">省级行政区</span><select id="province" required></select></label>
+                  <label><span class="sr-only">城市</span><select id="city" required></select></label>
+                  <label><span class="sr-only">区县</span><select id="district" required></select></label>
+                </div>
+                <small class="field-error"></small>
+              </fieldset>
+
+              <label class="form-field full-field">
+                <span>项目位置<b>*</b></span>
+                <span class="location-control">
+                  <input id="project-location" name="location" required placeholder="街道、门牌号或建筑名称" />
+                  <button id="locate-button" type="button"><i data-lucide="map-pin" aria-hidden="true"></i><span>定位</span></button>
+                </span>
+                <small class="field-hint">输入详细位置后点击“定位”，也可直接拖动地图标记。</small>
+                <small class="field-error"></small>
+              </label>
+
+              <label class="form-field full-field">
+                <span>委托单位<b>*</b></span>
+                <input id="client-name" name="client" required placeholder="请输入委托单位" />
+                <small class="field-error"></small>
+              </label>
+              <label class="form-field">
+                <span>联系人<b>*</b></span>
+                <input id="contact-name" name="contact" required placeholder="请输入联系人" />
+                <small class="field-error"></small>
+              </label>
+              <label class="form-field">
+                <span>联系电话<b>*</b></span>
+                <input id="contact-phone" name="phone" inputmode="tel" required placeholder="手机或座机号码" />
+                <small class="field-error"></small>
+              </label>
+
+              <input id="longitude" name="longitude" type="hidden" />
+              <input id="latitude" name="latitude" type="hidden" />
+            </div>
+
+            <div class="map-panel">
+              <div class="map-panel-heading">
+                <strong>在线地图</strong>
+                <span class="sr-only" id="map-status" aria-live="polite">拖动标记可微调项目位置</span>
+                <button id="reset-map-button" type="button"><i data-lucide="crosshair" aria-hidden="true"></i>回到标记</button>
+              </div>
+              <div id="project-map" aria-label="项目位置地图"></div>
+              <div class="map-credit">地图数据 © OpenStreetMap contributors</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="create-section buildings-section" aria-labelledby="buildings-title">
+          <div class="create-section-heading buildings-heading">
+            <span class="section-index">02</span>
+            <div><h2 id="buildings-title">建筑与检测立面</h2></div>
+            <button class="add-building-button" id="add-building-button" type="button"><i data-lucide="plus" aria-hidden="true"></i>添加建筑</button>
+          </div>
+          <div class="building-list" id="building-list"></div>
+        </section>
+
+        <div class="create-action-bar">
+          <div class="create-summary"><i data-lucide="building-2" aria-hidden="true"></i><span id="structure-summary">1 栋建筑 · 4 个检测立面</span></div>
+          <div>
+            <a class="button secondary" href="project-management.html">取消</a>
+            <button class="button primary" type="submit"><i data-lucide="check" aria-hidden="true"></i>创建项目</button>
+          </div>
+        </div>
+      </form>
+    </main>
+
+    <template id="building-template">
+      <article class="building-card" data-building>
+        <header class="building-card-header">
+          <button class="building-toggle" type="button" aria-expanded="true">
+            <span class="building-number">建筑 01</span>
+            <span class="building-heading-copy"><strong>未命名建筑</strong></span>
+            <i data-lucide="chevron-up" aria-hidden="true"></i>
+          </button>
+          <button class="remove-building-button" type="button"><i data-lucide="trash-2" aria-hidden="true"></i>删除建筑</button>
+        </header>
+        <div class="building-card-body">
+          <div class="building-fields">
+            <label class="form-field"><span>建筑名称<b>*</b></span><input data-building-name required placeholder="例如：1 号楼" /><small class="field-error"></small></label>
+            <label class="form-field"><span>建筑层数<b>*</b></span><span class="unit-control"><input data-building-floors type="number" min="1" max="300" step="1" required placeholder="0" /><em>层</em></span><small class="field-error"></small></label>
+            <label class="form-field"><span>建筑高度<b>*</b></span><span class="unit-control"><input data-building-height type="number" min="0.1" max="1500" step="0.1" required placeholder="0.0" /><em>m</em></span><small class="field-error"></small></label>
+          </div>
+          <div class="facade-editor">
+            <div class="facade-editor-heading"><div><h3>检测立面配置</h3></div><button class="add-facade-button" type="button"><i data-lucide="plus" aria-hidden="true"></i>新增立面</button></div>
+            <div class="facade-table">
+              <div class="facade-table-head"><span>序号</span><span>立面名称</span><span>操作</span></div>
+              <div class="facade-list" data-facade-list></div>
+            </div>
+          </div>
+        </div>
+      </article>
+    </template>
+
+    <template id="facade-template">
+      <div class="facade-row" data-facade>
+        <span class="facade-index">01</span>
+        <label><span class="sr-only">立面名称</span><input data-facade-name required placeholder="例如：东立面、A面" /></label>
+        <button class="remove-facade-button" type="button" aria-label="删除立面"><i data-lucide="trash-2" aria-hidden="true"></i></button>
+      </div>
+    </template>
+
+    <div class="toast" id="project-toast" role="status" aria-live="polite"></div>
+    <script src="assets/lucide.min.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+    <script src="script.js?v=20260623-1"></script>
+    <script src="new-project.js?v=20260624-3"></script>
+  </body>
+</html>

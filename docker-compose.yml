@@ -1,0 +1,65 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: building-exterior-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-building_exterior}
+      POSTGRES_USER: ${POSTGRES_USER:-building_exterior}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-building_exterior_password}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-building_exterior} -d ${POSTGRES_DB:-building_exterior}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    container_name: building-exterior-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-building_exterior_minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-building_exterior_minio_secret}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: building-exterior-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+
+  algorithm-worker:
+    profiles: ["worker"]
+    build:
+      context: ./algorithm-worker
+    container_name: building-exterior-algorithm-worker
+    environment:
+      WORKER_BACKEND_BASE_URL: ${WORKER_BACKEND_BASE_URL:-http://host.docker.internal:8000}
+      WORKER_ID: ${WORKER_ID:-mock-worker-compose}
+      WORKER_TOKEN: ${WORKER_TOKEN:-change-this-worker-token}
+      WORKER_MODEL_VERSION: ${WORKER_MODEL_VERSION:-mock-facade-detector-v1}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  postgres_data:
+  minio_data:
+  redis_data:
