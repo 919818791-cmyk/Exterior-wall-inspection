@@ -7,9 +7,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.api.dependencies import AuthenticatedUser, ensure_project_access, get_current_user
+from app.api.dependencies import AuthenticatedUser, ensure_project_access, get_current_user, require_roles
 from app.db.session import get_db
-from app.enums.status import ProjectStatus
+from app.enums.status import ProjectStatus, UserRole
 from app.models.tables import Building, DetectionTask, Facade, Photo, Project
 from app.schemas.projects import (
     BuildingCreateRequest,
@@ -25,7 +25,7 @@ from app.schemas.projects import (
     ProjectUpdateRequest,
 )
 
-router = APIRouter(tags=["projects"])
+router = APIRouter(tags=["projects"], dependencies=[Depends(require_roles(UserRole.ADMIN))])
 
 def _now_project_no() -> str:
     timestamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S%f")
@@ -150,7 +150,6 @@ def _project_detail(db: Session, project: Project) -> ProjectDetailRead:
         current_task_id=project.current_task_id,
         current_report_id=project.current_report_id,
         current_task_status=current_task.status if current_task else None,
-        current_task_failed_reason=current_task.failed_reason if current_task else None,
         started_at=project.started_at,
         completed_at=project.completed_at,
         buildings=[_to_building_read(db, building) for building in buildings],

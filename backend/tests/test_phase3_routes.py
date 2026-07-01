@@ -19,3 +19,5 @@ def test_phase3_create_project_uses_server_owned_fields() -> None:
     assert "status" not in fields
     assert "created_by" not in fields
     assert "project_no" not in fields
+    assert "longitude" in fields
+    assert "latitude" in fields

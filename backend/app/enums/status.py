@@ -18,7 +18,6 @@ class ProjectStatus(StrEnum):
     PENDING_REVIEW = "pending_review"
     REVIEWED = "reviewed"
     COMPLETED = "completed"
-    FAILED = "failed"
 
 
 class DetectionTaskStatus(StrEnum):

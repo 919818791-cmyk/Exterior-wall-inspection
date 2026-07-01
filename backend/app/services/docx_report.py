@@ -22,9 +22,9 @@ STATUS_LABELS = {
     "deleted": "已删除",
 }
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-FORMAL_TEMPLATE = PROJECT_ROOT / "正式报告示例.docx"
-TRIAL_TEMPLATE = PROJECT_ROOT / "试用报告示例.docx"
+BACKEND_ROOT = Path(__file__).resolve().parents[2]
+REPORT_TEMPLATE_DIR = BACKEND_ROOT / "templates" / "reports"
+FORMAL_TEMPLATE = REPORT_TEMPLATE_DIR / "正式报告示例.docx"
 
 
 def _text(value: Any) -> str:
@@ -226,44 +226,3 @@ def build_report_docx(report_title: str, report_no: str, report_data: dict[str, 
     )
 
     return _package_document(_document_xml(lines), FORMAL_TEMPLATE)
-
-
-def build_trial_report_docx(report_data: dict[str, Any]) -> bytes:
-    files = report_data.get("files") or []
-    models = report_data.get("models") or []
-    findings = report_data.get("findings") or []
-    generated_at = report_data.get("generated_at")
-    model_text = " / ".join(str(model) for model in models) or "-"
-
-    lines: list[tuple[Any, bool] | tuple[Any, bool, str]] = [
-        ("外立面表观病害筛查简报", True),
-        (f"报告类型：简易试用报告", False),
-        (f"生成时间：{_text(generated_at)}", False),
-        (f"检测模式：标准检测", False),
-        (f"检测类型：{model_text}", False),
-        (f"照片数量：{len(files)}", False),
-        ("", False),
-        (
-            "经过对上传照片进行检测算法初筛，发现疑似表观损伤。"
-            "本报告为体验结果，不存档、不进入人工审核、不触发正式检测任务。",
-            False,
-        ),
-        ("", False),
-        ("检测明细", True),
-    ]
-
-    if findings:
-        table_rows = [["序号", "可见光图像", "说明"]]
-        for index, finding in enumerate(findings, start=1):
-            table_rows.append(
-                [
-                    str(index),
-                    _text(finding.get("filename")),
-                    f"疑似{_text(finding.get('model'))}：1处；置信度：{_text(finding.get('confidence'))}",
-                ]
-            )
-        lines.append((table_rows, False, "table"))
-    else:
-        lines.append(("暂无检测明细。", False))
-
-    return _package_document(_document_xml(lines), TRIAL_TEMPLATE)

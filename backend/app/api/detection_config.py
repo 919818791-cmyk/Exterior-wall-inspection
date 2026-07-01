@@ -7,13 +7,14 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.dependencies import AuthenticatedUser, ensure_project_access, get_current_user
+from app.api.dependencies import AuthenticatedUser, ensure_project_access, get_current_user, require_roles
 from app.api.projects import _ensure_project_editable, _get_project_or_404
 from app.db.session import get_db
+from app.enums.status import UserRole
 from app.models.tables import DetectionConfig
 from app.schemas.phase4 import DetectionConfigResponse, DetectionConfigUpdateRequest
 
-router = APIRouter(tags=["detection-config"])
+router = APIRouter(tags=["detection-config"], dependencies=[Depends(require_roles(UserRole.ADMIN))])
 
 
 def _enum_value(value: object) -> str:

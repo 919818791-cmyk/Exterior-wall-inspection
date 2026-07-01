@@ -1,17 +1,60 @@
-import { Button, Card, CardBody, Checkbox, Switch } from "@heroui/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Cpu, Save } from "lucide-react";
+import {
+  Check,
+  Droplets,
+  GitBranch,
+  Layers3,
+  ShieldAlert,
+  ThermometerSun
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { detectionConfigQueryOptions, updateDetectionConfig } from "@/api/projects";
-import type { DefectType, ProjectDetail } from "@/types/projects";
+import type { DefectType, DetectionConfigPayload, ProjectDetail } from "@/types/projects";
 
-const MODEL_OPTIONS: Array<{ label: string; value: DefectType; description: string }> = [
-  { label: "裂缝", value: "crack", description: "外墙裂缝和线状破损" },
-  { label: "剥落", value: "spalling", description: "饰面层脱落、局部破损" },
-  { label: "空鼓", value: "hollowing", description: "疑似空鼓和附着异常" },
-  { label: "渗漏", value: "leakage", description: "水渍、渗漏和潮湿痕迹" },
-  { label: "锈蚀", value: "corrosion", description: "金属件锈蚀和污染痕迹" }
+const MODEL_OPTIONS: Array<{
+  label: string;
+  value: DefectType;
+  description: string;
+  Icon: LucideIcon;
+  tone: string;
+}> = [
+  {
+    label: "裂缝",
+    value: "crack",
+    description: "外墙裂缝和线状破损",
+    Icon: GitBranch,
+    tone: "crack"
+  },
+  {
+    label: "剥落",
+    value: "spalling",
+    description: "饰面层脱落、局部破损",
+    Icon: Layers3,
+    tone: "spalling"
+  },
+  {
+    label: "空鼓",
+    value: "hollowing",
+    description: "疑似空鼓和附着异常",
+    Icon: ThermometerSun,
+    tone: "hollowing"
+  },
+  {
+    label: "渗漏",
+    value: "leakage",
+    description: "水渍、渗漏和潮湿痕迹",
+    Icon: Droplets,
+    tone: "leakage"
+  },
+  {
+    label: "锈蚀",
+    value: "corrosion",
+    description: "金属件锈蚀和污染痕迹",
+    Icon: ShieldAlert,
+    tone: "corrosion"
+  }
 ];
 
 function getErrorMessage(error: unknown) {
@@ -38,12 +81,7 @@ export function DetectionConfigSection({
   }, [configQuery.data]);
 
   const saveMutation = useMutation({
-    mutationFn: () =>
-      updateDetectionConfig(project.id, {
-        model_types: modelTypes,
-        high_precision: highPrecision,
-        config_json: null
-      }),
+    mutationFn: (payload: DetectionConfigPayload) => updateDetectionConfig(project.id, payload),
     onSuccess: async () => {
       setLocalError("");
       await Promise.all([
@@ -54,96 +92,144 @@ export function DetectionConfigSection({
     }
   });
 
-  const toggleModel = (model: DefectType) => {
-    setModelTypes((current) =>
-      current.includes(model) ? current.filter((item) => item !== model) : [...current, model]
-    );
-    setLocalError("");
-  };
-
-  const save = () => {
-    if (!modelTypes.length) {
+  const persistConfig = (nextModelTypes: DefectType[], nextHighPrecision: boolean) => {
+    if (!isEditable || configQuery.isLoading) return;
+    if (!nextModelTypes.length) {
       setLocalError("请至少选择一种检测模型。");
       return;
     }
-    saveMutation.mutate();
+
+    setLocalError("");
+    saveMutation.reset();
+    saveMutation.mutate({
+      model_types: nextModelTypes,
+      high_precision: nextHighPrecision,
+      config_json: null
+    });
+  };
+
+  const toggleModel = (model: DefectType) => {
+    if (!isEditable || configQuery.isLoading) return;
+
+    const nextModelTypes = modelTypes.includes(model)
+      ? modelTypes.filter((item) => item !== model)
+      : [...modelTypes, model];
+
+    if (!nextModelTypes.length) {
+      setLocalError("请至少选择一种检测模型。");
+      return;
+    }
+
+    setModelTypes(nextModelTypes);
+    persistConfig(nextModelTypes, highPrecision);
+  };
+
+  const changePrecision = (nextHighPrecision: boolean) => {
+    if (!isEditable || configQuery.isLoading || nextHighPrecision === highPrecision) return;
+
+    setHighPrecision(nextHighPrecision);
+    persistConfig(modelTypes, nextHighPrecision);
   };
 
   return (
-    <Card className="rounded-lg border border-slate-200 shadow-none">
-      <CardBody className="gap-5 p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="grid h-9 w-9 place-items-center rounded-lg bg-action-soft text-action">
-                <Cpu className="h-5 w-5" aria-hidden="true" />
-              </span>
-              <h2 className="text-lg font-black text-ink">检测模型与检测模式配置</h2>
+    <div className={`ai-config-card ${!isEditable ? "is-readonly" : ""}`}>
+      <div className="ai-config-layout">
+        <section
+          className={`ai-config-panel ai-model-panel ${localError ? "has-error" : ""}`}
+          aria-labelledby="ai-model-title"
+        >
+          <div className="ai-panel-heading">
+            <h3 id="ai-model-title">检测模型筛选</h3>
+          </div>
+
+          <div className="ai-model-grid" role="group" aria-label="检测模型">
+            {MODEL_OPTIONS.map((model) => {
+              const selected = modelTypes.includes(model.value);
+              const Icon = model.Icon;
+
+              return (
+                <label
+                  key={model.value}
+                  className={`ai-model-card ai-model-card-${model.tone} ${
+                    selected ? "is-selected" : ""
+                  }`}
+                  title={model.description}
+                >
+                  <input
+                    checked={selected}
+                    className="ai-config-sr-input"
+                    disabled={!isEditable || configQuery.isLoading}
+                    type="checkbox"
+                    value={model.value}
+                    onChange={() => toggleModel(model.value)}
+                  />
+                  <span className="ai-model-icon" aria-hidden="true">
+                    <Icon />
+                  </span>
+                  <span className="ai-model-name">{model.label}</span>
+                  <span className="ai-model-check" aria-hidden="true">
+                    {selected ? <Check /> : null}
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+
+          {localError || saveMutation.isError ? (
+            <div className="ai-config-alert">
+              {localError || getErrorMessage(saveMutation.error)}
             </div>
-            <p className="mt-2 text-xs font-bold text-slate-500">
-              至少选择一种检测模型；高精度检测是附加开关。
-            </p>
-          </div>
-          <Button
-            className="rounded-lg font-bold"
-            color="primary"
-            isDisabled={!isEditable}
-            isLoading={saveMutation.isPending}
-            startContent={<Save className="h-4 w-4" aria-hidden="true" />}
-            onPress={save}
-          >
-            保存配置
-          </Button>
-        </div>
+          ) : null}
+        </section>
 
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-          {MODEL_OPTIONS.map((model) => (
-            <Checkbox
-              key={model.value}
-              classNames={{
-                base: "m-0 max-w-none rounded-lg border border-slate-200 bg-white px-3 py-3 shadow-none data-[selected=true]:border-action data-[selected=true]:bg-action-soft",
-                label: "w-full"
-              }}
-              isDisabled={!isEditable}
-              isSelected={modelTypes.includes(model.value)}
-              onValueChange={() => toggleModel(model.value)}
-            >
-              <span className="block font-black text-slate-800">{model.label}</span>
-              <span className="mt-1 block text-xs font-semibold text-slate-500">
-                {model.description}
+        <section className="ai-config-panel ai-mode-panel" aria-labelledby="ai-mode-title">
+          <div className="ai-panel-heading">
+            <h3 id="ai-mode-title">检测模式</h3>
+          </div>
+
+          <div className="ai-mode-options" role="radiogroup" aria-label="检测模式">
+            <label className={`ai-mode-option ${!highPrecision ? "is-selected" : ""}`}>
+              <input
+                checked={!highPrecision}
+                className="ai-config-sr-input"
+                disabled={!isEditable || configQuery.isLoading}
+                name={`detection-mode-${project.id}`}
+                type="radio"
+                value="standard"
+                onChange={() => changePrecision(false)}
+              />
+              <span className="ai-mode-radio" aria-hidden="true" />
+              <span className="ai-mode-copy">
+                <strong>
+                  标准检测 <em>推荐</em>
+                </strong>
+                <span>平衡检测效果与处理效率</span>
               </span>
-            </Checkbox>
-          ))}
-        </div>
+            </label>
 
-        <div className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
-          <div>
-            <h3 className="text-sm font-black text-ink">高精度检测</h3>
-            <p className="mt-1 text-xs font-bold text-slate-500">
-              开启后后续 AI 任务会使用更严格的模型配置。
-            </p>
+            <label className={`ai-mode-option ${highPrecision ? "is-selected" : ""}`}>
+              <input
+                checked={highPrecision}
+                className="ai-config-sr-input"
+                disabled={!isEditable || configQuery.isLoading}
+                name={`detection-mode-${project.id}`}
+                type="radio"
+                value="high"
+                onChange={() => changePrecision(true)}
+              />
+              <span className="ai-mode-radio" aria-hidden="true" />
+              <span className="ai-mode-copy">
+                <strong>高精度检测</strong>
+                <span>提升细小缺陷识别能力，处理时间更长</span>
+              </span>
+            </label>
           </div>
-          <Switch
-            isDisabled={!isEditable}
-            isSelected={highPrecision}
-            onValueChange={setHighPrecision}
-          >
-            {highPrecision ? "已开启" : "未开启"}
-          </Switch>
-        </div>
 
-        {(localError || saveMutation.isError) ? (
-          <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-700">
-            {localError || getErrorMessage(saveMutation.error)}
-          </div>
-        ) : null}
-
-        {configQuery.isError ? (
-          <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-700">
-            {getErrorMessage(configQuery.error)}
-          </div>
-        ) : null}
-      </CardBody>
-    </Card>
+          {configQuery.isError ? (
+            <div className="ai-config-alert">{getErrorMessage(configQuery.error)}</div>
+          ) : null}
+        </section>
+      </div>
+    </div>
   );
 }

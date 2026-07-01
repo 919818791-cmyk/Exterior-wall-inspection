@@ -2,6 +2,22 @@
 .env.*
 !.env.example
 
+# Local planning, prototype, and design-review artifacts
+/.agents/
+/.codex/
+/原型/
+/assets/
+/design-qa.md
+/design-qa-*.png
+/*.html
+/*.js
+/*.png
+/*.jpg
+/*.JPG
+/*.pdf
+/*.docx
+/styles.css
+
 node_modules/
 dist/
 .vite/

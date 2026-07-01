@@ -35,7 +35,6 @@ class UserAccountCreate(OrmSchema):
     password_hash: str
     real_name: str | None = None
     phone: str | None = None
-    email: str | None = None
     role: UserRole = UserRole.CUSTOMER
     organization: str | None = None
     status: UserStatus = UserStatus.ACTIVE
@@ -46,7 +45,6 @@ class UserAccountRead(OrmSchema):
     username: str
     real_name: str | None
     phone: str | None
-    email: str | None
     role: UserRole
     organization: str | None
     status: UserStatus

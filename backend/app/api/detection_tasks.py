@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from app.api.dependencies import AuthenticatedUser, ensure_project_access, get_current_user
+from app.api.dependencies import AuthenticatedUser, ensure_project_access, require_roles
 from app.api.projects import _get_project_or_404
 from app.core.config import get_settings
 from app.db.session import get_db
@@ -18,6 +18,7 @@ from app.enums.status import (
     DetectionTaskStatus,
     PhotoStatus,
     ProjectStatus,
+    UserRole,
 )
 from app.models.tables import (
     AiDetectionResult,
@@ -130,7 +131,7 @@ def _set_task_photo_status(
 def start_detection(
     project_id: UUID,
     db: Session = Depends(get_db),
-    current_user: AuthenticatedUser = Depends(get_current_user),
+    current_user: AuthenticatedUser = Depends(require_roles(UserRole.ADMIN)),
 ) -> DetectionTaskRead:
     project = _get_project_or_404(db, project_id)
     ensure_project_access(project, current_user)
@@ -423,7 +424,7 @@ def mark_task_failed(
         "detail": payload.detail,
     }
     task.updated_at = now
-    project.status = ProjectStatus.FAILED.value
+    project.status = ProjectStatus.DRAFT.value
     project.updated_at = now
 
     db.commit()

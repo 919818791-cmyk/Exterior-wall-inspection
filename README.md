@@ -1,7 +1,8 @@
 # 外墙巡检智能平台
 
-本仓库当前已推进到第 8 阶段：登录、角色权限与菜单边界。根目录原有 HTML/CSS/JS 文件保留为静态原型，新开发工程位于：
+本仓库当前已推进到第 8 阶段：登录、角色权限与菜单边界。静态原型已整理至 `原型/`，新开发工程位于：
 
+- `原型/`：可直接打开的静态 HTML 原型及其资源
 - `frontend/`：React + TypeScript + Vite + HeroUI
 - `backend/`：FastAPI + SQLAlchemy + Alembic
 - `algorithm-worker/`：独立模拟算法 Worker，用于开发机和容器联调
@@ -29,9 +30,9 @@ docker compose up -d postgres minio redis
 
 默认端口：
 
-- PostgreSQL：`localhost:5432`
-- MinIO API：`http://localhost:9000`
-- MinIO Console：`http://localhost:9001`
+- PostgreSQL：`localhost:5433`
+- MinIO API：`http://localhost:9002`
+- MinIO Console：`http://localhost:9003`
 - Redis：`localhost:6379`
 
 MinIO 默认账号密码来自 `.env.example`：
@@ -61,13 +62,13 @@ uvicorn app.main:app --reload
 健康检查：
 
 ```powershell
-Invoke-RestMethod http://localhost:8000/api/health
+Invoke-RestMethod http://127.0.0.1:8000/api/health
 ```
 
 API 文档：
 
-- `http://localhost:8000/api/docs`
-- `http://localhost:8000/api/redoc`
+- `http://127.0.0.1:8000/api/docs`
+- `http://127.0.0.1:8000/api/redoc`
 
 ## 4. 数据库迁移与连接检查
 
@@ -98,7 +99,7 @@ npm run dev
 
 访问：
 
-- `http://localhost:5173`
+- `http://localhost:5175`
 
 首次访问业务页面会跳转到登录页。开发环境默认启用以下测试账号；生产环境请修改 `AUTH_SECRET_KEY` 并设置 `AUTH_SEED_DEMO_USERS=false`：
 
@@ -108,7 +109,7 @@ npm run dev
 | 内部审核人员 | `reviewer` | `Reviewer123!` | 审核工作台、报告预览和推送 |
 | 管理员 | `admin` | `Admin123!` | 全部功能 |
 
-如果 `5173` 已被占用，可以改用：
+如果 `5175` 已被占用，可以临时改用其他端口：
 
 ```powershell
 $env:VITE_API_BASE_URL = "http://127.0.0.1:8001/api"
@@ -136,18 +137,18 @@ npm run dev -- --host 127.0.0.1 --port 5174
 - `POST /api/projects/{project_id}/start-detection` 启动 AI 检测任务
 - Worker API：`GET /api/algorithm/tasks/next`、心跳、结果回传、失败回传
 - 检测任务成功后自动写入 `ai_detection_result` 并将项目流转到 `pending_review`
-- 检测任务失败后将项目流转到 `failed` 并在项目详情显示失败原因
+- 检测任务异常仅记录在任务层，项目恢复为 `draft` 可重新发起检测
 - 独立模拟 Worker，可本地运行或作为 Docker Compose profile 运行
 - 审核工作台、AI 缺陷框复核、人工新增/修改/删除审核结果
 - 审核完成后生成固化报告数据并将项目流转到 `reviewed`
-- `/api/reports` 报告列表、详情、推送和 DOCX 下载接口
-- 检测报告列表页、报告详情页、推送后普通用户查看最终报告
+- `/api/reports` 检测结果列表、详情、正式报告推送和 DOCX 下载接口
+- 检测结果列表页、结果详情页、AI 检测体验归档、推送后普通用户查看最终结果
 - 报告文件字段统一为 `docx_bucket`、`docx_object_key`
-- 根目录 `正式报告示例.docx` 作为正式报告 DOCX 模板
-- 根目录 `试用报告示例.docx` 作为 AI 检测体验简易报告 DOCX 模板
+- `backend/templates/reports/正式报告示例.docx` 作为正式报告 DOCX 模板
+- AI 检测体验归档保存上传照片和简易识别结果，不生成 DOCX 文件
 - `POST /api/auth/login`、`GET /api/auth/me`、`POST /api/auth/logout` 基础登录会话
 - Bearer 登录态刷新恢复、未登录业务路由跳转登录页
-- 客户用户仅看到自己的项目与已推送报告，且无法访问审核接口或审核菜单
+- 客户用户仅看到自己的项目、已推送正式结果和自己的体验归档，且无法访问审核接口或审核菜单
 - 内部审核人员和管理员可访问审核工作台；报告推送仅限内部审核人员和管理员
 
 ## 7. 模拟 Worker 联调

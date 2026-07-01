@@ -6,7 +6,6 @@ import {
   Download,
   FileImage,
   FileText,
-  RefreshCcw,
   Send
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -33,6 +32,7 @@ const DEFECT_LABELS: Record<string, string> = {
 };
 
 const REVIEW_STATUS_LABELS: Record<string, string> = {
+  generated: "体验生成",
   confirmed: "已确认",
   modified: "已修改",
   added: "人工新增",
@@ -53,6 +53,11 @@ const REPORT_STATUS_TONES = {
   revoked: "danger"
 } as const;
 
+const TRIAL_RESULT_DESCRIPTION_LINES = [
+  { className: "trial-report-description-spalling", text: "疑似剥落: 1处" },
+  { className: "trial-report-description-crack", text: "疑似开裂: 1处" }
+] as const;
+
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "操作失败，请稍后重试。";
 }
@@ -67,6 +72,7 @@ export function ReportDetailPage() {
   const reportQuery = useQuery(reportQueryOptions(id, includeGenerated));
   const report = reportQuery.data;
   const [message, setMessage] = useState("");
+  const isTrialResult = report?.source_type === "trial";
 
   const pushMutation = useMutation({
     mutationFn: () => pushReport(id),
@@ -88,7 +94,7 @@ export function ReportDetailPage() {
 
   const defects = report?.defects ?? [];
   const summary = report?.summary ?? {};
-  const canPush = canManageReports && report?.status === "generated";
+  const canPush = canManageReports && !isTrialResult && report?.status === "generated";
 
   const defectTypeSummary = useMemo(
     () => Object.entries(summary.by_defect_type ?? {}),
@@ -109,7 +115,7 @@ export function ReportDetailPage() {
       <div className="grid min-h-[calc(100svh-8rem)] place-items-center">
         <Card className="w-full max-w-2xl rounded-lg border border-red-200 shadow-none">
           <CardBody className="gap-4 p-6">
-            <h1 className="text-xl font-black text-ink">报告加载失败</h1>
+            <h1 className="text-xl font-black text-ink">结果加载失败</h1>
             <p className="text-sm font-bold text-red-700">
               {getErrorMessage(reportQuery.error)}
             </p>
@@ -119,7 +125,7 @@ export function ReportDetailPage() {
               to="/reports"
               variant="flat"
             >
-              返回报告列表
+              返回结果列表
             </Button>
           </CardBody>
         </Card>
@@ -127,11 +133,17 @@ export function ReportDetailPage() {
     );
   }
 
+  if (isTrialResult) {
+    return (
+      <TrialResultDetail report={report} />
+    );
+  }
+
   return (
     <div className="grid gap-5 pb-8">
       <section className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="text-xs font-black uppercase text-action">Report Detail</p>
+          <p className="text-xs font-black uppercase text-action">Detection Result</p>
           <div className="mt-2 flex flex-wrap items-center gap-3">
             <h1 className="text-3xl font-black text-ink">{report.title}</h1>
             <StatusPill tone={REPORT_STATUS_TONES[report.status]}>
@@ -150,16 +162,7 @@ export function ReportDetailPage() {
             to={includeGenerated ? "/review" : "/reports"}
             variant="flat"
           >
-            {includeGenerated ? "返回工作台" : "返回列表"}
-          </Button>
-          <Button
-            className="rounded-lg border border-slate-300 bg-white font-bold text-slate-700 shadow-none"
-            isLoading={reportQuery.isFetching}
-            startContent={<RefreshCcw className="h-4 w-4" aria-hidden="true" />}
-            variant="flat"
-            onPress={() => void reportQuery.refetch()}
-          >
-            刷新
+            {includeGenerated ? "返回工作台" : "返回结果列表"}
           </Button>
           <Button
             className="rounded-lg border border-slate-300 bg-white font-bold text-slate-700 shadow-none"
@@ -213,13 +216,14 @@ export function ReportDetailPage() {
             <CardBody className="gap-0 p-0">
               <SectionHeader
                 icon={<FileText className="h-5 w-5" aria-hidden="true" />}
-                title="报告概览"
-                subtitle="报告内容来自审核完成时固化的数据"
+                title="结果概览"
+                subtitle="结果内容来自审核完成时固化的数据"
               />
               <Divider />
               <div className="grid gap-4 p-5 md:grid-cols-2">
+                <InfoItem label="报告名称" value={report.title} />
                 <InfoItem label="项目名称" value={report.project.name} />
-                <InfoItem label="项目编号" value={report.project.project_no} />
+                <InfoItem label="项目编号" value={report.project.project_no || report.report_no} />
                 <InfoItem label="委托单位" value={report.project.client_name} />
                 <InfoItem label="联系人" value={report.project.contact_name} />
                 <InfoItem label="联系电话" value={report.project.contact_phone} />
@@ -273,9 +277,9 @@ export function ReportDetailPage() {
                 <div className="grid min-h-48 place-items-center p-6 text-center">
                   <div>
                     <CheckCircle2 className="mx-auto h-10 w-10 text-emerald-500" aria-hidden="true" />
-                    <h2 className="mt-3 text-lg font-black text-ink">暂无缺陷明细</h2>
+                    <h2 className="mt-3 text-lg font-black text-ink">暂无识别明细</h2>
                     <p className="mt-2 text-sm font-semibold text-slate-500">
-                      当前报告没有固化的缺陷记录。
+                      当前结果没有固化的识别记录。
                     </p>
                   </div>
                 </div>
@@ -344,6 +348,145 @@ export function ReportDetailPage() {
       </section>
     </div>
   );
+}
+
+function TrialResultDetail({ report }: { report: ReportDetail }) {
+  const defects = report.defects ?? [];
+  const rows = defects.length ? defects : report.photos.map((photo) => ({
+    id: photo.id,
+    photo_id: photo.id,
+    photo_filename: photo.original_filename,
+    photo_preview_url: photo.preview_url,
+    photo_thumbnail_url: photo.thumbnail_url
+  }));
+
+  return (
+    <div className="trial-result-detail-page">
+      <div className="trial-result-toolbar">
+        <div className="trial-result-title-block">
+          <h1>{report.title || "AI检测体验结果"}</h1>
+          <p>生成时间：{formatDateTime(report.generated_at)}</p>
+        </div>
+        <RouterLink className="button secondary" to="/reports">
+          <ArrowLeft aria-hidden="true" />返回结果列表
+        </RouterLink>
+      </div>
+      <div className="trial-experience-shell trial-experience-content-shell trial-result-detail-shell">
+        <section className="trial-experience-grid">
+          <div className="trial-upload-panel">
+            <div className="trial-panel-heading">
+              <div>
+                <h2>检测照片</h2>
+              </div>
+            </div>
+            {report.photos.length ? (
+              <div className="trial-photo-grid trial-result-photo-grid">
+                {report.photos.map((photo, index) => (
+                  <figure key={photo.id || `${photo.original_filename}-${index}`} className="trial-photo-thumb">
+                    <div className="trial-photo-thumb-image">
+                      {photo.preview_url ? (
+                        <img alt={photo.original_filename || "检测结果照片"} src={photo.preview_url} />
+                      ) : (
+                        <div className="trial-result-photo-placeholder"><FileImage aria-hidden="true" /></div>
+                      )}
+                      {photo.thermal_imaging_available ? (
+                        <span className="trial-hollow-available-tag">空鼓可用</span>
+                      ) : null}
+                    </div>
+                    <figcaption>{photo.original_filename || "未命名照片"}</figcaption>
+                  </figure>
+                ))}
+              </div>
+            ) : (
+              <div className="trial-result-photo-empty">
+                <FileImage aria-hidden="true" />
+                <strong>暂无检测结果</strong>
+              </div>
+            )}
+          </div>
+
+          <aside className="trial-report-panel">
+            <div className="trial-report-result">
+              <div className="trial-report-head">
+                <div>
+                  <h2>检测结果明细</h2>
+                </div>
+              </div>
+              {rows.length ? (
+                <div className="trial-report-table-wrap">
+                  <table className="trial-report-table">
+                    <thead>
+                      <tr>
+                        <th>序号</th>
+                        <th>含标注的照片</th>
+                        <th>检测说明</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((defect, index) => (
+                        <TrialResultRow
+                          key={defect.id || `${defect.photo_filename}-${index}`}
+                          defect={defect}
+                          index={index}
+                          photo={findTrialPhoto(report, defect)}
+                        />
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="trial-report-empty">
+                  <CheckCircle2 aria-hidden="true" />
+                  <h2>暂无识别结果</h2>
+                  <p>体验归档中没有可展示的检测结果。</p>
+                </div>
+              )}
+            </div>
+          </aside>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function TrialResultRow({
+  defect,
+  index,
+  photo
+}: {
+  defect: ReportDefectSnapshot;
+  index: number;
+  photo?: ReportDetail["photos"][number];
+}) {
+  const imageUrl = defect.photo_preview_url || defect.photo_thumbnail_url || photo?.preview_url || photo?.thumbnail_url;
+  const filename = defect.photo_filename || photo?.original_filename || "检测结果照片";
+
+  return (
+    <tr>
+      <td>{String(index + 1).padStart(2, "0")}</td>
+      <td>
+        <figure className="trial-annotated-photo-frame">
+          <div className={`trial-annotated-photo ${imageUrl ? "" : "trial-annotated-photo-placeholder"}`}>
+            {imageUrl ? <img alt={`${filename} 检测标注`} src={imageUrl} /> : <FileImage aria-hidden="true" />}
+            <span className={`trial-defect-box trial-defect-box-${index % 3}`} />
+          </div>
+          <figcaption>{filename}</figcaption>
+        </figure>
+      </td>
+      <td className="trial-report-description">
+        <p>
+          {TRIAL_RESULT_DESCRIPTION_LINES.map((line) => (
+            <span key={line.text} className={line.className}>{line.text}</span>
+          ))}
+        </p>
+      </td>
+    </tr>
+  );
+}
+
+function findTrialPhoto(report: ReportDetail, defect: ReportDefectSnapshot) {
+  return report.photos.find((photo) => photo.id && defect.photo_id === photo.id)
+    ?? report.photos.find((photo) => photo.original_filename && photo.original_filename === defect.photo_filename);
 }
 
 function DefectRow({ defect }: { defect: ReportDefectSnapshot }) {

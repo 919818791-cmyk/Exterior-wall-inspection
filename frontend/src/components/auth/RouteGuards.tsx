@@ -21,16 +21,18 @@ export function RequireAuth() {
 
   if (status === "loading") return <LoadingScreen />;
   if (status !== "authenticated") {
-    return <Navigate replace state={{ from: location }} to="/login" />;
+    const redirect = `${location.pathname}${location.search}${location.hash}`;
+    const search = new URLSearchParams({ login: "1", redirect }).toString();
+    return <Navigate replace state={{ from: location }} to={`/?${search}`} />;
   }
   return <Outlet />;
 }
 
-export function RequireRole({ roles }: { roles: UserRole[] }) {
+export function RequireRole({ fallbackTo = "/", roles }: { fallbackTo?: string; roles: UserRole[] }) {
   const user = useAuthStore((state) => state.user);
+  const status = useAuthStore((state) => state.status);
 
-  if (!user || !roles.includes(user.role)) {
-    return <Navigate replace to="/projects" />;
-  }
+  if (status === "loading") return <LoadingScreen />;
+  if (!user || !roles.includes(user.role)) return <Navigate replace to={fallbackTo} />;
   return <Outlet />;
 }
