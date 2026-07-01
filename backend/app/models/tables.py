@@ -65,7 +65,6 @@ class UserAccount(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     real_name: Mapped[str | None] = mapped_column(String(64))
     phone: Mapped[str | None] = mapped_column(String(32))
-    email: Mapped[str | None] = mapped_column(String(128))
     role: Mapped[str] = status_column(UserRole.CUSTOMER)
     organization: Mapped[str | None] = mapped_column(String(128))
     status: Mapped[str] = status_column(UserStatus.ACTIVE)
@@ -509,6 +508,30 @@ class InspectionReport(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
     pushed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class TrialDetectionResult(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "trial_detection_result"
+    __table_args__ = (
+        enum_check("status", InspectionReportStatus, "status"),
+        Index("idx_trial_result_generated_by", "generated_by"),
+        Index("idx_trial_result_generated_at", "generated_at"),
+        Index("idx_trial_result_status", "status"),
+    )
+
+    result_no: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[str] = status_column(InspectionReportStatus.GENERATED)
+    report_data_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    photo_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    finding_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    thermal_available_photo_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    generated_by: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("user_account.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
 
 
 class ReportPushLog(UUIDPrimaryKeyMixin, Base):

@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, s
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.dependencies import AuthenticatedUser, ensure_project_access, get_current_user
+from app.api.dependencies import AuthenticatedUser, ensure_project_access, get_current_user, require_roles
 from app.api.projects import (
     _ensure_project_editable,
     _get_building_or_404,
@@ -16,14 +16,12 @@ from app.api.projects import (
     _get_project_or_404,
 )
 from app.db.session import get_db
-from app.enums.status import PhotoStatus, PhotoType
+from app.enums.status import PhotoStatus, PhotoType, UserRole
 from app.models.tables import Photo, Project, UploadBatch
 from app.schemas.phase4 import PhotoRead, UploadBatchCreateRequest, UploadBatchRead
 from app.services.object_storage import presigned_get_url, put_object, remove_object
 
-router = APIRouter(tags=["photos"])
-
-MAX_UPLOAD_BYTES = 200 * 1024 * 1024
+router = APIRouter(tags=["photos"], dependencies=[Depends(require_roles(UserRole.ADMIN))])
 
 
 def _enum_value(value: object) -> str:
@@ -155,8 +153,6 @@ def upload_photo(
     file.file.seek(0)
     if file_size <= 0:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded file is empty.")
-    if file_size > MAX_UPLOAD_BYTES:
-        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Uploaded file is too large.")
 
     suffix = Path(file.filename or "").suffix.lower()
     object_id = uuid4()

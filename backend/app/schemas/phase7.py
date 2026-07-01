@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.enums.status import InspectionReportStatus
 
@@ -14,7 +15,8 @@ class ApiSchema(BaseModel):
 
 class ReportListItem(ApiSchema):
     id: UUID
-    project_id: UUID
+    source_type: Literal["formal", "trial"] = "formal"
+    project_id: UUID | None = None
     detection_task_id: UUID | None
     report_no: str
     title: str
@@ -30,7 +32,8 @@ class ReportListItem(ApiSchema):
 
 class ReportDetailRead(ApiSchema):
     id: UUID
-    project_id: UUID
+    source_type: Literal["formal", "trial"] = "formal"
+    project_id: UUID | None = None
     detection_task_id: UUID | None
     report_no: str
     title: str
@@ -60,11 +63,20 @@ class TrialReportFile(ApiSchema):
 class TrialReportFinding(ApiSchema):
     filename: str
     model: str
-    confidence: str | None = None
+
+
+class TrialGenerateRequest(ApiSchema):
+    report_name: str | None = Field(default=None, max_length=255)
+    models: list[str] = Field(default_factory=lambda: ["裂缝", "剥落"])
 
 
 class TrialReportRequest(ApiSchema):
+    report_name: str | None = Field(default=None, max_length=255)
     generated_at: str
     models: list[str]
     files: list[TrialReportFile]
     findings: list[TrialReportFinding]
+
+
+class TrialGeneratedResult(TrialReportRequest):
+    pass

@@ -136,7 +136,6 @@ class ProjectDetailRead(ProjectListItem):
     current_task_id: UUID | None
     current_report_id: UUID | None
     current_task_status: DetectionTaskStatus | None = None
-    current_task_failed_reason: str | None = None
     started_at: datetime | None
     completed_at: datetime | None
     buildings: list[BuildingRead]

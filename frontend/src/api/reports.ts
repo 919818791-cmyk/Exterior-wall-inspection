@@ -27,7 +27,14 @@ export function pushReport(reportId: string) {
   });
 }
 
+export function deleteReport(reportId: string) {
+  return apiRequest<{ ok: boolean }>(`/reports/${reportId}`, {
+    method: "DELETE"
+  });
+}
+
 export interface TrialReportPayload {
+  report_name?: string;
   generated_at: string;
   models: string[];
   files: Array<{
@@ -37,45 +44,54 @@ export interface TrialReportPayload {
   findings: Array<{
     filename: string;
     model: string;
-    confidence: string;
   }>;
 }
 
-export async function downloadTrialReportDocx(payload: TrialReportPayload) {
-  const response = await apiFetch("/trial/report/docx", {
+export interface TrialGeneratePayload {
+  report_name?: string;
+  models?: string[];
+}
+
+export type TrialGeneratedResult = TrialReportPayload;
+
+function downloadErrorMessage(body: unknown, status: number) {
+  return typeof body === "object" && body !== null && "message" in body
+    ? String((body as { message: unknown }).message)
+    : `API request failed with status ${status}`;
+}
+
+async function readErrorPayload(response: Response) {
+  const contentType = response.headers.get("content-type") ?? "";
+  return contentType.includes("application/json")
+    ? response.json()
+    : response.text();
+}
+
+export async function archiveTrialResult(payload: TrialReportPayload, files: File[]) {
+  const formData = new FormData();
+  formData.append("payload", JSON.stringify(payload));
+  files.forEach((file) => formData.append("files", file));
+  return apiRequest<ReportDetail>("/trial/results", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify(payload)
+    body: formData
   });
+}
 
-  if (!response.ok) {
-    const contentType = response.headers.get("content-type") ?? "";
-    const body = contentType.includes("application/json")
-      ? await response.json()
-      : await response.text();
-    const message =
-      typeof body === "object" && body !== null && "message" in body
-        ? String((body as { message: unknown }).message)
-        : `API request failed with status ${response.status}`;
-    throw new ApiError(message, response.status, body);
-  }
-
-  return response.blob();
+export async function generateTrialResult(payload: TrialGeneratePayload, files: File[]) {
+  const formData = new FormData();
+  formData.append("payload", JSON.stringify(payload));
+  files.forEach((file) => formData.append("files", file));
+  return apiRequest<TrialGeneratedResult>("/trial/generate", {
+    method: "POST",
+    body: formData
+  });
 }
 
 export async function downloadReportDocx(reportId: string, includeGenerated = false) {
   const response = await apiFetch(`/reports/${reportId}/docx${generatedParam(includeGenerated)}`);
   if (!response.ok) {
-    const contentType = response.headers.get("content-type") ?? "";
-    const body = contentType.includes("application/json")
-      ? await response.json()
-      : await response.text();
-    const message =
-      typeof body === "object" && body !== null && "message" in body
-        ? String((body as { message: unknown }).message)
-        : `API request failed with status ${response.status}`;
+    const body = await readErrorPayload(response);
+    const message = downloadErrorMessage(body, response.status);
     throw new ApiError(message, response.status, body);
   }
   return response.blob();

@@ -5,8 +5,7 @@ export const PROJECT_STATUS_LABELS: Record<ProjectStatus, string> = {
   detecting: "AI检测中",
   pending_review: "结果处理中",
   reviewed: "报告生成中",
-  completed: "已完成",
-  failed: "检测失败"
+  completed: "已完成"
 };
 
 export const PROJECT_STATUS_TONES: Record<ProjectStatus, "success" | "warning" | "danger"> = {
@@ -14,8 +13,7 @@ export const PROJECT_STATUS_TONES: Record<ProjectStatus, "success" | "warning" |
   detecting: "warning",
   pending_review: "warning",
   reviewed: "warning",
-  completed: "success",
-  failed: "danger"
+  completed: "success"
 };
 
 export function formatDateTime(value: string | null | undefined) {

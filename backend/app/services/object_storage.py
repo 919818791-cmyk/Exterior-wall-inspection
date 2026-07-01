@@ -63,6 +63,15 @@ def remove_object(bucket: str, object_key: str | None) -> None:
         return
 
 
+def get_object_bytes(bucket: str, object_key: str) -> bytes:
+    response = _client().get_object(bucket, object_key)
+    try:
+        return response.read()
+    finally:
+        response.close()
+        response.release_conn()
+
+
 def presigned_get_url(bucket: str, object_key: str | None, expires_minutes: int = 60) -> str | None:
     if not object_key:
         return None

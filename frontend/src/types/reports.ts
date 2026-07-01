@@ -2,7 +2,8 @@ import type { InspectionReportStatus } from "@/types/review";
 
 export interface ReportListItem {
   id: string;
-  project_id: string;
+  source_type: "formal" | "trial";
+  project_id: string | null;
   detection_task_id: string | null;
   report_no: string;
   title: string;
@@ -55,9 +56,18 @@ export interface ReportBuildingSnapshot {
 export interface ReportPhotoSnapshot {
   id?: string;
   original_filename?: string | null;
+  file_size?: number | null;
+  mime_type?: string | null;
   image_width?: number | null;
   image_height?: number | null;
   photo_type?: string | null;
+  metadata_json?: {
+    xmp_drone_dji_image_source?: string | null;
+    ifd0_image_description?: string | null;
+    thermal_imaging_available?: boolean | null;
+    [key: string]: unknown;
+  } | null;
+  thermal_imaging_available?: boolean | null;
   preview_url?: string | null;
   thumbnail_url?: string | null;
 }
@@ -89,7 +99,8 @@ export interface ReportDefectSnapshot {
 
 export interface ReportDetail {
   id: string;
-  project_id: string;
+  source_type: "formal" | "trial";
+  project_id: string | null;
   detection_task_id: string | null;
   report_no: string;
   title: string;
@@ -113,6 +124,7 @@ export interface ReportDetail {
     by_defect_type?: Record<string, number>;
     by_status?: Record<string, number>;
     photo_count?: number;
+    thermal_available_photo_count?: number;
     building_count?: number;
     facade_count?: number;
   };

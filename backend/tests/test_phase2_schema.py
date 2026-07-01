@@ -38,7 +38,6 @@ def test_phase2_required_status_values_are_centralized() -> None:
         "pending_review",
         "reviewed",
         "completed",
-        "failed",
     }
     assert {item.value for item in DetectionTaskStatus} == {
         "pending",
@@ -79,6 +78,23 @@ def test_facade_orientation_moved_to_recommendation_input() -> None:
         "northeast",
         "northwest",
     }
+
+
+def test_project_persists_coordinates() -> None:
+    project = Base.metadata.tables["project"]
+
+    assert "longitude" in project.c
+    assert "latitude" in project.c
+    assert project.c.longitude.type.precision == 10
+    assert project.c.longitude.type.scale == 7
+    assert project.c.latitude.type.precision == 10
+    assert project.c.latitude.type.scale == 7
+
+
+def test_user_account_does_not_persist_email() -> None:
+    user_account = Base.metadata.tables["user_account"]
+
+    assert "email" not in user_account.c
 
 
 def test_inspection_report_uses_docx_file_fields() -> None:

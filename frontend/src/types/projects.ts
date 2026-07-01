@@ -3,8 +3,7 @@ export type ProjectStatus =
   | "detecting"
   | "pending_review"
   | "reviewed"
-  | "completed"
-  | "failed";
+  | "completed";
 
 export type DefectType = "crack" | "spalling" | "hollowing" | "leakage" | "corrosion";
 export type PhotoType = "visible" | "thermal" | "dji" | "other";
@@ -42,8 +41,8 @@ export interface ProjectCreatePayload {
   city?: string | null;
   district?: string | null;
   address?: string | null;
-  longitude?: string | null;
-  latitude?: string | null;
+  longitude?: string | number | null;
+  latitude?: string | number | null;
   buildings?: BuildingPayload[];
 }
 
@@ -106,7 +105,6 @@ export interface ProjectDetail extends ProjectListItem {
   current_task_id: string | null;
   current_report_id: string | null;
   current_task_status: DetectionTaskStatus | null;
-  current_task_failed_reason: string | null;
   started_at: string | null;
   completed_at: string | null;
   buildings: Building[];

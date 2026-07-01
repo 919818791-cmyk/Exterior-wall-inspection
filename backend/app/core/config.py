@@ -22,16 +22,18 @@ class Settings(BaseSettings):
             "http://127.0.0.1:5173",
             "http://localhost:5174",
             "http://127.0.0.1:5174",
+            "http://localhost:5175",
+            "http://127.0.0.1:5175",
         ]
     )
 
     database_url: str = (
         "postgresql+psycopg://building_exterior:building_exterior_password"
-        "@localhost:5432/building_exterior"
+        "@localhost:5433/building_exterior"
     )
 
-    minio_endpoint: str = "localhost:9000"
-    minio_public_url: str = "http://localhost:9000"
+    minio_endpoint: str = "localhost:9002"
+    minio_public_url: str = "http://localhost:9002"
     minio_access_key: str = "building_exterior_minio"
     minio_secret_key: str = "building_exterior_minio_secret"
     minio_bucket: str = "building-exterior"
