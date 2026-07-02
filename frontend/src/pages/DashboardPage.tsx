@@ -1,5 +1,4 @@
 import {
-  CalendarClock,
   ChevronRight,
   FileCheck2,
   FileText,
@@ -10,11 +9,11 @@ import {
 import { Link } from "react-router-dom";
 
 const defects = [
-  { key: "crack", title: "裂缝检测", description: "自动识别外墙线状裂缝，标注位置、长度及走向。", image: "/images/defects/defect-crack-hd.png" },
-  { key: "spalling", title: "剥落检测", description: "识别饰面层、涂层等剥落区域，评估脱落风险。", image: "/images/defects/defect-spalling-hd.png" },
-  { key: "hollow", title: "空鼓检测", description: "识别疑似空鼓相关区域，为现场确认提供参考。", image: "/images/defects/defect-hollow-hd.png" },
-  { key: "leakage", title: "渗漏检测", description: "识别水渍、泛碱、潮湿痕迹等疑似渗漏区域。", image: "/images/defects/defect-leakage-hd.png" },
-  { key: "corrosion", title: "锈蚀检测", description: "识别金属构件锈蚀及锈斑区域，辅助评估耐久性。", image: "/images/defects/defect-corrosion-hd.png" }
+  { key: "crack", title: "裂缝识别", image: "/images/defects/defect-crack-hd.png" },
+  { key: "spalling", title: "剥落识别", image: "/images/defects/defect-spalling-hd.png" },
+  { key: "hollow", title: "空鼓识别", image: "/images/defects/defect-hollow-hd.png" },
+  { key: "leakage", title: "渗漏识别", image: "/images/defects/defect-leakage-hd.png" },
+  { key: "corrosion", title: "锈蚀识别", image: "/images/defects/defect-corrosion-hd.png" }
 ];
 
 export function DashboardPage() {
@@ -23,33 +22,58 @@ export function DashboardPage() {
       <section className="hero">
         <div className="hero-copy">
           <h1>
-            <span className="hero-line">人工智能赋能的建筑外墙检查</span>
             <span className="hero-line">
               <span className="phrase">让检测<span className="accent">更智能</span>，</span>
               <span className="phrase">让报告<span className="accent">更高效</span></span>
             </span>
           </h1>
           <p className="hero-description">
-            我们的建筑检查技术采用最新的人工智能技术和无人机，可对您的建筑物状况进行快速、准确且高效的评估。
+            我们采用最新的AI 视觉分析技术，可对建筑物的外墙状况进行快速、准确且高效的评估
           </p>
           <div className="hero-actions">
-            <Link className="button primary" to="/trial"><Sparkles aria-hidden="true" />立即试用</Link>
-            <Link className="button secondary" to="/reports"><FileText aria-hidden="true" />查看示例报告</Link>
+            <Link className="button primary" to="/trial"><Sparkles aria-hidden="true" />立即检测</Link>
+            <Link className="button secondary" to="/reports"><FileText aria-hidden="true" />查看示例</Link>
           </div>
+        </div>
+      </section>
+
+      <section className="section" id="ai">
+        <div className="section-heading">
+          <h2>AI检测能力</h2>
+          <p>
+            <span className="section-subtitle-line">覆盖裂缝、剥落、空鼓、渗漏、锈蚀五类高频外墙隐患，结合视觉分</span>
+            <span className="section-subtitle-line">析快速定位问题，让风险发现更早、复核更准</span>
+          </p>
+        </div>
+        <div className="defect-grid">
+          {defects.map((defect) => (
+            <Link key={defect.key} className="defect-card" id={`defect-${defect.key}`} to={`/capabilities/${defect.key}`} aria-label={`查看${defect.title}详情`}>
+              <div className="defect-media"><img alt={`${defect.title}示意图`} src={defect.image} /></div>
+              <div className="defect-card-body">
+                <h3>{defect.title}</h3>
+                <span className="defect-detail-link">了解详情 <ChevronRight aria-hidden="true" /></span>
+              </div>
+            </Link>
+          ))}
         </div>
       </section>
 
       <section className="section compact" id="capabilities">
         <div className="section-heading">
-          <h2>核心能力</h2>
-          <p>覆盖采集前、识别中、交付后三个关键环节</p>
+          <h2>核心功能</h2>
+          <p>
+            <span className="section-subtitle-line">围绕采集前规划、检测中识别、交付后报告三大环节，打通外墙巡检</span>
+            <span className="section-subtitle-line">关键流程，让项目推进更快、结果更清晰、管理更省心</span>
+          </p>
         </div>
         <div className="capability-grid">
-          <article className="capability-card">
-            <span className="feature-icon blue"><CalendarClock aria-hidden="true" /></span>
+          <article className="capability-card time-recommendation-card">
+            <span className="feature-icon feature-icon-image time-recommendation-mark">
+              <img alt="" src="/images/capabilities/time-recommendation.png" />
+            </span>
             <div>
               <h3>检测时段推荐</h3>
-              <p>综合用户选择的立面朝向、环境温度、风速风向和太阳辐照强度等因素，智能推荐适合无人机采集的作业窗口。</p>
+              <p>综合立面朝向、温度、风速和光照等因素，推荐适合采集的时段</p>
               <Link to="/capabilities/time">了解详情 <ChevronRight aria-hidden="true" /></Link>
             </div>
           </article>
@@ -57,7 +81,7 @@ export function DashboardPage() {
             <span className="feature-icon indigo"><ScanSearch aria-hidden="true" /></span>
             <div>
               <h3>AI缺陷识别</h3>
-              <p>基于视觉分析算法，自动识别裂缝、剥落、疑似空鼓、渗漏、锈蚀等外墙常见缺陷，输出缺陷标注图、类型和位置。</p>
+              <p>基于视觉分析算法，识别裂缝、剥落、空鼓、渗漏、锈蚀等缺陷</p>
               <a href="#ai">了解详情 <ChevronRight aria-hidden="true" /></a>
             </div>
           </article>
@@ -65,48 +89,29 @@ export function DashboardPage() {
             <span className="feature-icon green"><FileCheck2 aria-hidden="true" /></span>
             <div>
               <h3>智能报告生成</h3>
-              <p>系统汇总缺陷位置、标注图、统计结果和复核结论，生成在线检测结果，并支持 PDF 导出与项目归档。</p>
+              <p>系统汇总检测结果和标注图，生成在线检测报告并支持导出</p>
               <Link to="/reports">了解详情 <ChevronRight aria-hidden="true" /></Link>
             </div>
           </article>
         </div>
       </section>
 
-      <section className="section" id="ai">
-        <div className="section-heading">
-          <h2>AI检测能力</h2>
-          <p>五大缺陷智能识别，覆盖建筑外墙常见隐患</p>
-        </div>
-        <div className="defect-grid">
-          {defects.map((defect) => (
-            <article key={defect.key} className="defect-card" id={`defect-${defect.key}`}>
-              <div className="defect-media"><img alt={`${defect.title}示意图`} src={defect.image} /></div>
-              <div className="defect-card-body">
-                <h3>{defect.title}</h3>
-                <p>{defect.description}</p>
-                <Link to={`/capabilities/${defect.key}`}>了解详情</Link>
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
-
       <section className="trial-section" id="trial">
         <div className="trial-card">
           <div className="trial-copy">
-            <h2>上传图像，体验AI智能检测</h2>
-            <p>从图像识别到报告生成，全流程在线体验，让建筑外墙巡检更简单、更高效。</p>
+            <h2>上传图像，生成简易检测结果</h2>
+            <p>从图像识别到结果归档，全流程在线完成，让建筑外墙巡检更简单、更高效。</p>
             <Link className="button primary" to="/trial"><FolderPlus aria-hidden="true" />开始智能检测</Link>
           </div>
-          <div className="system-preview" aria-label="系统界面预览">
-            <div className="preview-window projects">
-              <div className="preview-bar" />
-              <div className="preview-row active"><span /><strong>保利花园-A栋</strong><em>生成中</em></div>
-              <div className="preview-row"><span /><strong>东南立面</strong><em>249项</em></div>
-              <div className="preview-row"><span /><strong>复核工作台</strong><em>待处理</em></div>
-            </div>
-            <div className="preview-window image-panel"><div className="mini-facade" /><div className="mini-label">AI标注图</div></div>
-            <div className="preview-window report"><div className="report-cover" /><h3>外墙巡检检测结果</h3><p>PDF 已生成 · 可导出</p><div className="bars"><span /><span /><span /></div></div>
+          <div className="system-preview trial-image-preview" aria-label="AI检测示意图">
+            <figure className="trial-detection-card trial-detection-card-main">
+              <img alt="裂缝识别标注示意图" src="/images/trial/crack-material.png" />
+              <figcaption><strong>裂缝识别</strong><span>裂缝位置标注</span></figcaption>
+            </figure>
+            <figure className="trial-detection-card trial-detection-card-secondary">
+              <img alt="空鼓识别热成像示意图" src="/images/trial/hollow-material.png" />
+              <figcaption><strong>空鼓识别</strong><span>热异常定位</span></figcaption>
+            </figure>
           </div>
         </div>
       </section>

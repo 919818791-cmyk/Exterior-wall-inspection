@@ -32,7 +32,7 @@ const DEFECT_LABELS: Record<string, string> = {
 };
 
 const REVIEW_STATUS_LABELS: Record<string, string> = {
-  generated: "体验生成",
+  generated: "自动生成",
   confirmed: "已确认",
   modified: "已修改",
   added: "人工新增",
@@ -69,7 +69,7 @@ export function ReportDetailPage() {
   const user = useAuthStore((state) => state.user);
   const canManageReports = user?.role === "reviewer" || user?.role === "admin";
   const includeGenerated = canManageReports && searchParams.get("mode") === "review";
-  const reportQuery = useQuery(reportQueryOptions(id, includeGenerated));
+  const reportQuery = useQuery(reportQueryOptions(id, includeGenerated, user));
   const report = reportQuery.data;
   const [message, setMessage] = useState("");
   const isTrialResult = report?.source_type === "trial";
@@ -364,7 +364,7 @@ function TrialResultDetail({ report }: { report: ReportDetail }) {
     <div className="trial-result-detail-page">
       <div className="trial-result-toolbar">
         <div className="trial-result-title-block">
-          <h1>{report.title || "AI检测体验结果"}</h1>
+          <h1>{report.title || "简易AI检测结果"}</h1>
           <p>生成时间：{formatDateTime(report.generated_at)}</p>
         </div>
         <RouterLink className="button secondary" to="/reports">
@@ -438,7 +438,7 @@ function TrialResultDetail({ report }: { report: ReportDetail }) {
                 <div className="trial-report-empty">
                   <CheckCircle2 aria-hidden="true" />
                   <h2>暂无识别结果</h2>
-                  <p>体验归档中没有可展示的检测结果。</p>
+                  <p>简易检测归档中没有可展示的检测结果。</p>
                 </div>
               )}
             </div>

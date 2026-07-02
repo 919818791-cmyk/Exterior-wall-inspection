@@ -56,11 +56,13 @@ class ReportDetailRead(ApiSchema):
 
 
 class TrialReportFile(ApiSchema):
+    photo_id: UUID | None = None
     filename: str
     size: int | None = None
 
 
 class TrialReportFinding(ApiSchema):
+    photo_id: UUID | None = None
     filename: str
     model: str
 
@@ -68,6 +70,17 @@ class TrialReportFinding(ApiSchema):
 class TrialGenerateRequest(ApiSchema):
     report_name: str | None = Field(default=None, max_length=255)
     models: list[str] = Field(default_factory=lambda: ["裂缝", "剥落"])
+    photo_ids: list[UUID] = Field(default_factory=list)
+
+
+class TrialUploadedPhotoRead(ApiSchema):
+    id: UUID
+    original_filename: str
+    file_size: int | None
+    mime_type: str | None
+    metadata_json: dict
+    thermal_imaging_available: bool
+    created_at: datetime
 
 
 class TrialReportRequest(ApiSchema):

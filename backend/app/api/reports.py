@@ -10,7 +10,7 @@ from typing import Any
 from urllib.parse import quote
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import StreamingResponse
 from pydantic import ValidationError
 from sqlalchemy import or_, select
@@ -25,13 +25,14 @@ from app.enums.status import (
     ReportPushStatus,
     UserRole,
 )
-from app.models.tables import InspectionReport, Project, ReportPushLog, TrialDetectionResult
+from app.models.tables import InspectionReport, Project, QuickDetectionPhoto, ReportPushLog, TrialDetectionResult
 from app.schemas.phase7 import (
     ReportDetailRead,
     ReportListItem,
     TrialGenerateRequest,
     TrialGeneratedResult,
     TrialReportRequest,
+    TrialUploadedPhotoRead,
 )
 from app.schemas.projects import DeleteResponse
 from app.services.docx_report import build_report_docx
@@ -42,8 +43,11 @@ from app.services.report_data import build_report_data
 router = APIRouter(tags=["reports"])
 
 DOCX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-TRIAL_RESULT_TITLE = "AI检测体验结果"
-TRIAL_RESULT_SOURCE_NAME = "AI检测体验"
+TRIAL_RESULT_TITLE = "简易AI检测结果"
+TRIAL_RESULT_SOURCE_NAME = "简易AI检测"
+TRIAL_RESULT_ARCHIVE_ADDRESS = "简易检测归档"
+TRIAL_RESULT_CLIENT_NAME = "平台用户"
+TRIAL_MODEL_VERSION = "quick-detection-standard"
 TRIAL_MODEL_TO_DEFECT_TYPE = {
     "裂缝": "crack",
     "开裂": "crack",
@@ -227,6 +231,7 @@ def _trial_archive_data(
     photos: list[dict[str, Any]],
     findings: list[dict[str, Any]],
 ) -> dict[str, Any]:
+    photo_by_id = {str(photo.get("id")): photo for photo in photos if photo.get("id")}
     photo_by_name = {photo.get("original_filename"): photo for photo in photos}
     defects: list[dict[str, Any]] = []
     defect_summary: dict[str, int] = {}
@@ -236,7 +241,7 @@ def _trial_archive_data(
         defect_type = _trial_model_to_defect_type(model)
         defect_summary[defect_type] = defect_summary.get(defect_type, 0) + 1
         filename = finding.get("filename")
-        photo = photo_by_name.get(filename)
+        photo = photo_by_id.get(str(finding.get("photo_id"))) or photo_by_name.get(filename)
         defects.append(
             {
                 "id": str(uuid4()),
@@ -248,8 +253,8 @@ def _trial_archive_data(
                 "model": model,
                 "bbox_json": {},
                 "status": "generated",
-                "model_version": "trial-standard",
-                "review_note": "AI检测体验自动生成，未进入人工审核。",
+                "model_version": TRIAL_MODEL_VERSION,
+                "review_note": "简易AI检测自动生成，未进入人工审核。",
             }
         )
 
@@ -258,7 +263,7 @@ def _trial_archive_data(
         "project": {
             "project_no": result_no,
             "name": TRIAL_RESULT_SOURCE_NAME,
-            "client_name": "体验用户",
+            "client_name": TRIAL_RESULT_CLIENT_NAME,
             "created_at": generated_at.isoformat(),
         },
         "summary": {
@@ -275,11 +280,11 @@ def _trial_archive_data(
         "detection_config": {
             "model_types": models,
             "high_precision": False,
-            "config_json": {"source": "trial_experience"},
+            "config_json": {"source": "quick_detection"},
         },
         "detection_task": {
             "task_no": result_no,
-            "model_version": "trial-standard",
+            "model_version": TRIAL_MODEL_VERSION,
             "finished_at": generated_at.isoformat(),
         },
         "photos": photos,
@@ -330,7 +335,7 @@ def _trial_list_item(result: TrialDetectionResult) -> ReportListItem:
         status=result.status,
         project_name=project_snapshot.get("name") or TRIAL_RESULT_SOURCE_NAME,
         client_name=project_snapshot.get("client_name"),
-        address="体验归档",
+        address=TRIAL_RESULT_ARCHIVE_ADDRESS,
         total_defects=int(summary.get("total_review_results") or result.finding_count or 0),
         generated_at=result.generated_at,
         pushed_at=None,
@@ -402,6 +407,14 @@ def _remove_trial_photo_objects(result: TrialDetectionResult) -> None:
         object_key = photo.get("storage_object_key")
         if bucket and object_key:
             remove_object(bucket, object_key)
+
+
+def _delete_quick_detection_photos_for_result(db: Session, result_id: UUID) -> None:
+    photos = db.scalars(
+        select(QuickDetectionPhoto).where(QuickDetectionPhoto.generated_result_id == result_id)
+    ).all()
+    for photo in photos:
+        db.delete(photo)
 
 
 @router.get("/reports", response_model=list[ReportListItem])
@@ -483,31 +496,100 @@ def _trial_file_entries(uploaded_files: list[UploadFile]) -> list[dict[str, Any]
     return file_entries
 
 
+async def _trial_form_payload_and_files(request: Request) -> tuple[str, list[UploadFile]]:
+    form = await request.form()
+    payload = str(form.get("payload") or "{}")
+    uploaded_files = [
+        value
+        for key, value in form.multi_items()
+        if key == "files" and hasattr(value, "file") and hasattr(value, "filename")
+    ]
+    return payload, uploaded_files
+
+
+async def _trial_payload_from_json_request(request: Request) -> dict[str, Any]:
+    try:
+        payload_data = await request.json()
+    except JSONDecodeError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid trial payload JSON.") from exc
+    if not isinstance(payload_data, dict):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid trial payload.")
+    return payload_data
+
+
+def _is_multipart_request(request: Request) -> bool:
+    return "multipart/form-data" in (request.headers.get("content-type") or "").lower()
+
+
+def _trial_generate_request_from_payload(payload_data: dict[str, Any]) -> TrialGenerateRequest:
+    try:
+        return TrialGenerateRequest.model_validate(payload_data)
+    except ValidationError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=exc.errors()) from exc
+
+
+def _trial_report_request_from_payload(payload_data: dict[str, Any]) -> TrialReportRequest:
+    try:
+        return TrialReportRequest.model_validate(payload_data)
+    except ValidationError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=exc.errors()) from exc
+
+
 def _trial_generate_request_from_form(payload: str, uploaded_files: list[UploadFile]) -> tuple[TrialGenerateRequest, list[dict[str, Any]]]:
     payload_data = _trial_payload_from_form(payload)
     file_entries = _trial_file_entries(uploaded_files)
-    try:
-        request = TrialGenerateRequest.model_validate(payload_data)
-    except ValidationError as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=exc.errors()) from exc
-    return request, file_entries
+    return _trial_generate_request_from_payload(payload_data), file_entries
 
 
 def _trial_request_from_form(payload: str, uploaded_files: list[UploadFile]) -> tuple[TrialReportRequest, list[dict[str, Any]]]:
     payload_data = _trial_payload_from_form(payload)
     file_entries = _trial_file_entries(uploaded_files)
     payload_data["files"] = file_entries
-    try:
-        request = TrialReportRequest.model_validate(payload_data)
-    except ValidationError as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=exc.errors()) from exc
-    return request, file_entries
+    return _trial_report_request_from_payload(payload_data), file_entries
 
 
-def _trial_findings_for_files(file_entries: list[dict[str, Any]], models: list[str]) -> list[dict[str, str]]:
+def _quick_detection_photos_for_user(
+    db: Session,
+    current_user: AuthenticatedUser,
+    photo_ids: list[UUID],
+) -> list[QuickDetectionPhoto]:
+    if not photo_ids:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="请先上传照片。")
+    if len(photo_ids) > TRIAL_MAX_FILE_COUNT:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"单次最多上传 {TRIAL_MAX_FILE_COUNT} 张照片。",
+        )
+
+    unique_photo_ids = list(dict.fromkeys(photo_ids))
+    photos = db.scalars(
+        select(QuickDetectionPhoto).where(
+            QuickDetectionPhoto.id.in_(unique_photo_ids),
+            QuickDetectionPhoto.uploaded_by == current_user.id,
+        )
+    ).all()
+    photo_by_id = {photo.id: photo for photo in photos}
+    if len(photo_by_id) != len(unique_photo_ids):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Uploaded photo not found.")
+    return [photo_by_id[photo_id] for photo_id in photo_ids]
+
+
+def _trial_file_entries_for_quick_photos(photos: list[QuickDetectionPhoto]) -> list[dict[str, Any]]:
+    return [
+        {
+            "photo_id": photo.id,
+            "filename": photo.original_filename,
+            "size": photo.file_size,
+        }
+        for photo in photos
+    ]
+
+
+def _trial_findings_for_files(file_entries: list[dict[str, Any]], models: list[str]) -> list[dict[str, Any]]:
     selected_models = [model for model in models if model] or TRIAL_DEFAULT_MODELS
     return [
         {
+            "photo_id": entry.get("photo_id"),
             "filename": str(entry["filename"]),
             "model": selected_models[index % len(selected_models)],
         }
@@ -545,13 +627,24 @@ def _stored_trial_photos(result_id: UUID, uploaded_files: list[UploadFile], file
     return stored_photos
 
 
-@router.post("/trial/generate", response_model=TrialGeneratedResult)
-def generate_trial_result(
-    payload: str = Form("{}"),
-    files: list[UploadFile] = File(...),
-    _current_user: AuthenticatedUser = Depends(get_current_user),
-) -> TrialGeneratedResult:
-    trial_request, file_entries = _trial_generate_request_from_form(payload, files)
+def _stored_quick_detection_photos(photos: list[QuickDetectionPhoto]) -> list[dict[str, Any]]:
+    return [
+        {
+            "id": str(photo.id),
+            "original_filename": photo.original_filename,
+            "file_size": photo.file_size,
+            "mime_type": photo.mime_type,
+            "photo_type": "quick_detection",
+            "metadata_json": photo.metadata_json,
+            "thermal_imaging_available": photo.thermal_imaging_available,
+            "storage_bucket": photo.storage_bucket,
+            "storage_object_key": photo.storage_object_key,
+        }
+        for photo in photos
+    ]
+
+
+def _trial_generated_result(trial_request: TrialGenerateRequest, file_entries: list[dict[str, Any]]) -> TrialGeneratedResult:
     models = [model for model in trial_request.models if model] or TRIAL_DEFAULT_MODELS
     return TrialGeneratedResult(
         report_name=trial_request.report_name,
@@ -562,19 +655,104 @@ def generate_trial_result(
     )
 
 
+@router.post("/trial/photos", response_model=TrialUploadedPhotoRead, status_code=status.HTTP_201_CREATED)
+def upload_trial_photo(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: AuthenticatedUser = Depends(get_current_user),
+) -> TrialUploadedPhotoRead:
+    file_entry = _trial_file_entries([file])[0]
+    photo_id = uuid4()
+    suffix = Path(file.filename or "").suffix.lower()
+    object_key = f"quick-detection/{current_user.id}/photos/{photo_id}{suffix or '.bin'}"
+    metadata = extract_photo_metadata(file.file)
+    bucket = put_object(
+        object_key=object_key,
+        data=file.file,
+        length=int(file_entry["size"]),
+        content_type=file.content_type,
+    )
+    photo = QuickDetectionPhoto(
+        id=photo_id,
+        original_filename=str(file_entry["filename"]),
+        file_size=int(file_entry["size"]),
+        mime_type=file.content_type,
+        storage_bucket=bucket,
+        storage_object_key=object_key,
+        metadata_json=metadata,
+        thermal_imaging_available=metadata["thermal_imaging_available"],
+        uploaded_by=current_user.id,
+    )
+    db.add(photo)
+    db.commit()
+    db.refresh(photo)
+    return TrialUploadedPhotoRead.model_validate(photo)
+
+
+@router.delete("/trial/photos/{photo_id}", response_model=DeleteResponse)
+def delete_trial_photo(
+    photo_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: AuthenticatedUser = Depends(get_current_user),
+) -> DeleteResponse:
+    photo = db.scalar(
+        select(QuickDetectionPhoto).where(
+            QuickDetectionPhoto.id == photo_id,
+            QuickDetectionPhoto.uploaded_by == current_user.id,
+        )
+    )
+    if photo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Uploaded photo not found.")
+    if photo.generated_result_id is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="已归档的照片不能删除。")
+    remove_object(photo.storage_bucket, photo.storage_object_key)
+    db.delete(photo)
+    db.commit()
+    return DeleteResponse()
+
+
+@router.post("/trial/generate", response_model=TrialGeneratedResult, response_model_exclude_none=True)
+async def generate_trial_result(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: AuthenticatedUser = Depends(get_current_user),
+) -> TrialGeneratedResult:
+    if _is_multipart_request(request):
+        payload, files = await _trial_form_payload_and_files(request)
+        trial_request, file_entries = _trial_generate_request_from_form(payload, files)
+        return _trial_generated_result(trial_request, file_entries)
+
+    trial_request = _trial_generate_request_from_payload(await _trial_payload_from_json_request(request))
+    photos = _quick_detection_photos_for_user(db, current_user, trial_request.photo_ids)
+    return _trial_generated_result(trial_request, _trial_file_entries_for_quick_photos(photos))
+
+
 @router.post("/trial/results", response_model=ReportDetailRead, status_code=status.HTTP_201_CREATED)
-def create_trial_result(
-    payload: str = Form(...),
-    files: list[UploadFile] = File(...),
+async def create_trial_result(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> ReportDetailRead:
-    trial_request, file_entries = _trial_request_from_form(payload, files)
+    if _is_multipart_request(request):
+        payload, files = await _trial_form_payload_and_files(request)
+        trial_request, file_entries = _trial_request_from_form(payload, files)
+        stored_photos_source = None
+    else:
+        trial_request = _trial_report_request_from_payload(await _trial_payload_from_json_request(request))
+        photo_ids = [file.photo_id for file in trial_request.files if file.photo_id is not None]
+        photos = _quick_detection_photos_for_user(db, current_user, photo_ids)
+        file_entries = _trial_file_entries_for_quick_photos(photos)
+        stored_photos_source = photos
+
     result_id = uuid4()
     request_data = trial_request.model_dump()
     generated_at = _trial_generated_at(request_data["generated_at"])
     result_no = _trial_result_no()
-    stored_photos = _stored_trial_photos(result_id, files, file_entries)
+    stored_photos = (
+        _stored_quick_detection_photos(stored_photos_source)
+        if stored_photos_source is not None
+        else _stored_trial_photos(result_id, files, file_entries)
+    )
     report_title = _trial_report_title(request_data.get("report_name"))
     archive_data = _trial_archive_data(
         result_no=result_no,
@@ -598,6 +776,9 @@ def create_trial_result(
         generated_at=generated_at,
     )
     db.add(result)
+    if stored_photos_source is not None:
+        for photo in stored_photos_source:
+            photo.generated_result_id = result_id
     db.commit()
     db.refresh(result)
     return _trial_detail_item(result)
@@ -679,6 +860,7 @@ def delete_report(
             raise
         trial_result = _get_trial_result_or_404(db, report_id, current_user=current_user)
         _remove_trial_photo_objects(trial_result)
+        _delete_quick_detection_photos_for_result(db, trial_result.id)
         db.delete(trial_result)
         db.commit()
         return DeleteResponse()

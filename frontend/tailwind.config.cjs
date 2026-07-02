@@ -16,6 +16,8 @@ module.exports = {
       },
       fontFamily: {
         sans: [
+          "HarmonyOS Sans",
+          "HarmonyOS Sans SC",
           "Microsoft YaHei",
           "PingFang SC",
           "Hiragino Sans GB",

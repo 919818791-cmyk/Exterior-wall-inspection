@@ -15,8 +15,12 @@ interface AuthState {
   clearSession: () => void;
 }
 
+function getInitialAuthStatus(): AuthStatus {
+  return getAuthToken() ? "loading" : "anonymous";
+}
+
 export const useAuthStore = create<AuthState>((set, get) => ({
-  status: "loading",
+  status: getInitialAuthStatus(),
   user: null,
   restoring: false,
   restoreSession: async () => {

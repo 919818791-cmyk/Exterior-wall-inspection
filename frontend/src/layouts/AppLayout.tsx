@@ -1,6 +1,7 @@
 import { ChevronDown, KeyRound, LogOut, UserRound } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 
 import { logout } from "@/api/auth";
 import { AuthModal } from "@/components/auth/AuthModal";
@@ -8,11 +9,11 @@ import { ChangePasswordModal } from "@/components/auth/ChangePasswordModal";
 import { useAuthStore } from "@/stores/useAuthStore";
 
 const defectLinks = [
-  { label: "裂缝检测", to: "/capabilities/crack" },
-  { label: "剥落检测", to: "/capabilities/spalling" },
-  { label: "空鼓检测", to: "/capabilities/hollow" },
-  { label: "渗漏检测", to: "/capabilities/leakage" },
-  { label: "锈蚀检测", to: "/capabilities/corrosion" }
+  { label: "裂缝识别", to: "/capabilities/crack" },
+  { label: "剥落识别", to: "/capabilities/spalling" },
+  { label: "空鼓识别", to: "/capabilities/hollow" },
+  { label: "渗漏识别", to: "/capabilities/leakage" },
+  { label: "锈蚀识别", to: "/capabilities/corrosion" }
 ];
 
 function pageClass(pathname: string) {
@@ -34,6 +35,7 @@ function safeRedirectPath(value: string | null) {
 export function AppLayout() {
   const location = useLocation();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const user = useAuthStore((state) => state.user);
   const clearSession = useAuthStore((state) => state.clearSession);
   const [authModalOpen, setAuthModalOpen] = useState(false);
@@ -83,6 +85,7 @@ export function AppLayout() {
       await logout();
     } finally {
       clearSession();
+      queryClient.removeQueries({ queryKey: ["reports"] });
       setAccountMenuOpen(false);
       navigate("/", { replace: true });
     }
@@ -90,12 +93,14 @@ export function AppLayout() {
 
   function handlePasswordChanged() {
     clearSession();
+    queryClient.removeQueries({ queryKey: ["reports"] });
     navigate("/", { replace: true });
   }
 
   function handleAuthenticated() {
     const searchParams = new URLSearchParams(location.search);
     const redirect = safeRedirectPath(searchParams.get("redirect"));
+    queryClient.removeQueries({ queryKey: ["reports"] });
     setAuthModalOpen(false);
     if (redirect) {
       navigate(redirect, { replace: true });
@@ -105,7 +110,6 @@ export function AppLayout() {
   }
 
   const displayName = user?.real_name?.trim() || user?.username || "";
-  const roleLabel = user?.role === "admin" ? "管理员" : user?.role === "reviewer" ? "内部审核" : "客户用户";
   const avatarInitial = displayName.slice(0, 1).toLocaleUpperCase();
   const managementLinks = [
     ...(canAccessAdmin ? [{ label: "项目管理", to: "/projects" }, { label: "账号管理", to: "/accounts" }] : []),
@@ -194,13 +198,6 @@ export function AppLayout() {
               <ChevronDown aria-hidden="true" className="account-trigger-chevron" />
             </button>
             <div id="account-dropdown" className="account-dropdown" role="menu" aria-label="账户菜单">
-              <div className="account-profile">
-                <span aria-hidden="true" className="account-avatar account-avatar-large">{avatarInitial}</span>
-                <span>
-                  <strong>{displayName}</strong>
-                  <small>{roleLabel}</small>
-                </span>
-              </div>
               <div className="account-menu-actions">
                 <button type="button" role="menuitem" onClick={() => { setAccountMenuOpen(false); setChangePasswordModalOpen(true); }}>
                   <KeyRound aria-hidden="true" />修改密码

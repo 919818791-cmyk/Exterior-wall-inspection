@@ -18,6 +18,14 @@ class ChangePasswordRequest(BaseModel):
     new_password: str = Field(min_length=8, max_length=128)
 
 
+class TrialApplicationRequest(BaseModel):
+    username: str = Field(min_length=1, max_length=64)
+    password: str = Field(min_length=8, max_length=128)
+    real_name: str = Field(min_length=1, max_length=64)
+    phone: str = Field(min_length=1, max_length=32)
+    organization: str = Field(min_length=1, max_length=128)
+
+
 class AuthUserRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -71,3 +79,9 @@ class LoginResponse(BaseModel):
 
 class LogoutResponse(BaseModel):
     ok: bool = True
+
+
+class TrialApplicationResponse(BaseModel):
+    ok: bool = True
+    username: str
+    status: UserStatus = UserStatus.DISABLED

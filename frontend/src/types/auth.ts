@@ -35,3 +35,17 @@ export interface LoginResponse {
   expires_at: string;
   user: AuthUser;
 }
+
+export interface TrialApplicationPayload {
+  username: string;
+  password: string;
+  real_name: string;
+  phone: string;
+  organization: string;
+}
+
+export interface TrialApplicationResponse {
+  ok: boolean;
+  username: string;
+  status: "disabled";
+}

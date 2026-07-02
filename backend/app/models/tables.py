@@ -534,6 +534,32 @@ class TrialDetectionResult(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
 
 
+class QuickDetectionPhoto(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "quick_detection_photo"
+    __table_args__ = (
+        Index("idx_quick_detection_photo_uploaded_by", "uploaded_by"),
+        Index("idx_quick_detection_photo_result_id", "generated_result_id"),
+        Index("idx_quick_detection_photo_created_at", "created_at"),
+    )
+
+    original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    file_size: Mapped[int | None] = mapped_column(BigInteger)
+    mime_type: Mapped[str | None] = mapped_column(String(64))
+    storage_bucket: Mapped[str] = mapped_column(String(64), nullable=False)
+    storage_object_key: Mapped[str] = mapped_column(String(512), nullable=False)
+    metadata_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    thermal_imaging_available: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    uploaded_by: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("user_account.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    generated_result_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("trial_detection_result.id", ondelete="SET NULL"),
+    )
+
+
 class ReportPushLog(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "report_push_log"
     __table_args__ = (

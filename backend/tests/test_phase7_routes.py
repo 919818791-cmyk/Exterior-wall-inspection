@@ -5,8 +5,11 @@ from zipfile import ZipFile
 from fastapi.testclient import TestClient
 
 from app.api.dependencies import AuthenticatedUser, get_current_user
+from app.api.reports import list_reports
+from app.db.session import get_db
 from app.enums.status import UserRole
 from app.main import app
+from app.models.tables import QuickDetectionPhoto
 from app.schemas.phase7 import ReportListItem, TrialGeneratedResult, TrialReportRequest
 from app.services.docx_report import build_report_docx
 from app.services.photo_metadata import extract_photo_metadata_from_bytes
@@ -16,14 +19,65 @@ TRIAL_JPEG_BYTES = b"\xff\xd8\xff\xe0fake-image\xff\xd9"
 TRIAL_PNG_BYTES = b"\x89PNG\r\n\x1a\nfake-image"
 
 
-def _trial_customer() -> AuthenticatedUser:
+class EmptyReportRows:
+    def all(self) -> list[object]:
+        return []
+
+
+class EmptyReportScalars:
+    def __iter__(self):
+        return iter([])
+
+
+class CapturingReportDb:
+    def __init__(self) -> None:
+        self.statements: list[object] = []
+
+    def execute(self, statement: object) -> EmptyReportRows:
+        self.statements.append(statement)
+        return EmptyReportRows()
+
+    def scalars(self, statement: object) -> EmptyReportScalars:
+        self.statements.append(statement)
+        return EmptyReportScalars()
+
+
+class UploadedPhotoScalars:
+    def __init__(self, photos: list[QuickDetectionPhoto]) -> None:
+        self.photos = photos
+
+    def all(self) -> list[QuickDetectionPhoto]:
+        return self.photos
+
+
+class UploadedPhotoDb:
+    def __init__(self, photos: list[QuickDetectionPhoto]) -> None:
+        self.photos = photos
+
+    def scalars(self, statement: object) -> UploadedPhotoScalars:
+        return UploadedPhotoScalars(self.photos)
+
+
+def _auth_user(user_id: str, username: str, role: UserRole) -> AuthenticatedUser:
     return AuthenticatedUser(
-        id=UUID("00000000-0000-0000-0000-000000000001"),
-        username="customer",
-        real_name="演示客户",
-        role=UserRole.CUSTOMER.value,
-        organization="示例委托单位",
+        id=UUID(user_id),
+        username=username,
+        real_name=username,
+        role=role.value,
+        organization=None,
     )
+
+
+def _trial_customer() -> AuthenticatedUser:
+    return _auth_user("00000000-0000-0000-0000-000000000001", "customer", UserRole.CUSTOMER)
+
+
+def _reviewer() -> AuthenticatedUser:
+    return _auth_user("00000000-0000-0000-0000-000000000002", "reviewer", UserRole.REVIEWER)
+
+
+def _admin() -> AuthenticatedUser:
+    return _auth_user("00000000-0000-0000-0000-000000000003", "admin", UserRole.ADMIN)
 
 
 def _post_trial_generate(files: list[tuple[str, tuple[str, bytes, str]]]):
@@ -36,6 +90,20 @@ def _post_trial_generate(files: list[tuple[str, tuple[str, bytes, str]]]):
         )
     finally:
         app.dependency_overrides.clear()
+
+
+def _uploaded_photo(photo_id: UUID, *, filename: str = "quick-001.jpg") -> QuickDetectionPhoto:
+    return QuickDetectionPhoto(
+        id=photo_id,
+        original_filename=filename,
+        file_size=1200,
+        mime_type="image/jpeg",
+        storage_bucket="building-exterior",
+        storage_object_key=f"quick-detection/{photo_id}.jpg",
+        metadata_json={"thermal_imaging_available": False},
+        thermal_imaging_available=False,
+        uploaded_by=_trial_customer().id,
+    )
 
 
 def test_phase7_report_routes_are_registered() -> None:
@@ -51,6 +119,8 @@ def test_phase7_report_routes_are_registered() -> None:
     assert "/api/reports/{report_id}" in paths
     assert "/api/reports/{report_id}/push" in paths
     assert "/api/reports/{report_id}/docx" in paths
+    assert "/api/trial/photos" in paths
+    assert "/api/trial/photos/{photo_id}" in paths
     assert "/api/trial/generate" in paths
     assert "/api/trial/results" in paths
     assert "/api/trial/report/docx" not in paths
@@ -106,6 +176,27 @@ def test_report_list_item_accepts_trial_result_contract() -> None:
     assert payload.project_id is None
 
 
+def test_customer_report_list_is_limited_to_own_formal_and_trial_results() -> None:
+    fake_db = CapturingReportDb()
+
+    list_reports(db=fake_db, current_user=_trial_customer())
+
+    formal_report_query, trial_result_query = [str(statement) for statement in fake_db.statements]
+    assert "project.created_by = :created_by_1" in formal_report_query
+    assert "trial_detection_result.generated_by = :generated_by_1" in trial_result_query
+
+
+def test_reviewer_and_admin_report_list_can_include_cross_user_results() -> None:
+    for user in (_reviewer(), _admin()):
+        fake_db = CapturingReportDb()
+
+        list_reports(db=fake_db, current_user=user)
+
+        formal_report_query, trial_result_query = [str(statement) for statement in fake_db.statements]
+        assert "project.created_by =" not in formal_report_query
+        assert "trial_detection_result.generated_by =" not in trial_result_query
+
+
 def test_trial_report_request_accepts_optional_report_name() -> None:
     payload = TrialReportRequest.model_validate(
         {
@@ -149,6 +240,28 @@ def test_trial_generate_endpoint_returns_preview_payload() -> None:
     assert payload["files"] == [{"filename": "trial-001.jpg", "size": len(TRIAL_JPEG_BYTES)}]
     assert payload["findings"][0]["filename"] == "trial-001.jpg"
     assert "confidence" not in payload["findings"][0]
+
+
+def test_trial_generate_endpoint_accepts_uploaded_photo_ids() -> None:
+    photo_id = UUID("00000000-0000-0000-0000-000000000901")
+    app.dependency_overrides[get_current_user] = _trial_customer
+    app.dependency_overrides[get_db] = lambda: UploadedPhotoDb([_uploaded_photo(photo_id)])
+    try:
+        response = client.post(
+            "/api/trial/generate",
+            json={
+                "report_name": "东立面简易检测结果",
+                "models": ["裂缝"],
+                "photo_ids": [str(photo_id)],
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["files"] == [{"photo_id": str(photo_id), "filename": "quick-001.jpg", "size": 1200}]
+    assert payload["findings"] == [{"photo_id": str(photo_id), "filename": "quick-001.jpg", "model": "裂缝"}]
 
 
 def test_trial_generate_requires_login() -> None:

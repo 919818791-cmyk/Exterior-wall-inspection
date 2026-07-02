@@ -8,7 +8,7 @@ from pytest import raises
 from app.api.dependencies import AuthenticatedSession, AuthenticatedUser, get_current_session, get_current_user, require_roles
 from app.core.security import create_access_token, decode_access_token, hash_password, verify_password
 from app.db.session import get_db
-from app.enums.status import UserRole
+from app.enums.status import UserRole, UserStatus
 from app.main import app
 
 
@@ -16,6 +16,7 @@ def test_phase8_auth_routes_are_registered() -> None:
     paths = {route.path for route in app.routes}
 
     assert "/api/auth/login" in paths
+    assert "/api/auth/trial-application" in paths
     assert "/api/auth/me" in paths
     assert "/api/auth/change-password" in paths
     assert "/api/auth/logout" in paths
@@ -35,6 +36,89 @@ def test_password_and_signed_session_contract() -> None:
     assert not verify_password("wrong-password", password_hash)
     assert decode_access_token(token)["role"] == UserRole.CUSTOMER.value
     assert decode_access_token(f"{token}tampered") is None
+
+
+def test_trial_application_creates_disabled_customer_account() -> None:
+    class FakeDb:
+        def __init__(self) -> None:
+            self.created_account = None
+            self.committed = False
+
+        def scalar(self, _: object) -> None:
+            return None
+
+        def add(self, account: object) -> None:
+            self.created_account = account
+
+        def commit(self) -> None:
+            self.committed = True
+
+    fake_db = FakeDb()
+    app.dependency_overrides[get_db] = lambda: fake_db
+
+    try:
+        response = TestClient(app).post(
+            "/api/auth/trial-application",
+            json={
+                "username": "trial_user",
+                "password": "Trial123!",
+                "real_name": "试用客户",
+                "phone": "13800000000",
+                "organization": "示例单位",
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 201
+    assert response.json() == {"ok": True, "username": "trial_user", "status": "disabled"}
+    assert fake_db.committed
+    assert fake_db.created_account.username == "trial_user"
+    assert fake_db.created_account.real_name == "试用客户"
+    assert fake_db.created_account.phone == "13800000000"
+    assert fake_db.created_account.organization == "示例单位"
+    assert fake_db.created_account.role == UserRole.CUSTOMER.value
+    assert fake_db.created_account.status == UserStatus.DISABLED.value
+    assert verify_password("Trial123!", fake_db.created_account.password_hash)
+
+
+def test_disabled_account_login_reports_not_opened() -> None:
+    class FakeUser:
+        id = UUID("00000000-0000-0000-0000-000000000010")
+        username = "trial_user"
+        real_name = "试用客户"
+        role = UserRole.CUSTOMER.value
+        organization = "示例单位"
+        status = UserStatus.DISABLED.value
+        password_hash = hash_password("Trial123!")
+        last_login_at = None
+
+    class FakeDb:
+        def get(self, _model: object, _user_id: UUID) -> FakeUser:
+            return FakeUser()
+
+        def add(self, _user: object) -> None:
+            return None
+
+        def flush(self) -> None:
+            return None
+
+        def scalar(self, _: object) -> FakeUser:
+            return FakeUser()
+
+    fake_db = FakeDb()
+    app.dependency_overrides[get_db] = lambda: fake_db
+
+    try:
+        response = TestClient(app).post(
+            "/api/auth/login",
+            json={"username": "trial_user", "password": "Trial123!"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 403
+    assert response.json()["message"] == "账号尚未开通，请等待管理员审核。"
 
 
 def test_customer_is_rejected_from_review_boundary() -> None:
