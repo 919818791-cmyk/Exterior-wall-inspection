@@ -6,7 +6,25 @@
     <title>外墙巡检智能平台</title>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root"><main class="app-boot-fallback"><section><h1>外墙巡检智能平台</h1><p>页面正在加载。如果长时间没有显示内容，请刷新页面或检查浏览器是否阻止了脚本。</p></section></main></div>
+    <script>
+      (function () {
+        function showStartupError(message) {
+          var root = document.getElementById("root");
+          if (!root) return;
+          root.innerHTML = '<main class="app-startup-error" role="alert"><section><h1>页面加载失败</h1><p>前端脚本启动失败，请刷新页面；如果仍然失败，请把下面的错误信息发给维护人员。</p><pre></pre></section></main>';
+          var pre = root.querySelector("pre");
+          if (pre) pre.textContent = message || "未知脚本错误";
+        }
+        window.addEventListener("error", function (event) {
+          showStartupError(event.message || String(event.error || ""));
+        });
+        window.addEventListener("unhandledrejection", function (event) {
+          var reason = event.reason;
+          showStartupError(reason && reason.message ? reason.message : String(reason || ""));
+        });
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

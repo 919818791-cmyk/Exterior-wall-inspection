@@ -6,12 +6,13 @@ import { Link, useNavigate } from "react-router-dom";
 import { createProject } from "@/api/projects";
 import { ProjectLocationMap } from "@/components/project/ProjectLocationMap";
 import type { ProjectCreatePayload } from "@/types/projects";
+import { createClientId } from "@/utils/id";
 
 interface FacadeDraft { localId: string; name: string; area: string; floors_range: string; description: string }
 interface BuildingDraft { localId: string; name: string; floors: string; height: string; facades: FacadeDraft[] }
 interface ProjectDraft { name: string; address: string; contact_name: string; contact_phone: string; longitude: string; latitude: string; buildings: BuildingDraft[] }
-const facade = (): FacadeDraft => ({ localId: crypto.randomUUID(), name: "", area: "", floors_range: "", description: "" });
-const building = (): BuildingDraft => ({ localId: crypto.randomUUID(), name: "", floors: "", height: "", facades: [facade()] });
+const facade = (): FacadeDraft => ({ localId: createClientId("facade"), name: "", area: "", floors_range: "", description: "" });
+const building = (): BuildingDraft => ({ localId: createClientId("building"), name: "", floors: "", height: "", facades: [facade()] });
 const initialProject: ProjectDraft = { name: "", address: "", contact_name: "", contact_phone: "", longitude: "", latitude: "", buildings: [building()] };
 const cleanText = (value: string) => value.trim() || null;
 const cleanNumber = (value: string) => value.trim() ? Number(value.trim()) : null;

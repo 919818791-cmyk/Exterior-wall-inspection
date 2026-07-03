@@ -4,6 +4,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { RouterProvider } from "react-router-dom";
 
+import { AppErrorBoundary } from "@/components/AppErrorBoundary";
 import { AuthBootstrap } from "@/components/auth/AuthBootstrap";
 import { router } from "@/router";
 import "@/styles.css";
@@ -20,12 +21,14 @@ const queryClient = new QueryClient({
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <HeroUIProvider>
-      <QueryClientProvider client={queryClient}>
-        <AuthBootstrap>
-          <RouterProvider router={router} />
-        </AuthBootstrap>
-      </QueryClientProvider>
-    </HeroUIProvider>
+    <AppErrorBoundary>
+      <HeroUIProvider>
+        <QueryClientProvider client={queryClient}>
+          <AuthBootstrap>
+            <RouterProvider router={router} />
+          </AuthBootstrap>
+        </QueryClientProvider>
+      </HeroUIProvider>
+    </AppErrorBoundary>
   </React.StrictMode>
 );

@@ -12,6 +12,7 @@ import {
   type TrialUploadedPhoto
 } from "@/api/reports";
 import { readTrialPhotoMetadata, type TrialPhotoMetadata } from "@/utils/photoMetadata";
+import { createClientId } from "@/utils/id";
 
 const MODEL_OPTIONS = ["裂缝", "剥落"] as const;
 const MAX_TRIAL_PHOTO_COUNT = 20;
@@ -623,9 +624,7 @@ async function createSelectedTrialPhoto(file: File): Promise<SelectedTrialPhoto>
 }
 
 function createTrialPhotoId(file: File) {
-  const randomId = typeof crypto !== "undefined" && "randomUUID" in crypto
-    ? crypto.randomUUID()
-    : Math.random().toString(36).slice(2);
+  const randomId = createClientId("trial-photo");
   return `${file.name}-${file.size}-${file.lastModified}-${randomId}`;
 }
 

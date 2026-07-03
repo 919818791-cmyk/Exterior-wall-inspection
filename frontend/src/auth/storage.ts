@@ -1,13 +1,21 @@
 const AUTH_TOKEN_KEY = "building-exterior-access-token";
 
+function getLocalStorage() {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
 export function getAuthToken() {
-  return window.localStorage.getItem(AUTH_TOKEN_KEY);
+  return getLocalStorage()?.getItem(AUTH_TOKEN_KEY) ?? null;
 }
 
 export function setAuthToken(token: string) {
-  window.localStorage.setItem(AUTH_TOKEN_KEY, token);
+  getLocalStorage()?.setItem(AUTH_TOKEN_KEY, token);
 }
 
 export function clearAuthToken() {
-  window.localStorage.removeItem(AUTH_TOKEN_KEY);
+  getLocalStorage()?.removeItem(AUTH_TOKEN_KEY);
 }
