@@ -46,6 +46,51 @@ detect_server_names() {
   fi
 }
 
+env_value() {
+  local key="$1"
+  if [ ! -f "$ROOT_DIR/.env" ]; then
+    return 0
+  fi
+  awk -F= -v key="$key" '
+    $0 !~ /^[[:space:]]*#/ && $1 == key {
+      sub(/^[^=]*=/, "")
+      print
+      exit
+    }
+  ' "$ROOT_DIR/.env" | sed 's/^["'\'']//; s/["'\'']$//'
+}
+
+set_env_value() {
+  local key="$1"
+  local value="$2"
+  local escaped_value
+  escaped_value="$(printf '%s' "$value" | sed 's/[&/\]/\\&/g')"
+
+  if grep -qE "^${key}=" "$ROOT_DIR/.env"; then
+    sed -i "s/^${key}=.*/${key}=${escaped_value}/" "$ROOT_DIR/.env"
+  else
+    printf '\n%s=%s\n' "$key" "$value" >>"$ROOT_DIR/.env"
+  fi
+}
+
+ensure_frontend_api_base_url() {
+  local value
+  value="$(env_value VITE_API_BASE_URL)"
+
+  case "$value" in
+    ""|"http://127.0.0.1:8000/api"|"http://localhost:8000/api"|"https://127.0.0.1:8000/api"|"https://localhost:8000/api")
+      log "Setting VITE_API_BASE_URL=/api for production frontend build"
+      set_env_value VITE_API_BASE_URL "/api"
+      ;;
+    */api|/api)
+      log "Using VITE_API_BASE_URL=$value"
+      ;;
+    *)
+      log "Using custom VITE_API_BASE_URL=$value"
+      ;;
+  esac
+}
+
 cd "$ROOT_DIR"
 
 require_cmd sudo
@@ -57,13 +102,29 @@ require_cmd ip
 
 if [ ! -f "$ROOT_DIR/.env" ]; then
   if [ -f "$ROOT_DIR/.env.example" ]; then
-    log "Creating .env from .env.example. Edit it after startup to replace default secrets."
+    log "Creating .env from .env.example"
     cp "$ROOT_DIR/.env.example" "$ROOT_DIR/.env"
+    set_env_value APP_ENV "production"
+    set_env_value DEBUG "false"
+    set_env_value VITE_API_BASE_URL "/api"
+    cat >&2 <<'EOF'
+
+.env has been created with production-safe frontend defaults.
+Please edit /opt/building-exterior/.env before running this script again:
+
+- replace database, MinIO, worker and auth secrets
+- set BACKEND_CORS_ORIGINS to your domain or server IP
+- set MINIO_ENDPOINT and MINIO_PUBLIC_URL to a browser-accessible address
+
+EOF
+    exit 1
   else
     echo "Missing .env and .env.example" >&2
     exit 1
   fi
 fi
+
+ensure_frontend_api_base_url
 
 sudo_keepalive
 
