@@ -1,11 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Check,
-  Droplets,
   GitBranch,
-  Layers3,
-  ShieldAlert,
-  ThermometerSun
+  ScanSearch
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -28,32 +25,11 @@ const MODEL_OPTIONS: Array<{
     tone: "crack"
   },
   {
-    label: "剥落",
-    value: "spalling",
-    description: "饰面层脱落、局部破损",
-    Icon: Layers3,
-    tone: "spalling"
-  },
-  {
-    label: "空鼓",
-    value: "hollowing",
-    description: "疑似空鼓和附着异常",
-    Icon: ThermometerSun,
-    tone: "hollowing"
-  },
-  {
-    label: "渗漏",
-    value: "leakage",
-    description: "水渍、渗漏和潮湿痕迹",
-    Icon: Droplets,
-    tone: "leakage"
-  },
-  {
-    label: "锈蚀",
-    value: "corrosion",
-    description: "金属件锈蚀和污染痕迹",
-    Icon: ShieldAlert,
-    tone: "corrosion"
+    label: "面砖剥落",
+    value: "missing",
+    description: "面砖缺失、脱落和局部剥离",
+    Icon: ScanSearch,
+    tone: "missing"
   }
 ];
 

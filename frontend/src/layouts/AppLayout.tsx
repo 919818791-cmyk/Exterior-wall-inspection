@@ -10,10 +10,10 @@ import { useAuthStore } from "@/stores/useAuthStore";
 
 const defectLinks = [
   { label: "裂缝识别", to: "/capabilities/crack" },
-  { label: "剥落识别", to: "/capabilities/spalling" },
-  { label: "空鼓识别", to: "/capabilities/hollow" },
-  { label: "渗漏识别", to: "/capabilities/leakage" },
-  { label: "锈蚀识别", to: "/capabilities/corrosion" }
+  { label: "面砖剥落识别", to: "/capabilities/missing" },
+  { label: "潮湿识别", to: "/capabilities/moisture" },
+  { label: "锈蚀识别", to: "/capabilities/corrosion" },
+  { label: "空鼓识别", to: "/capabilities/hollow" }
 ];
 
 function pageClass(pathname: string) {
@@ -44,7 +44,7 @@ export function AppLayout() {
   const [capabilityMenuOpen, setCapabilityMenuOpen] = useState(false);
   const [managementMenuOpen, setManagementMenuOpen] = useState(false);
   const accountMenuRef = useRef<HTMLDivElement>(null);
-  const defectKey = location.pathname.match(/^\/capabilities\/(crack|spalling|hollow|leakage|corrosion)$/)?.[1];
+  const defectKey = location.pathname.match(/^\/capabilities\/(crack|missing|moisture|corrosion|hollow)$/)?.[1];
   const isCapabilityRoute = Boolean(defectKey) || location.pathname === "/trial";
   const isManagementRoute = location.pathname.startsWith("/projects") || location.pathname.startsWith("/accounts") || location.pathname.startsWith("/review");
   const canAccessAdmin = user?.role === "admin";

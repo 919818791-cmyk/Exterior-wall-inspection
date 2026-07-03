@@ -180,7 +180,9 @@
 
 .detail-hero.defect-detail-hero {
   justify-content: center;
-  min-height: 600px;
+  width: 100%;
+  height: 70svh;
+  min-height: 520px;
   background:
     linear-gradient(rgba(8, 18, 34, 0.42), rgba(8, 18, 34, 0.42)),
     var(--detail-hero-image, url("/hero-facade.png")) center / cover no-repeat;
@@ -431,11 +433,19 @@
   .defect-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .detail-hero.defect-detail-hero {
+    min-height: 420px;
+  }
 }
 
 @media (max-width: 560px) {
   .defect-grid {
     grid-template-columns: 1fr;
+  }
+
+  .detail-hero.defect-detail-hero {
+    min-height: 360px;
   }
 }
 
@@ -1629,24 +1639,19 @@ body.auth-modal-open {
   --model-icon-color: #235fb8;
 }
 
+.ai-model-card-missing {
+  --model-icon-bg: #dff5f1;
+  --model-icon-color: #2aa7a2;
+}
+
 .ai-model-card-spalling {
   --model-icon-bg: #fff0df;
   --model-icon-color: #f97316;
 }
 
-.ai-model-card-hollowing {
-  --model-icon-bg: #dff5f1;
-  --model-icon-color: #2aa7a2;
-}
-
-.ai-model-card-leakage {
+.ai-model-card-moisture {
   --model-icon-bg: #ece6ff;
   --model-icon-color: #5c47c7;
-}
-
-.ai-model-card-corrosion {
-  --model-icon-bg: #ffe8e8;
-  --model-icon-color: #c94848;
 }
 
 .ai-model-icon {
@@ -2150,7 +2155,7 @@ body.auth-modal-open {
   stroke-width: 3;
 }
 
-.trial-hollow-available-tag {
+.trial-thermal-available-tag {
   position: absolute;
   z-index: 2;
   top: 5px;
@@ -2690,12 +2695,20 @@ body.auth-modal-open {
   display: block;
 }
 
+.trial-report-description-missing {
+  color: #0f766e;
+}
+
 .trial-report-description-spalling {
   color: #f97316;
 }
 
 .trial-report-description-crack {
   color: #dc2626;
+}
+
+.trial-report-description-moisture {
+  color: #0ea5e9;
 }
 
 .trial-result-detail-page {
@@ -3045,4 +3058,238 @@ a {
   font: inherit;
   font-weight: 800;
   cursor: pointer;
+}
+
+@media (min-width: 3000px) {
+  .site-header {
+    height: 84px;
+    padding-right: max(96px, calc((100vw - 1760px) / 2));
+    padding-left: max(96px, calc((100vw - 1760px) / 2));
+  }
+
+  .brand-name {
+    font-size: 22px;
+  }
+
+  .main-nav {
+    gap: clamp(42px, 3vw, 84px);
+    font-size: 17px;
+  }
+
+  .main-nav > a,
+  .nav-menu,
+  .nav-menu-trigger {
+    height: 84px;
+  }
+
+  .hero {
+    min-height: min(calc(100svh - 84px), 980px);
+    padding: 104px max(96px, calc((100vw - 1760px) / 2)) 92px;
+    background:
+      linear-gradient(90deg, rgba(247, 251, 255, 0.98) 0%, rgba(247, 251, 255, 0.92) 34%, rgba(247, 251, 255, 0.42) 62%, rgba(247, 251, 255, 0) 86%),
+      url("/hero-facade.png") right center / min(100vw, 2800px) auto no-repeat;
+  }
+
+  .hero-copy,
+  .hero h1 {
+    max-width: 920px;
+  }
+
+  .hero h1 {
+    font-size: clamp(58px, 2.1vw, 76px);
+  }
+
+  .hero-description {
+    width: min(100%, 760px);
+    font-size: 22px;
+  }
+
+  .hero-actions .button {
+    min-height: 58px;
+    padding: 0 24px;
+    font-size: 18px;
+  }
+
+  .section {
+    padding: 108px max(96px, calc((100vw - 1760px) / 2)) 42px;
+  }
+
+  #ai {
+    padding-top: 108px;
+  }
+
+  .section-heading h2 {
+    font-size: 48px;
+  }
+
+  .section-heading p {
+    font-size: 22px;
+    line-height: 1.74;
+  }
+
+  .section-subtitle-line {
+    display: inline;
+  }
+
+  .section-subtitle-line + .section-subtitle-line::before {
+    content: "";
+  }
+
+  .defect-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-auto-rows: 500px;
+    gap: 26px;
+    max-width: 2180px;
+  }
+
+  .defect-card {
+    width: 100%;
+    height: 500px;
+    aspect-ratio: auto;
+  }
+
+  .defect-card h3 {
+    font-size: 30px;
+  }
+
+  .defect-detail-link {
+    font-size: 17px;
+  }
+
+  .capability-grid,
+  .trial-card,
+  .detail-intro,
+  .detail-deliverable,
+  .detail-section-inner,
+  .recommendation-example {
+    max-width: 1520px;
+  }
+
+  .capability-grid {
+    gap: 30px;
+  }
+
+  .capability-card {
+    grid-template-columns: 92px 1fr;
+    gap: 24px;
+    min-height: 220px;
+    padding: 32px 34px 24px;
+  }
+
+  .capability-card .feature-icon,
+  .feature-icon.feature-icon-image,
+  .feature-icon-image img {
+    width: 92px;
+    height: 92px;
+  }
+
+  .capability-card .feature-icon svg {
+    width: 48px;
+    height: 48px;
+  }
+
+  .capability-card h3 {
+    font-size: 25px;
+  }
+
+  .capability-card p {
+    font-size: 17px;
+    line-height: 1.78;
+  }
+
+  .trial-section {
+    padding: 76px max(96px, calc((100vw - 1760px) / 2)) 104px;
+  }
+
+  .trial-card {
+    min-height: 380px;
+    padding: 64px;
+  }
+
+  .trial-copy h2 {
+    font-size: 46px;
+  }
+
+  .trial-copy p {
+    font-size: 20px;
+  }
+
+  .detail-hero {
+    min-height: 520px;
+    padding: 76px max(96px, calc((100vw - 1760px) / 2));
+  }
+
+  .detail-hero h1 {
+    font-size: clamp(58px, 2.2vw, 76px);
+  }
+
+  .detail-hero p {
+    max-width: 780px;
+    font-size: 22px;
+  }
+
+  .detail-hero.defect-detail-hero {
+    height: 70svh;
+    min-height: 720px;
+    background:
+      linear-gradient(rgba(8, 18, 34, 0.48), rgba(8, 18, 34, 0.48)),
+      var(--detail-hero-image, url("/hero-facade.png")) center / cover no-repeat;
+  }
+
+  .detail-hero.defect-detail-hero h1 {
+    font-size: 66px;
+  }
+
+  .recommendation-hero {
+    background:
+      linear-gradient(90deg, rgba(247, 251, 255, 0.98) 0%, rgba(247, 251, 255, 0.92) 38%, rgba(247, 251, 255, 0.34) 70%, rgba(247, 251, 255, 0.03) 92%),
+      url("/hero-facade.png") right center / min(100vw, 2800px) auto no-repeat;
+  }
+
+  .detail-section,
+  .detail-process-band {
+    padding: 108px max(96px, calc((100vw - 1760px) / 2));
+  }
+
+  .detail-intro,
+  .detail-deliverable,
+  .recommendation-example {
+    gap: clamp(72px, 5vw, 140px);
+  }
+
+  .detail-section h2,
+  .detail-process-band h2,
+  .recommendation-copy h2 {
+    font-size: 48px;
+  }
+
+  .detail-lead {
+    font-size: 20px;
+  }
+
+  .detail-facts span {
+    font-size: 14px;
+  }
+
+  .detail-facts strong {
+    font-size: 20px;
+  }
+
+  .detail-process-grid article {
+    min-height: 250px;
+  }
+
+  .detail-process-grid h3 {
+    font-size: 24px;
+  }
+
+  .detail-process-grid p,
+  .detail-check-list li,
+  .schedule-row {
+    font-size: 17px;
+  }
+
+  .schedule-panel-head {
+    font-size: 14px;
+  }
 }

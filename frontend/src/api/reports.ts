@@ -59,6 +59,16 @@ export interface TrialReportPayload {
     photo_id?: string;
     filename: string;
     model: string;
+    confidence?: number | null;
+    bbox?: {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    } | null;
+    image_width?: number | null;
+    image_height?: number | null;
+    detection_id?: string | null;
   }>;
 }
 

@@ -1,0 +1,36 @@
+# Algorithm Model Container
+
+This container is the production-side PyTorch / CUDA / Ultralytics runtime
+boundary. It intentionally does not hold backend worker credentials and should
+only be reachable from the Docker internal network.
+
+Default GPU build uses the PyTorch CUDA 12.6 wheel index:
+
+```bash
+docker compose --profile algorithm-gpu build algorithm-model
+docker compose --profile algorithm-gpu run --rm algorithm-model python verify_environment.py
+```
+
+Place the current trial weights under:
+
+```text
+models/wall_crack_yolo11x.pt
+models/missing.pt
+```
+
+Or update `CRACK_MODEL_WEIGHTS_PATH` and `MISSING_MODEL_WEIGHTS_PATH` in `.env`.
+
+For CPU-only validation, set:
+
+```bash
+PYTORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
+MODEL_DEVICE=cpu
+```
+
+The service exposes `/health`, `/ready`, `/metadata`, and `/predict`.
+`/predict` accepts one uploaded image and returns detections normalized to:
+
+| Type | Label |
+| --- | --- |
+| `crack` | 裂缝 |
+| `missing` | 面砖剥落 |

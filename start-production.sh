@@ -73,6 +73,22 @@ set_env_value() {
   fi
 }
 
+wait_for_http() {
+  local url="$1"
+  local label="$2"
+  local attempt
+
+  for attempt in $(seq 1 30); do
+    if curl --noproxy '*' -fsS "$url" >/dev/null; then
+      return 0
+    fi
+    sleep 1
+  done
+
+  echo "Health check failed for $label: $url" >&2
+  return 1
+}
+
 ensure_frontend_api_base_url() {
   local value
   value="$(env_value VITE_API_BASE_URL)"
@@ -207,12 +223,12 @@ if command -v ufw >/dev/null 2>&1 && sudo ufw status | grep -q '^Status: active'
 fi
 
 log "Health checks"
-curl --noproxy '*' -fsS http://127.0.0.1:8000/api/health >/dev/null
-curl --noproxy '*' -fsS http://127.0.0.1/api/health >/dev/null
+wait_for_http http://127.0.0.1:8000/api/health "backend"
+wait_for_http http://127.0.0.1/api/health "nginx"
 
 FIRST_IP="$(printf '%s\n' $SERVER_NAMES | grep -Ev '^_$' | head -1 || true)"
 if [ -n "$FIRST_IP" ]; then
-  curl --noproxy '*' -fsS "http://$FIRST_IP/api/health" >/dev/null
+  wait_for_http "http://$FIRST_IP/api/health" "server IP"
   log "Startup complete: http://$FIRST_IP/"
 else
   log "Startup complete: http://127.0.0.1/"

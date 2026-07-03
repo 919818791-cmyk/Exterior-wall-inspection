@@ -1466,20 +1466,24 @@ body.auth-modal-open {
   --detail-hero-image: url("/images/defects/crack.jpg");
 }
 
+.detail-page[data-defect="missing"] {
+  --detail-hero-image: url("/images/defects/spalling.png");
+}
+
 .detail-page[data-defect="spalling"] {
   --detail-hero-image: url("/images/defects/spalling.png");
 }
 
-.detail-page[data-defect="hollow"] {
-  --detail-hero-image: url("/images/defects/hollow.JPG");
-}
-
-.detail-page[data-defect="leakage"] {
+.detail-page[data-defect="moisture"] {
   --detail-hero-image: url("/images/defects/leakage.jpg");
 }
 
 .detail-page[data-defect="corrosion"] {
   --detail-hero-image: url("/images/defects/corrosion.jpg");
+}
+
+.detail-page[data-defect="hollow"] {
+  --detail-hero-image: url("/images/defects/hollow.JPG");
 }
 
 .detail-hero {

@@ -49,10 +49,9 @@ class AiResultStatus(StrEnum):
 
 class DefectType(StrEnum):
     CRACK = "crack"
+    MISSING = "missing"
     SPALLING = "spalling"
-    HOLLOWING = "hollowing"
-    LEAKAGE = "leakage"
-    CORROSION = "corrosion"
+    MOISTURE = "moisture"
 
 
 class PhotoType(StrEnum):

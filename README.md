@@ -40,14 +40,49 @@ MinIO 默认账号密码来自 `.env.example`：
 - Access Key：`building_exterior_minio`
 - Secret Key：`building_exterior_minio_secret`
 
-## 算法模型部署口径
+## 简易 AI 体验模型状态
 
-当前开发测试环境不部署真实算法模型，第 5 阶段只会接入检测任务 API、模拟 Worker 和固定 JSON 回传。
+当前先跑通 `/trial` 简易检测体验，不依赖项目管理、审核工作台或正式检测任务流。
 
-正式环境中，系统前端、后端和算法模型会部署在同一台服务器。Worker 跟随算法模型部署，作为算法侧任务适配程序；建议 Worker 和模型拆成两个 Docker 容器：
+已接入两个 YOLO 权重：
 
-- `algorithm-worker`：跟随算法模型部署，拉取任务、下载图片、调用模型、回传结果。
-- `algorithm-model`：只提供内部推理接口，不直接访问数据库，不持有 Worker Token，默认不映射公网端口。
+| 模型 | 系统类型 | 中文 |
+| --- | --- | --- |
+| `models/wall_crack_yolo11x.pt` | `crack` | 裂缝 |
+| `models/missing.pt` | `missing` | 面砖剥落 |
+
+模型服务由 `algorithm-model` 容器提供，宿主机访问地址为：
+
+```bash
+curl http://localhost:9004/ready
+```
+
+期望返回 `ready: true`，并且 `crack`、`missing` 的 `weights_exists` 为 `true`。当前机器没有可用 NVIDIA Docker runtime 时，可用 CPU 方式启动模型容器：
+
+```bash
+sudo docker rm -f building-exterior-algorithm-model 2>/dev/null || true
+sudo docker run -d \
+  --name building-exterior-algorithm-model \
+  --restart unless-stopped \
+  -p 9004:9002 \
+  -e MODEL_DEVICE=cpu \
+  -e MODEL_VERSION=trial-crack-missing-v1 \
+  -e CRACK_MODEL_WEIGHTS_PATH=/models/wall_crack_yolo11x.pt \
+  -e MISSING_MODEL_WEIGHTS_PATH=/models/missing.pt \
+  -v /opt/Exterior-wall-inspection/models:/models:ro \
+  building-exterior-algorithm-model:cuda
+```
+
+后端通过 `.env` 中的以下配置调用模型服务：
+
+```env
+TRIAL_ALGORITHM_INFERENCE_URL=http://localhost:9004
+TRIAL_INFERENCE_REQUIRED=true
+```
+
+`TRIAL_INFERENCE_REQUIRED=true` 表示模型服务不可用时 `/api/trial/generate` 直接报错，不再降级为模拟结果。
+
+项目检测任务流仍保留 `algorithm-worker` 适配层，但当前验收优先级是简易体验入口。
 
 ## 3. 启动后端
 

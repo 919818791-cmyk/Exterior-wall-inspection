@@ -10,21 +10,15 @@ const details = {
     facts: [["识别对象", "线状裂缝、网状裂缝、分叉裂缝"], ["重点结果", "位置、长度、走向、置信度"]],
     image: "/images/defects/crack.jpg"
   },
-  spalling: {
-    title: "剥落识别", summary: "识别饰面层、涂层及保护层的剥落区域，提取边界与面积信息，辅助判断潜在脱落风险。",
-    intro: "识别剥落边界与潜在脱落区域", lead: "系统从外墙纹理、颜色和边缘变化中识别异常区域，将零散剥落与连续剥落分别标注，便于制定维修优先级。",
-    facts: [["识别对象", "饰面层、涂层、保护层剥落"], ["重点结果", "边界、面积、位置、风险提示"]],
+  missing: {
+    title: "面砖剥落识别", summary: "识别外墙面砖脱落、缺失及局部剥离区域，记录边界和位置，为维修排查提供依据。",
+    intro: "识别面砖脱落与缺失区域", lead: "系统从外墙纹理、颜色和边缘变化中定位面砖缺失、局部脱落和连续剥离区域，帮助工程师快速安排复核与修补。",
+    facts: [["识别对象", "面砖脱落、缺失、局部剥离"], ["重点结果", "边界、位置、范围、置信度"]],
     image: "/images/defects/spalling.png"
   },
-  hollow: {
-    title: "空鼓识别", summary: "结合红外热成像与可见光巡检影像，识别温差异常及疑似空鼓区域，为现场敲击复核和维修排查提供位置参考。",
-    intro: "从热异常中筛查疑似空鼓区域", lead: "系统对立面红外影像进行温度分布分析，并结合构造边界与可见光影像排除明显干扰，输出需要优先复核的疑似空鼓区域。",
-    facts: [["识别对象", "温差异常与疑似空鼓区域"], ["重点结果", "异常位置、范围、温差与复核建议"]],
-    image: "/images/defects/hollow.JPG"
-  },
-  leakage: {
-    title: "渗漏识别", summary: "识别水渍、泛碱、潮湿痕迹及连续污染带，定位疑似渗漏区域并记录其在外墙立面上的分布。",
-    intro: "定位水渍、泛碱与潮湿异常", lead: "系统分析外墙颜色、纹理与水迹形态，区分局部污染和疑似渗漏痕迹，帮助工程师快速锁定需要排查的节点。",
+  moisture: {
+    title: "潮湿识别", summary: "识别水渍、泛碱、潮湿痕迹及连续污染带，定位疑似潮湿区域并记录其在外墙立面上的分布。",
+    intro: "定位水渍、泛碱与潮湿异常", lead: "系统分析外墙颜色、纹理与水迹形态，区分局部污染和疑似潮湿痕迹，帮助工程师快速锁定需要排查的节点。",
     facts: [["识别对象", "水渍、泛碱、潮湿痕迹"], ["重点结果", "位置、范围、形态与关联构造"]],
     image: "/images/defects/leakage.jpg"
   },
@@ -33,8 +27,20 @@ const details = {
     intro: "识别锈斑范围与构件耐久风险", lead: "系统对金属构件和周边立面进行颜色与纹理分析，定位锈蚀区域及锈水流挂痕迹，便于持续跟踪缺陷变化。",
     facts: [["识别对象", "锈斑、锈蚀扩散、锈水痕迹"], ["重点结果", "构件位置、范围、程度与趋势"]],
     image: "/images/defects/corrosion.jpg"
+  },
+  hollow: {
+    title: "空鼓识别", summary: "结合红外热成像与可见光巡检影像，识别温差异常及疑似空鼓区域，为现场敲击复核和维修排查提供位置参考。",
+    intro: "从热异常中筛查疑似空鼓区域", lead: "系统对立面红外影像进行温度分布分析，并结合构造边界与可见光影像排除明显干扰，输出需要优先复核的疑似空鼓区域。",
+    facts: [["识别对象", "温差异常与疑似空鼓区域"], ["重点结果", "异常位置、范围、温差与复核建议"]],
+    image: "/images/defects/hollow.JPG"
   }
 } as const;
+
+const legacyDetailRoutes: Record<string, keyof typeof details> = {
+  hollowing: "hollow",
+  leakage: "moisture",
+  spalling: "missing"
+};
 
 function DefectDetail({ detail }: { detail: (typeof details)[keyof typeof details] }) {
   return <>
@@ -115,6 +121,7 @@ function TimeRecommendation() {
 export function CapabilityDetailPage() {
   const { type } = useParams();
   if (type === "time") return <TimeRecommendation />;
+  if (type && type in legacyDetailRoutes) return <Navigate replace to={`/capabilities/${legacyDetailRoutes[type]}`} />;
   if (!type || !(type in details)) return <Navigate replace to="/" />;
   return <DefectDetail detail={details[type as keyof typeof details]} />;
 }

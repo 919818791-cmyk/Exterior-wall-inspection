@@ -9,10 +9,9 @@ from zipfile import ZIP_DEFLATED, ZipFile
 
 DEFECT_LABELS = {
     "crack": "裂缝",
+    "missing": "面砖剥落",
     "spalling": "剥落",
-    "hollowing": "空鼓",
-    "leakage": "渗漏",
-    "corrosion": "锈蚀",
+    "moisture": "潮湿",
 }
 
 STATUS_LABELS = {

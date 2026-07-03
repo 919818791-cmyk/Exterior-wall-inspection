@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     worker_backend_base_url: str = "http://localhost:8000"
     worker_token: str = "change-this-worker-token"
     worker_lease_seconds: int = 600
+    trial_algorithm_inference_url: str = ""
+    trial_algorithm_inference_timeout_seconds: int = 120
+    trial_inference_required: bool = False
 
     auth_secret_key: str = "change-this-auth-secret-key-before-production"
     auth_access_token_expire_minutes: int = 480

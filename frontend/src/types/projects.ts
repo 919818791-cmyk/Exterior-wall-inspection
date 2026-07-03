@@ -5,7 +5,7 @@ export type ProjectStatus =
   | "reviewed"
   | "completed";
 
-export type DefectType = "crack" | "spalling" | "hollowing" | "leakage" | "corrosion";
+export type DefectType = "crack" | "missing" | "spalling" | "moisture";
 export type PhotoType = "visible" | "thermal" | "dji" | "other";
 export type UploadMode = "dji" | "visible" | "thermal" | "mixed";
 export type PhotoStatus = "uploaded" | "detecting" | "detected" | "failed";

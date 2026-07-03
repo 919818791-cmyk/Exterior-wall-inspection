@@ -25,10 +25,9 @@ import { saveBlobAsFile } from "@/utils/download";
 
 const DEFECT_LABELS: Record<string, string> = {
   crack: "裂缝",
+  missing: "面砖剥落",
   spalling: "剥落",
-  hollowing: "空鼓",
-  leakage: "渗漏",
-  corrosion: "锈蚀"
+  moisture: "潮湿"
 };
 
 const REVIEW_STATUS_LABELS: Record<string, string> = {
@@ -54,7 +53,7 @@ const REPORT_STATUS_TONES = {
 } as const;
 
 const TRIAL_RESULT_DESCRIPTION_LINES = [
-  { className: "trial-report-description-spalling", text: "疑似剥落: 1处" },
+  { className: "trial-report-description-missing", text: "疑似面砖剥落: 1处" },
   { className: "trial-report-description-crack", text: "疑似开裂: 1处" }
 ] as const;
 
@@ -390,7 +389,7 @@ function TrialResultDetail({ report }: { report: ReportDetail }) {
                         <div className="trial-result-photo-placeholder"><FileImage aria-hidden="true" /></div>
                       )}
                       {photo.thermal_imaging_available ? (
-                        <span className="trial-hollow-available-tag">空鼓可用</span>
+                        <span className="trial-thermal-available-tag">热成像可用</span>
                       ) : null}
                     </div>
                     <figcaption>{photo.original_filename || "未命名照片"}</figcaption>

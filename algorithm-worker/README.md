@@ -1,8 +1,18 @@
-# Mock Algorithm Worker
+# Algorithm Worker
 
 This folder is intentionally separate from the FastAPI backend. The worker is an
 algorithm-side adapter: it pulls tasks from the backend API, downloads photos
-from the provided MinIO presigned URLs, and posts fixed mock detection JSON.
+from the provided MinIO presigned URLs, and posts detection JSON.
+
+`WORKER_MODE=mock` posts fixed data for API contract tests. `WORKER_MODE=real`
+calls the private algorithm model service at `ALGORITHM_INFERENCE_URL`.
+
+Current defect type mapping:
+
+| Type | Label |
+| --- | --- |
+| `crack` | 裂缝 |
+| `missing` | 面砖剥落 |
 
 ## Local Run
 
@@ -10,7 +20,8 @@ from the provided MinIO presigned URLs, and posts fixed mock detection JSON.
 $env:WORKER_BACKEND_BASE_URL = "http://localhost:8000"
 $env:WORKER_ID = "mock-worker-local"
 $env:WORKER_TOKEN = "change-this-worker-token"
-$env:WORKER_MODEL_VERSION = "mock-facade-detector-v1"
+$env:WORKER_MODEL_VERSION = "trial-crack-missing-v1"
+$env:WORKER_MODE = "mock"
 python .\algorithm-worker\mock_worker.py
 ```
 
@@ -21,4 +32,4 @@ docker compose --profile worker run --rm algorithm-worker
 ```
 
 Use `--skip-download` only when MinIO is not available and you only want to
-exercise the API contract.
+exercise the API contract in mock mode.

@@ -10,10 +10,10 @@ import { Link } from "react-router-dom";
 
 const defects = [
   { key: "crack", title: "裂缝识别", image: "/images/defects/defect-crack-hd.png" },
-  { key: "spalling", title: "剥落识别", image: "/images/defects/defect-spalling-hd.png" },
-  { key: "hollow", title: "空鼓识别", image: "/images/defects/defect-hollow-hd.png" },
-  { key: "leakage", title: "渗漏识别", image: "/images/defects/defect-leakage-hd.png" },
-  { key: "corrosion", title: "锈蚀识别", image: "/images/defects/defect-corrosion-hd.png" }
+  { key: "missing", title: "面砖剥落识别", image: "/images/defects/defect-spalling-hd.png" },
+  { key: "moisture", title: "潮湿识别", image: "/images/defects/defect-leakage-hd.png" },
+  { key: "corrosion", title: "锈蚀识别", image: "/images/defects/defect-corrosion-hd.png" },
+  { key: "hollow", title: "空鼓识别", image: "/images/defects/defect-hollow-hd.png" }
 ];
 
 export function DashboardPage() {
@@ -41,7 +41,7 @@ export function DashboardPage() {
         <div className="section-heading">
           <h2>AI检测能力</h2>
           <p>
-            <span className="section-subtitle-line">覆盖裂缝、剥落、空鼓、渗漏、锈蚀五类高频外墙隐患，结合视觉分</span>
+            <span className="section-subtitle-line">覆盖裂缝、面砖剥落、潮湿、锈蚀、空鼓五类高频外墙隐患，结合视觉分</span>
             <span className="section-subtitle-line">析快速定位问题，让风险发现更早、复核更准</span>
           </p>
         </div>
@@ -81,7 +81,7 @@ export function DashboardPage() {
             <span className="feature-icon indigo"><ScanSearch aria-hidden="true" /></span>
             <div>
               <h3>AI缺陷识别</h3>
-              <p>基于视觉分析算法，识别裂缝、剥落、空鼓、渗漏、锈蚀等缺陷</p>
+              <p>基于视觉分析算法，识别裂缝、面砖剥落、潮湿、锈蚀、空鼓等缺陷</p>
               <a href="#ai">了解详情 <ChevronRight aria-hidden="true" /></a>
             </div>
           </article>
@@ -109,8 +109,8 @@ export function DashboardPage() {
               <figcaption><strong>裂缝识别</strong><span>裂缝位置标注</span></figcaption>
             </figure>
             <figure className="trial-detection-card trial-detection-card-secondary">
-              <img alt="空鼓识别热成像示意图" src="/images/trial/hollow-material.png" />
-              <figcaption><strong>空鼓识别</strong><span>热异常定位</span></figcaption>
+              <img alt="面砖剥落识别标注示意图" src="/images/defects/defect-spalling-hd.png" />
+              <figcaption><strong>面砖剥落识别</strong><span>剥落区域定位</span></figcaption>
             </figure>
           </div>
         </div>

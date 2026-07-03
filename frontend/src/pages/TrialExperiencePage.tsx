@@ -1,5 +1,5 @@
 import { Archive, Check, FileSearch, Home, ImageUp, RefreshCcw, Sparkles, Trash2, Undo2, X, ZoomIn } from "lucide-react";
-import { type ChangeEvent, type DragEvent, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, type ChangeEvent, type DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { ApiError } from "@/api/client";
@@ -14,7 +14,7 @@ import {
 import { readTrialPhotoMetadata, type TrialPhotoMetadata } from "@/utils/photoMetadata";
 import { createClientId } from "@/utils/id";
 
-const MODEL_OPTIONS = ["裂缝", "剥落"] as const;
+const MODEL_OPTIONS = ["裂缝", "面砖剥落"] as const;
 const MAX_TRIAL_PHOTO_COUNT = 20;
 const MAX_TRIAL_PHOTO_SIZE_BYTES = 20 * 1024 * 1024;
 const ACCEPTED_TRIAL_PHOTO_TYPES = new Set(["image/jpeg", "image/png"]);
@@ -73,13 +73,16 @@ export function TrialExperiencePage() {
         .filter((photo) => photo.uploadedPhoto)
         .map((photo) => [photo.uploadedPhoto?.id as string, photo.previewUrl])
     );
-    return generatedResult.files.map((file, index) => ({
-      filename: file.filename,
-      previewUrl: file.photo_id ? previewByPhotoId.get(file.photo_id) ?? "" : photoPreviews[index]?.previewUrl ?? "",
-      finding: generatedResult.findings[index]
-        ?? generatedResult.findings.find((item) => item.photo_id === file.photo_id)
-        ?? generatedResult.findings.find((item) => item.filename === file.filename)
-    }));
+    return generatedResult.files.map((file, index) => {
+      const findings = generatedResult.findings.filter((item) => (
+        file.photo_id ? item.photo_id === file.photo_id : item.filename === file.filename
+      ));
+      return {
+        filename: file.filename,
+        previewUrl: file.photo_id ? previewByPhotoId.get(file.photo_id) ?? "" : photoPreviews[index]?.previewUrl ?? "",
+        findings
+      };
+    });
   }, [generatedResult, photoPreviews]);
   const uploadSummary = useMemo(() => trialUploadSummary(selectedPhotos), [selectedPhotos]);
   const isUploading = selectedPhotos.some((photo) => photo.uploadStatus === "uploading");
@@ -367,7 +370,7 @@ export function TrialExperiencePage() {
                   <div className="trial-photo-grid">
                     {photoPreviews.map((photo, index) => {
                       const photoProgress = clampProgress(photo.uploadProgress);
-                      const hollowAvailable = photo.uploadStatus === "uploaded"
+                      const thermalAvailable = photo.uploadStatus === "uploaded"
                         && (photo.uploadedPhoto?.thermal_imaging_available ?? photo.metadata.thermalImagingAvailable);
                       return (
                         <figure
@@ -376,8 +379,8 @@ export function TrialExperiencePage() {
                         >
                           <div className="trial-photo-thumb-image">
                             <img alt={photo.file.name} src={photo.previewUrl} />
-                            {hollowAvailable ? (
-                              <span className="trial-hollow-available-tag">空鼓可用</span>
+                            {thermalAvailable ? (
+                              <span className="trial-thermal-available-tag">热成像可用</span>
                             ) : null}
                             {photo.uploadStatus === "uploaded" ? (
                               <span className="trial-photo-check"><Check aria-hidden="true" /></span>
@@ -551,17 +554,29 @@ export function TrialExperiencePage() {
                             <figure className="trial-annotated-photo-frame">
                               <div className="trial-annotated-photo">
                                 <img alt={`${row.filename} 检测标注`} src={row.previewUrl} />
-                                <span className={`trial-defect-box trial-defect-box-${index % 3}`} />
+                                {row.findings.slice(0, 8).map((finding, findingIndex) => (
+                                  <span
+                                    key={finding.detection_id ?? `${finding.model}-${findingIndex}`}
+                                    className={`trial-defect-box trial-defect-box-${findingIndex % 3}`}
+                                    style={trialFindingBoxStyle(finding)}
+                                  />
+                                ))}
                               </div>
                               <figcaption>{row.filename}</figcaption>
                             </figure>
                           </td>
                           <td className="trial-report-description">
-                            <p>
-                              <span className={trialFindingClass(row.finding?.model)}>
-                                疑似{row.finding?.model || "缺陷"}: 1处
-                              </span>
-                            </p>
+                            {row.findings.length ? (
+                              <p>
+                                {trialFindingSummary(row.findings).map((item) => (
+                                  <span key={item.model} className={trialFindingClass(item.model)}>
+                                    疑似{item.model}: {item.count}处
+                                  </span>
+                                ))}
+                              </p>
+                            ) : (
+                              <p><span>未检出明显缺陷</span></p>
+                            )}
                           </td>
                         </tr>
                       ))}
@@ -728,8 +743,32 @@ function trialUploadErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "上传失败，请重新上传。";
 }
 
+function trialFindingSummary(findings: TrialGeneratedResult["findings"]) {
+  const counts = new Map<string, number>();
+  findings.forEach((finding) => {
+    counts.set(finding.model, (counts.get(finding.model) ?? 0) + 1);
+  });
+  return Array.from(counts, ([model, count]) => ({ model, count }));
+}
+
+function trialFindingBoxStyle(finding: TrialGeneratedResult["findings"][number]): CSSProperties | undefined {
+  const bbox = finding.bbox;
+  const imageWidth = finding.image_width;
+  const imageHeight = finding.image_height;
+  if (!bbox || !imageWidth || !imageHeight) return undefined;
+  return {
+    left: `${(bbox.x / imageWidth) * 100}%`,
+    top: `${(bbox.y / imageHeight) * 100}%`,
+    width: `${(bbox.width / imageWidth) * 100}%`,
+    height: `${(bbox.height / imageHeight) * 100}%`,
+    right: "auto",
+    bottom: "auto"
+  };
+}
+
 function trialFindingClass(model: string | undefined) {
-  return model?.includes("剥落")
-    ? "trial-report-description-spalling"
-    : "trial-report-description-crack";
+  if (model === "面砖剥落") return "trial-report-description-missing";
+  if (model === "剥落") return "trial-report-description-spalling";
+  if (model === "潮湿") return "trial-report-description-moisture";
+  return "trial-report-description-crack";
 }

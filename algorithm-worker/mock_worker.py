@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import mimetypes
 import os
 import sys
+import uuid
 from datetime import UTC, datetime
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -18,7 +20,24 @@ def env(name: str, default: str) -> str:
 API_BASE_URL = env("WORKER_BACKEND_BASE_URL", "http://localhost:8000").rstrip("/")
 WORKER_ID = env("WORKER_ID", "mock-worker-local")
 WORKER_TOKEN = env("WORKER_TOKEN", "change-this-worker-token")
-MODEL_VERSION = env("WORKER_MODEL_VERSION", "mock-facade-detector-v1")
+MODEL_VERSION = env("WORKER_MODEL_VERSION", "trial-crack-missing-v1")
+WORKER_MODE = env("WORKER_MODE", "mock").lower()
+ALGORITHM_INFERENCE_URL = env("ALGORITHM_INFERENCE_URL", "http://algorithm-model:9002").rstrip("/")
+ALGORITHM_INFERENCE_TIMEOUT_SECONDS = int(env("ALGORITHM_INFERENCE_TIMEOUT_SECONDS", "120"))
+
+DEFECT_TYPE_NAMES = {
+    "crack": "裂缝",
+    "missing": "面砖剥落",
+}
+DEFECT_ALIASES = {
+    "crack": "crack",
+    "裂缝": "crack",
+    "开裂": "crack",
+    "missing": "missing",
+    "面砖剥落": "missing",
+    "瓷砖剥落": "missing",
+    "hollowing": "missing",
+}
 
 
 def api_url(path: str, params: dict[str, str] | None = None) -> str:
@@ -63,26 +82,127 @@ def check_health() -> None:
     print(f"Backend health: {payload}")
 
 
-def download_photo(photo: dict[str, Any], skip_download: bool) -> int:
-    if skip_download:
-        print(f"Skip download for photo {photo['photo_id']}")
-        return 0
+def normalize_defect_type(value: object) -> str:
+    text = str(value).strip()
+    return DEFECT_ALIASES.get(text) or DEFECT_ALIASES.get(text.lower()) or text
+
+
+def normalize_models(models: list[Any] | None) -> list[str]:
+    normalized: list[str] = []
+    for model in models or []:
+        defect_type = normalize_defect_type(model)
+        if defect_type in DEFECT_TYPE_NAMES and defect_type not in normalized:
+            normalized.append(defect_type)
+    return normalized or list(DEFECT_TYPE_NAMES)
+
+
+def download_photo_bytes(photo: dict[str, Any]) -> bytes:
     url = photo["download_url"]
     with urlopen(url, timeout=60) as response:
         content = response.read()
     print(f"Downloaded {len(content)} bytes for photo {photo['photo_id']}")
-    return len(content)
+    return content
+
+
+def download_photo(photo: dict[str, Any], skip_download: bool) -> int:
+    if skip_download:
+        print(f"Skip download for photo {photo['photo_id']}")
+        return 0
+    return len(download_photo_bytes(photo))
+
+
+def multipart_body(
+    fields: dict[str, str],
+    file_field: str,
+    filename: str,
+    content_type: str,
+    content: bytes,
+) -> tuple[str, bytes]:
+    boundary = f"----codex-worker-{uuid.uuid4().hex}"
+    chunks: list[bytes] = []
+    for name, value in fields.items():
+        chunks.extend(
+            [
+                f"--{boundary}\r\n".encode("utf-8"),
+                f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode("utf-8"),
+                value.encode("utf-8"),
+                b"\r\n",
+            ]
+        )
+    chunks.extend(
+        [
+            f"--{boundary}\r\n".encode("utf-8"),
+            (
+                f'Content-Disposition: form-data; name="{file_field}"; '
+                f'filename="{filename}"\r\n'
+            ).encode("utf-8"),
+            f"Content-Type: {content_type}\r\n\r\n".encode("utf-8"),
+            content,
+            b"\r\n",
+            f"--{boundary}--\r\n".encode("utf-8"),
+        ]
+    )
+    return boundary, b"".join(chunks)
+
+
+def request_inference(
+    photo: dict[str, Any],
+    content: bytes,
+    models: list[str],
+    high_precision: bool,
+) -> dict[str, Any]:
+    filename = str(photo.get("original_filename") or f"{photo['photo_id']}.jpg")
+    content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+    boundary, body = multipart_body(
+        fields={
+            "models": json.dumps(models, ensure_ascii=False),
+            "high_precision": "true" if high_precision else "false",
+        },
+        file_field="file",
+        filename=filename,
+        content_type=content_type,
+        content=content,
+    )
+    request = Request(
+        f"{ALGORITHM_INFERENCE_URL}/predict",
+        data=body,
+        method="POST",
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+    )
+    try:
+        with urlopen(request, timeout=ALGORITHM_INFERENCE_TIMEOUT_SECONDS) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except HTTPError as exc:
+        body_text = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Inference failed with {exc.code}: {body_text}") from exc
+    except URLError as exc:
+        raise RuntimeError(f"Inference request failed: {exc.reason}") from exc
+
+
+def normalize_detection(detection: dict[str, Any]) -> dict[str, Any] | None:
+    defect_type = normalize_defect_type(detection.get("type"))
+    if defect_type not in DEFECT_TYPE_NAMES:
+        print(f"Skip unsupported defect type from model: {detection.get('type')}", file=sys.stderr)
+        return None
+    bbox = detection.get("bbox")
+    if not isinstance(bbox, dict):
+        print(f"Skip detection without bbox: {detection.get('id')}", file=sys.stderr)
+        return None
+
+    return {
+        "id": detection.get("id"),
+        "type": defect_type,
+        "type_name": DEFECT_TYPE_NAMES[defect_type],
+        "confidence": detection.get("confidence"),
+        "bbox": bbox,
+        "mask": detection.get("mask"),
+        "severity": detection.get("severity"),
+        "description": detection.get("description") or f"疑似{DEFECT_TYPE_NAMES[defect_type]}。",
+    }
 
 
 def build_mock_results(task: dict[str, Any]) -> dict[str, Any]:
-    selected_model = task["models"][0] if task.get("models") else "crack"
-    type_names = {
-        "crack": "裂缝",
-        "spalling": "剥落",
-        "hollowing": "空鼓",
-        "leakage": "渗漏",
-        "corrosion": "锈蚀",
-    }
+    selected_model = normalize_models(task.get("models"))[0]
     now = datetime.now(UTC).isoformat()
     return {
         "task_id": task["task_id"],
@@ -97,7 +217,7 @@ def build_mock_results(task: dict[str, Any]) -> dict[str, Any]:
                     {
                         "id": f"mock-{index + 1}",
                         "type": selected_model,
-                        "type_name": type_names.get(selected_model, selected_model),
+                        "type_name": DEFECT_TYPE_NAMES[selected_model],
                         "confidence": 0.91,
                         "bbox": {
                             "x": 120 + index * 16,
@@ -107,12 +227,42 @@ def build_mock_results(task: dict[str, Any]) -> dict[str, Any]:
                         },
                         "mask": None,
                         "severity": "medium",
-                        "description": f"模拟 Worker 固定结果：疑似{type_names.get(selected_model, selected_model)}。",
+                        "description": f"模拟 Worker 固定结果：疑似{DEFECT_TYPE_NAMES[selected_model]}。",
                     }
                 ],
             }
             for index, photo in enumerate(task.get("photos", []))
         ],
+    }
+
+
+def build_real_results(task: dict[str, Any]) -> dict[str, Any]:
+    models = normalize_models(task.get("models"))
+    started_at = datetime.now(UTC).isoformat()
+    photo_results: list[dict[str, Any]] = []
+    for photo in task.get("photos", []):
+        content = download_photo_bytes(photo)
+        inference = request_inference(
+            photo=photo,
+            content=content,
+            models=models,
+            high_precision=bool(task.get("high_precision")),
+        )
+        detections = [
+            normalized
+            for detection in inference.get("detections", [])
+            if (normalized := normalize_detection(detection)) is not None
+        ]
+        photo_results.append({"photo_id": photo["photo_id"], "detections": detections})
+        print(f"Inference completed for photo {photo['photo_id']}: {len(detections)} detections")
+
+    return {
+        "task_id": task["task_id"],
+        "project_id": task["project_id"],
+        "model_version": MODEL_VERSION,
+        "started_at": started_at,
+        "finished_at": datetime.now(UTC).isoformat(),
+        "results": photo_results,
     }
 
 
@@ -129,13 +279,20 @@ def run_once(skip_download: bool) -> int:
 
     print(f"Claimed task {task['task_id']} with {len(task.get('photos', []))} photos")
     try:
-        for photo in task.get("photos", []):
-            download_photo(photo, skip_download)
+        if WORKER_MODE == "real":
+            if skip_download:
+                raise RuntimeError("--skip-download cannot be used with WORKER_MODE=real.")
+            payload = build_real_results(task)
+        else:
+            for photo in task.get("photos", []):
+                download_photo(photo, skip_download)
+            payload = build_mock_results(task)
+
         request_json("POST", f"/algorithm/tasks/{task['task_id']}/heartbeat", payload={})
         response = request_json(
             "POST",
             f"/algorithm/tasks/{task['task_id']}/results",
-            payload=build_mock_results(task),
+            payload=payload,
         )
         print(f"Submitted results. Task status: {response['status']}")
         return 0
@@ -145,17 +302,17 @@ def run_once(skip_download: bool) -> int:
         request_json(
             "POST",
             f"/algorithm/tasks/{task['task_id']}/failed",
-            payload={"reason": reason, "detail": {"worker_id": WORKER_ID}},
+            payload={"reason": reason, "detail": {"worker_id": WORKER_ID, "worker_mode": WORKER_MODE}},
         )
         return 1
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Mock algorithm worker for phase 5 integration.")
+    parser = argparse.ArgumentParser(description="Algorithm worker for backend task integration.")
     parser.add_argument(
         "--skip-download",
         action="store_true",
-        help="Skip MinIO photo download check and only exercise the API contract.",
+        help="Skip MinIO photo download check in WORKER_MODE=mock.",
     )
     args = parser.parse_args()
     return run_once(skip_download=args.skip_download)

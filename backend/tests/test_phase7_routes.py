@@ -1,11 +1,14 @@
+from asyncio import run
 from io import BytesIO
+from json import dumps
+from types import SimpleNamespace
 from uuid import UUID
 from zipfile import ZipFile
 
 from fastapi.testclient import TestClient
 
 from app.api.dependencies import AuthenticatedUser, get_current_user
-from app.api.reports import list_reports
+from app.api.reports import create_trial_result, list_reports
 from app.db.session import get_db
 from app.enums.status import UserRole
 from app.main import app
@@ -58,6 +61,67 @@ class UploadedPhotoDb:
         return UploadedPhotoScalars(self.photos)
 
 
+class JsonTrialRequest:
+    headers = {"content-type": "application/json"}
+
+    def __init__(self, payload: dict) -> None:
+        self.payload = payload
+
+    async def json(self) -> dict:
+        return self.payload
+
+
+class ArchivingTrialDb(UploadedPhotoDb):
+    def __init__(self, photos: list[QuickDetectionPhoto]) -> None:
+        super().__init__(photos)
+        self.added_result = None
+        self.flushed = False
+
+    def add(self, result: object) -> None:
+        self.added_result = result
+
+    def flush(self) -> None:
+        assert self.added_result is not None
+        dumps(self.added_result.report_data_json)
+        self.flushed = True
+        self.added_result.created_at = self.added_result.generated_at
+        self.added_result.updated_at = self.added_result.generated_at
+
+    def commit(self) -> None:
+        assert self.added_result is not None
+        assert self.flushed
+        dumps(self.added_result.report_data_json)
+        self.added_result.created_at = self.added_result.generated_at
+        self.added_result.updated_at = self.added_result.generated_at
+
+    def refresh(self, result: object) -> None:
+        return None
+
+
+class TrackingUploadedPhoto:
+    def __init__(self, photo_id: UUID, db: ArchivingTrialDb) -> None:
+        self.id = photo_id
+        self.original_filename = "quick-001.jpg"
+        self.file_size = 1200
+        self.mime_type = "image/jpeg"
+        self.storage_bucket = "building-exterior"
+        self.storage_object_key = f"quick-detection/{photo_id}.jpg"
+        self.metadata_json = {"thermal_imaging_available": False}
+        self.thermal_imaging_available = False
+        self.uploaded_by = _trial_customer().id
+        self._db = db
+        self._generated_result_id = None
+
+    @property
+    def generated_result_id(self):
+        return self._generated_result_id
+
+    @generated_result_id.setter
+    def generated_result_id(self, value):
+        assert self._db.flushed
+        self._generated_result_id = value
+
+
 def _auth_user(user_id: str, username: str, role: UserRole) -> AuthenticatedUser:
     return AuthenticatedUser(
         id=UUID(user_id),
@@ -85,7 +149,7 @@ def _post_trial_generate(files: list[tuple[str, tuple[str, bytes, str]]]):
     try:
         return client.post(
             "/api/trial/generate",
-            data={"payload": '{"report_name":"东立面体验结果","models":["裂缝","剥落"]}'},
+            data={"payload": '{"report_name":"东立面体验结果","models":["裂缝","面砖剥落"]}'},
             files=files,
         )
     finally:
@@ -202,7 +266,7 @@ def test_trial_report_request_accepts_optional_report_name() -> None:
         {
             "report_name": "东立面体验结果",
             "generated_at": "2026-06-30 10:00",
-            "models": ["裂缝", "剥落"],
+            "models": ["裂缝", "面砖剥落"],
             "files": [{"filename": "trial-001.jpg", "size": 1200}],
             "findings": [{"filename": "trial-001.jpg", "model": "裂缝"}],
         }
@@ -216,7 +280,7 @@ def test_trial_generated_result_can_feed_archive_contract() -> None:
         {
             "report_name": "东立面体验结果",
             "generated_at": "2026-06-30T10:00:00+00:00",
-            "models": ["裂缝", "剥落"],
+            "models": ["裂缝", "面砖剥落"],
             "files": [{"filename": "trial-001.jpg", "size": 1200}],
             "findings": [{"filename": "trial-001.jpg", "model": "裂缝"}],
         }
@@ -236,13 +300,17 @@ def test_trial_generate_endpoint_returns_preview_payload() -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["report_name"] == "东立面体验结果"
-    assert payload["models"] == ["裂缝", "剥落"]
+    assert payload["models"] == ["裂缝", "面砖剥落"]
     assert payload["files"] == [{"filename": "trial-001.jpg", "size": len(TRIAL_JPEG_BYTES)}]
     assert payload["findings"][0]["filename"] == "trial-001.jpg"
     assert "confidence" not in payload["findings"][0]
 
 
-def test_trial_generate_endpoint_accepts_uploaded_photo_ids() -> None:
+def test_trial_generate_endpoint_accepts_uploaded_photo_ids(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.api.reports.get_settings",
+        lambda: SimpleNamespace(trial_algorithm_inference_url="", trial_inference_required=False),
+    )
     photo_id = UUID("00000000-0000-0000-0000-000000000901")
     app.dependency_overrides[get_current_user] = _trial_customer
     app.dependency_overrides[get_db] = lambda: UploadedPhotoDb([_uploaded_photo(photo_id)])
@@ -262,6 +330,31 @@ def test_trial_generate_endpoint_accepts_uploaded_photo_ids() -> None:
     payload = response.json()
     assert payload["files"] == [{"photo_id": str(photo_id), "filename": "quick-001.jpg", "size": 1200}]
     assert payload["findings"] == [{"photo_id": str(photo_id), "filename": "quick-001.jpg", "model": "裂缝"}]
+
+
+def test_trial_result_archive_accepts_generated_photo_ids() -> None:
+    photo_id = UUID("00000000-0000-0000-0000-000000000902")
+    payload = {
+        "report_name": "东立面简易检测结果",
+        "generated_at": "2026-06-30T10:00:00+00:00",
+        "models": ["裂缝"],
+        "files": [{"photo_id": str(photo_id), "filename": "quick-001.jpg", "size": 1200}],
+        "findings": [{"photo_id": str(photo_id), "filename": "quick-001.jpg", "model": "裂缝"}],
+    }
+    fake_db = ArchivingTrialDb([])
+    fake_db.photos = [TrackingUploadedPhoto(photo_id, fake_db)]
+
+    result = run(
+        create_trial_result(
+            JsonTrialRequest(payload),
+            db=fake_db,
+            current_user=_trial_customer(),
+        )
+    )
+
+    assert result.source_type == "trial"
+    assert result.photos[0]["id"] == str(photo_id)
+    assert result.defects[0]["raw_result_json"]["finding"]["photo_id"] == str(photo_id)
 
 
 def test_trial_generate_requires_login() -> None:
@@ -314,7 +407,7 @@ def test_trial_generate_rejects_files_larger_than_twenty_mb() -> None:
     assert response.json()["message"] == "单张图片最大 20MB。"
 
 
-def test_trial_photo_metadata_detects_hollow_thermal_available() -> None:
+def test_trial_photo_metadata_detects_thermal_available() -> None:
     metadata = extract_photo_metadata_from_bytes(
         _jpeg_with_metadata(image_source="InfraredCamera", image_description="IronRed")
     )

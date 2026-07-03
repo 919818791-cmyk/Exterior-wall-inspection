@@ -46,16 +46,53 @@ services:
       - redis_data:/data
     command: redis-server --appendonly yes
 
+  algorithm-model:
+    profiles: ["algorithm-gpu"]
+    build:
+      context: ./algorithm-model
+      args:
+        PYTHON_BASE_IMAGE: ${PYTHON_BASE_IMAGE:-python:3.12-slim-bookworm}
+        PYTORCH_INDEX_URL: ${PYTORCH_INDEX_URL:-https://download.pytorch.org/whl/cu126}
+    image: building-exterior-algorithm-model:cuda
+    container_name: building-exterior-algorithm-model
+    restart: unless-stopped
+    ipc: host
+    environment:
+      MODEL_DEVICE: ${MODEL_DEVICE:-auto}
+      MODEL_VERSION: ${MODEL_VERSION:-trial-crack-missing-v1}
+      CRACK_MODEL_WEIGHTS_PATH: ${CRACK_MODEL_WEIGHTS_PATH:-/models/wall_crack_yolo11x.pt}
+      MISSING_MODEL_WEIGHTS_PATH: ${MISSING_MODEL_WEIGHTS_PATH:-/models/missing.pt}
+      MODEL_CONFIDENCE_THRESHOLD: ${MODEL_CONFIDENCE_THRESHOLD:-0.25}
+      MODEL_IMAGE_SIZE: ${MODEL_IMAGE_SIZE:-1280}
+      MODEL_HIGH_PRECISION_IMAGE_SIZE: ${MODEL_HIGH_PRECISION_IMAGE_SIZE:-1280}
+      ULTRALYTICS_SETTINGS_DIR: /tmp/ultralytics
+    volumes:
+      - ${MODEL_DIR:-./models}:/models:ro
+    ports:
+      - "${ALGORITHM_MODEL_PORT:-9004}:9002"
+    expose:
+      - "9002"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: ${ALGORITHM_GPU_COUNT:-1}
+              capabilities: [gpu]
+
   algorithm-worker:
     profiles: ["worker"]
     build:
       context: ./algorithm-worker
     container_name: building-exterior-algorithm-worker
     environment:
-      WORKER_BACKEND_BASE_URL: ${WORKER_BACKEND_BASE_URL:-http://host.docker.internal:8000}
+      WORKER_BACKEND_BASE_URL: ${WORKER_CONTAINER_BACKEND_BASE_URL:-http://host.docker.internal}
       WORKER_ID: ${WORKER_ID:-mock-worker-compose}
       WORKER_TOKEN: ${WORKER_TOKEN:-change-this-worker-token}
-      WORKER_MODEL_VERSION: ${WORKER_MODEL_VERSION:-mock-facade-detector-v1}
+      WORKER_MODEL_VERSION: ${WORKER_MODEL_VERSION:-trial-crack-missing-v1}
+      WORKER_MODE: ${WORKER_MODE:-mock}
+      ALGORITHM_INFERENCE_URL: ${ALGORITHM_INFERENCE_URL:-http://algorithm-model:9002}
+      ALGORITHM_INFERENCE_TIMEOUT_SECONDS: ${ALGORITHM_INFERENCE_TIMEOUT_SECONDS:-120}
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
