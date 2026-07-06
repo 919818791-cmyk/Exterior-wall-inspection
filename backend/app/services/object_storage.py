@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
+import time
 from datetime import timedelta
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 from minio import Minio
 from minio.error import S3Error
@@ -80,3 +83,36 @@ def presigned_get_url(bucket: str, object_key: str | None, expires_minutes: int 
         object_key,
         expires=timedelta(minutes=expires_minutes),
     )
+
+
+def signed_object_url(
+    api_base_url: str,
+    bucket: str | None,
+    object_key: str | None,
+    *,
+    expires_minutes: int = 60,
+) -> str | None:
+    if not bucket or not object_key:
+        return None
+    expires_at = int(time.time()) + expires_minutes * 60
+    signature = sign_object_access(bucket, object_key, expires_at)
+    encoded_bucket = quote(bucket, safe="")
+    encoded_key = quote(object_key, safe="/")
+    return (
+        f"{api_base_url.rstrip('/')}/object-storage/{encoded_bucket}/{encoded_key}"
+        f"?expires={expires_at}&signature={signature}"
+    )
+
+
+def sign_object_access(bucket: str, object_key: str, expires_at: int) -> str:
+    settings = get_settings()
+    payload = f"{bucket}\n{object_key}\n{expires_at}".encode("utf-8")
+    secret = settings.auth_secret_key.encode("utf-8")
+    return hmac.new(secret, payload, hashlib.sha256).hexdigest()
+
+
+def verify_object_access(bucket: str, object_key: str, expires_at: int, signature: str) -> bool:
+    if expires_at < int(time.time()):
+        return False
+    expected = sign_object_access(bucket, object_key, expires_at)
+    return hmac.compare_digest(expected, signature)
