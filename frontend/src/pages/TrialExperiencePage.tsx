@@ -11,6 +11,7 @@ import {
   type TrialGeneratedResult,
   type TrialUploadedPhoto
 } from "@/api/reports";
+import { trialDefectBoxLabel, trialDefectDisplayFromModel } from "@/utils/trialDefectDisplay";
 import { readTrialPhotoMetadata, type TrialPhotoMetadata } from "@/utils/photoMetadata";
 import { createClientId } from "@/utils/id";
 
@@ -48,6 +49,12 @@ interface TrialPhotoUploadSuccess {
   generatedFile: TrialGeneratedFile;
 }
 
+interface TrialAnnotatedPreview {
+  filename: string;
+  previewUrl: string;
+  findings: TrialGeneratedResult["findings"];
+}
+
 export function TrialExperiencePage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [selectedPhotos, setSelectedPhotos] = useState<SelectedTrialPhoto[]>([]);
@@ -58,6 +65,7 @@ export function TrialExperiencePage() {
   const [isArchiving, setIsArchiving] = useState(false);
   const [archivedReportId, setArchivedReportId] = useState<string | null>(null);
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
+  const [annotatedPreview, setAnnotatedPreview] = useState<TrialAnnotatedPreview | null>(null);
 
   const photoPreviews = useMemo<SelectedPhotoPreview[]>(
     () => selectedPhotos.map((photo) => ({
@@ -155,7 +163,14 @@ export function TrialExperiencePage() {
   }
 
   function previewPhoto(index: number) {
+    setAnnotatedPreview(null);
     setPreviewIndex(index);
+  }
+
+  function previewAnnotatedPhoto(preview: TrialAnnotatedPreview) {
+    if (!preview.previewUrl) return;
+    setPreviewIndex(null);
+    setAnnotatedPreview(preview);
   }
 
   async function removePhoto(index: number) {
@@ -182,6 +197,7 @@ export function TrialExperiencePage() {
 
   function closePhotoPreview() {
     setPreviewIndex(null);
+    setAnnotatedPreview(null);
   }
 
   function updateReportName(value: string) {
@@ -552,15 +568,49 @@ export function TrialExperiencePage() {
                           <td>{String(index + 1).padStart(2, "0")}</td>
                           <td>
                             <figure className="trial-annotated-photo-frame">
-                              <div className="trial-annotated-photo">
+                              <div
+                                className={`trial-annotated-photo ${row.previewUrl ? "is-clickable" : ""}`}
+                                title={row.previewUrl ? "点击放大查看" : undefined}
+                                onClick={() => previewAnnotatedPhoto({
+                                  filename: row.filename,
+                                  previewUrl: row.previewUrl,
+                                  findings: row.findings
+                                })}
+                              >
                                 <img alt={`${row.filename} 检测标注`} src={row.previewUrl} />
-                                {row.findings.slice(0, 8).map((finding, findingIndex) => (
-                                  <span
-                                    key={finding.detection_id ?? `${finding.model}-${findingIndex}`}
-                                    className={`trial-defect-box trial-defect-box-${findingIndex % 3}`}
-                                    style={trialFindingBoxStyle(finding)}
-                                  />
-                                ))}
+                                {row.findings.slice(0, 8).map((finding, findingIndex) => {
+                                  const display = trialDefectDisplayFromModel(finding.model);
+                                  return (
+                                    <span
+                                      key={finding.detection_id ?? `${finding.model}-${findingIndex}`}
+                                      className={`trial-defect-box trial-defect-box-${findingIndex % 3} ${display.boxClassName}`}
+                                      style={trialFindingBoxStyle(finding)}
+                                    >
+                                      <span className="trial-defect-label">
+                                        {trialDefectBoxLabel(display, finding.confidence)}
+                                      </span>
+                                    </span>
+                                  );
+                                })}
+                                {row.previewUrl ? (
+                                  <div className="trial-annotated-photo-actions">
+                                    <button
+                                      type="button"
+                                      aria-label="放大查看含标注的照片"
+                                      title="放大查看"
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        previewAnnotatedPhoto({
+                                          filename: row.filename,
+                                          previewUrl: row.previewUrl,
+                                          findings: row.findings
+                                        });
+                                      }}
+                                    >
+                                      <ZoomIn aria-hidden="true" />
+                                    </button>
+                                  </div>
+                                ) : null}
                               </div>
                               <figcaption>{row.filename}</figcaption>
                             </figure>
@@ -570,7 +620,7 @@ export function TrialExperiencePage() {
                               <p>
                                 {trialFindingSummary(row.findings).map((item) => (
                                   <span key={item.model} className={trialFindingClass(item.model)}>
-                                    疑似{item.model}: {item.count}处
+                                    疑似{trialDefectDisplayFromModel(item.model).label}: {item.count}处
                                   </span>
                                 ))}
                               </p>
@@ -594,7 +644,7 @@ export function TrialExperiencePage() {
           </aside>
         </section>
       </div>
-      {previewingPhoto ? (
+      {previewingPhoto || annotatedPreview ? (
         <div
           className="trial-photo-preview-modal"
           role="dialog"
@@ -611,8 +661,28 @@ export function TrialExperiencePage() {
             >
               <X aria-hidden="true" />
             </button>
-            <img alt={previewingPhoto.file.name} src={previewingPhoto.previewUrl} />
-            <figcaption>{previewingPhoto.file.name}</figcaption>
+            {annotatedPreview ? (
+              <div className="trial-annotated-photo trial-photo-preview-annotated">
+                <img alt={`${annotatedPreview.filename} 检测标注预览`} src={annotatedPreview.previewUrl} />
+                {annotatedPreview.findings.slice(0, 8).map((finding, findingIndex) => {
+                  const display = trialDefectDisplayFromModel(finding.model);
+                  return (
+                    <span
+                      key={finding.detection_id ?? `${finding.model}-${findingIndex}`}
+                      className={`trial-defect-box trial-defect-box-${findingIndex % 3} ${display.boxClassName}`}
+                      style={trialFindingBoxStyle(finding)}
+                    >
+                      <span className="trial-defect-label">
+                        {trialDefectBoxLabel(display, finding.confidence)}
+                      </span>
+                    </span>
+                  );
+                })}
+              </div>
+            ) : previewingPhoto ? (
+              <img alt={previewingPhoto.file.name} src={previewingPhoto.previewUrl} />
+            ) : null}
+            <figcaption>{annotatedPreview?.filename ?? previewingPhoto?.file.name}</figcaption>
           </figure>
         </div>
       ) : null}
@@ -767,8 +837,5 @@ function trialFindingBoxStyle(finding: TrialGeneratedResult["findings"][number])
 }
 
 function trialFindingClass(model: string | undefined) {
-  if (model === "面砖剥落") return "trial-report-description-missing";
-  if (model === "剥落") return "trial-report-description-spalling";
-  if (model === "潮湿") return "trial-report-description-moisture";
-  return "trial-report-description-crack";
+  return trialDefectDisplayFromModel(model).descriptionClassName;
 }

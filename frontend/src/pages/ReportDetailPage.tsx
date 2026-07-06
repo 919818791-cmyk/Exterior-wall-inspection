@@ -6,7 +6,9 @@ import {
   Download,
   FileImage,
   FileText,
-  Send
+  Send,
+  X,
+  ZoomIn
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
@@ -22,6 +24,11 @@ import type {
 import { useAuthStore } from "@/stores/useAuthStore";
 import { formatDateTime } from "@/utils/projectDisplay";
 import { saveBlobAsFile } from "@/utils/download";
+import {
+  trialDefectBoxLabel,
+  trialDefectDescriptionFromType,
+  trialDefectDisplayFromType
+} from "@/utils/trialDefectDisplay";
 
 const DEFECT_LABELS: Record<string, string> = {
   crack: "裂缝",
@@ -53,8 +60,8 @@ const REPORT_STATUS_TONES = {
 } as const;
 
 const TRIAL_RESULT_DESCRIPTION_LINES = [
-  { className: "trial-report-description-missing", text: "疑似面砖剥落: 1处" },
-  { className: "trial-report-description-crack", text: "疑似开裂: 1处" }
+  trialDefectDescriptionFromType("missing"),
+  trialDefectDescriptionFromType("crack")
 ] as const;
 
 function getErrorMessage(error: unknown) {
@@ -350,6 +357,8 @@ export function ReportDetailPage() {
 }
 
 function TrialResultDetail({ report }: { report: ReportDetail }) {
+  const [annotatedPreview, setAnnotatedPreview] = useState<TrialReportAnnotatedPreview | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<TrialReportPhotoPreview | null>(null);
   const defects = report.defects ?? [];
   const rows = defects.length ? defects : report.photos.map((photo) => ({
     id: photo.id,
@@ -380,21 +389,56 @@ function TrialResultDetail({ report }: { report: ReportDetail }) {
             </div>
             {report.photos.length ? (
               <div className="trial-photo-grid trial-result-photo-grid">
-                {report.photos.map((photo, index) => (
-                  <figure key={photo.id || `${photo.original_filename}-${index}`} className="trial-photo-thumb">
-                    <div className="trial-photo-thumb-image">
-                      {photo.preview_url ? (
-                        <img alt={photo.original_filename || "检测结果照片"} src={photo.preview_url} />
-                      ) : (
-                        <div className="trial-result-photo-placeholder"><FileImage aria-hidden="true" /></div>
-                      )}
-                      {photo.thermal_imaging_available ? (
-                        <span className="trial-thermal-available-tag">热成像可用</span>
-                      ) : null}
-                    </div>
-                    <figcaption>{photo.original_filename || "未命名照片"}</figcaption>
-                  </figure>
-                ))}
+                {report.photos.map((photo, index) => {
+                  const filename = photo.original_filename || "未命名照片";
+                  const canPreview = Boolean(photo.preview_url);
+
+                  return (
+                    <figure
+                      key={photo.id || `${photo.original_filename}-${index}`}
+                      className={`trial-photo-thumb ${canPreview ? "is-previewable" : ""}`}
+                    >
+                      <div
+                        className="trial-photo-thumb-image"
+                        title={canPreview ? "点击放大查看" : undefined}
+                        onClick={() => {
+                          if (photo.preview_url) {
+                            setPhotoPreview({ filename, imageUrl: photo.preview_url });
+                            setAnnotatedPreview(null);
+                          }
+                        }}
+                      >
+                        {photo.preview_url ? (
+                          <img alt={filename} src={photo.preview_url} />
+                        ) : (
+                          <div className="trial-result-photo-placeholder"><FileImage aria-hidden="true" /></div>
+                        )}
+                        {photo.thermal_imaging_available ? (
+                          <span className="trial-thermal-available-tag">热成像可用</span>
+                        ) : null}
+                        {canPreview ? (
+                          <div className="trial-photo-thumb-actions">
+                            <button
+                              type="button"
+                              aria-label="放大查看检测照片"
+                              title="放大查看"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                if (photo.preview_url) {
+                                  setPhotoPreview({ filename, imageUrl: photo.preview_url });
+                                  setAnnotatedPreview(null);
+                                }
+                              }}
+                            >
+                              <ZoomIn aria-hidden="true" />
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
+                      <figcaption>{filename}</figcaption>
+                    </figure>
+                  );
+                })}
               </div>
             ) : (
               <div className="trial-result-photo-empty">
@@ -428,6 +472,10 @@ function TrialResultDetail({ report }: { report: ReportDetail }) {
                           defect={defect}
                           index={index}
                           photo={findTrialPhoto(report, defect)}
+                          onPreview={(preview) => {
+                            setAnnotatedPreview(preview);
+                            setPhotoPreview(null);
+                          }}
                         />
                       ))}
                     </tbody>
@@ -444,42 +492,138 @@ function TrialResultDetail({ report }: { report: ReportDetail }) {
           </aside>
         </section>
       </div>
+      {annotatedPreview || photoPreview ? (
+        <div
+          className="trial-photo-preview-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-label={annotatedPreview ? "含标注的照片预览" : "检测照片预览"}
+          onClick={() => {
+            setAnnotatedPreview(null);
+            setPhotoPreview(null);
+          }}
+        >
+          <figure onClick={(event) => event.stopPropagation()}>
+            <button
+              className="trial-photo-preview-close"
+              type="button"
+              aria-label="关闭预览"
+              onClick={() => {
+                setAnnotatedPreview(null);
+                setPhotoPreview(null);
+              }}
+            >
+              <X aria-hidden="true" />
+            </button>
+            {annotatedPreview ? (
+              <div className="trial-annotated-photo trial-photo-preview-annotated">
+                <img alt={`${annotatedPreview.filename} 检测标注预览`} src={annotatedPreview.imageUrl} />
+                {annotatedPreview.defect.defect_type ? (
+                  <TrialReportDefectBox
+                    defect={annotatedPreview.defect}
+                    index={annotatedPreview.index}
+                  />
+                ) : null}
+              </div>
+            ) : photoPreview ? (
+              <img alt={`${photoPreview.filename} 预览`} src={photoPreview.imageUrl} />
+            ) : null}
+            <figcaption>{annotatedPreview?.filename ?? photoPreview?.filename}</figcaption>
+          </figure>
+        </div>
+      ) : null}
     </div>
   );
+}
+
+interface TrialReportAnnotatedPreview {
+  filename: string;
+  imageUrl: string;
+  defect: ReportDefectSnapshot;
+  index: number;
+}
+
+interface TrialReportPhotoPreview {
+  filename: string;
+  imageUrl: string;
 }
 
 function TrialResultRow({
   defect,
   index,
-  photo
+  photo,
+  onPreview
 }: {
   defect: ReportDefectSnapshot;
   index: number;
   photo?: ReportDetail["photos"][number];
+  onPreview: (preview: TrialReportAnnotatedPreview) => void;
 }) {
   const imageUrl = defect.photo_preview_url || defect.photo_thumbnail_url || photo?.preview_url || photo?.thumbnail_url;
   const filename = defect.photo_filename || photo?.original_filename || "检测结果照片";
+  const descriptionLines = defect.defect_type
+    ? [trialDefectDescriptionFromType(defect.defect_type)]
+    : TRIAL_RESULT_DESCRIPTION_LINES;
+  const canPreview = Boolean(imageUrl);
+
+  function previewAnnotatedPhoto() {
+    if (!imageUrl) return;
+    onPreview({ filename, imageUrl, defect, index });
+  }
 
   return (
     <tr>
       <td>{String(index + 1).padStart(2, "0")}</td>
       <td>
         <figure className="trial-annotated-photo-frame">
-          <div className={`trial-annotated-photo ${imageUrl ? "" : "trial-annotated-photo-placeholder"}`}>
+          <div
+            className={`trial-annotated-photo ${imageUrl ? "" : "trial-annotated-photo-placeholder"} ${canPreview ? "is-clickable" : ""}`}
+            title={canPreview ? "点击放大查看" : undefined}
+            onClick={previewAnnotatedPhoto}
+          >
             {imageUrl ? <img alt={`${filename} 检测标注`} src={imageUrl} /> : <FileImage aria-hidden="true" />}
-            <span className={`trial-defect-box trial-defect-box-${index % 3}`} />
+            {defect.defect_type ? (
+              <TrialReportDefectBox defect={defect} index={index} />
+            ) : null}
+            {canPreview ? (
+              <div className="trial-annotated-photo-actions">
+                <button
+                  type="button"
+                  aria-label="放大查看含标注的照片"
+                  title="放大查看"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    previewAnnotatedPhoto();
+                  }}
+                >
+                  <ZoomIn aria-hidden="true" />
+                </button>
+              </div>
+            ) : null}
           </div>
           <figcaption>{filename}</figcaption>
         </figure>
       </td>
       <td className="trial-report-description">
         <p>
-          {TRIAL_RESULT_DESCRIPTION_LINES.map((line) => (
+          {descriptionLines.map((line) => (
             <span key={line.text} className={line.className}>{line.text}</span>
           ))}
         </p>
       </td>
     </tr>
+  );
+}
+
+function TrialReportDefectBox({ defect, index }: { defect: ReportDefectSnapshot; index: number }) {
+  const defectDisplay = trialDefectDisplayFromType(defect.defect_type);
+
+  return (
+    <span className={`trial-defect-box trial-defect-box-${index % 3} ${defectDisplay.boxClassName}`}>
+      <span className="trial-defect-label">
+        {trialDefectBoxLabel(defectDisplay, defect.confidence)}
+      </span>
+    </span>
   );
 }
 
