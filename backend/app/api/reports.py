@@ -40,7 +40,7 @@ from app.schemas.phase7 import (
 )
 from app.schemas.projects import DeleteResponse
 from app.services.docx_report import build_report_docx
-from app.services.object_storage import get_object_bytes, presigned_get_url, put_object, remove_object
+from app.services.object_storage import get_object_bytes, presigned_get_url, put_object, remove_object, signed_object_url
 from app.services.photo_metadata import extract_photo_metadata
 from app.services.report_data import build_report_data
 
@@ -171,24 +171,35 @@ def _get_trial_result_or_404(
     return result
 
 
-def _safe_presigned_url(bucket: str | None, object_key: str | None) -> str | None:
+def _api_base_url(request: Request) -> str:
+    headers = getattr(request, "headers", {})
+    request_url = getattr(request, "url", None)
+    scheme = headers.get("x-forwarded-proto") or getattr(request_url, "scheme", "http")
+    host = headers.get("x-forwarded-host") or headers.get("host") or getattr(request_url, "netloc", "testserver")
+    prefix = get_settings().api_prefix.strip("/")
+    return f"{scheme}://{host}/{prefix}" if prefix else f"{scheme}://{host}"
+
+
+def _safe_photo_url(request: Request | None, bucket: str | None, object_key: str | None) -> str | None:
     if not bucket or not object_key:
         return None
     try:
+        if request is not None:
+            return signed_object_url(_api_base_url(request), bucket, object_key)
         return presigned_get_url(bucket, object_key)
     except Exception:
         return None
 
 
-def _data_with_photo_urls(data: dict[str, Any]) -> dict[str, Any]:
+def _data_with_photo_urls(data: dict[str, Any], request: Request | None = None) -> dict[str, Any]:
     enriched = deepcopy(data)
     photo_urls: dict[str, dict[str, str | None]] = {}
 
     for photo in enriched.get("photos") or []:
         if not isinstance(photo, dict):
             continue
-        preview_url = _safe_presigned_url(photo.get("storage_bucket"), photo.get("storage_object_key"))
-        thumbnail_url = _safe_presigned_url(photo.get("storage_bucket"), photo.get("thumbnail_object_key")) or preview_url
+        preview_url = _safe_photo_url(request, photo.get("storage_bucket"), photo.get("storage_object_key"))
+        thumbnail_url = _safe_photo_url(request, photo.get("storage_bucket"), photo.get("thumbnail_object_key")) or preview_url
         photo["preview_url"] = preview_url
         photo["thumbnail_url"] = thumbnail_url
         if photo.get("id"):
@@ -208,14 +219,14 @@ def _data_with_photo_urls(data: dict[str, Any]) -> dict[str, Any]:
     return enriched
 
 
-def _trial_data_with_photo_urls(data: dict[str, Any]) -> dict[str, Any]:
+def _trial_data_with_photo_urls(data: dict[str, Any], request: Request | None = None) -> dict[str, Any]:
     enriched = deepcopy(data)
     photo_urls: dict[str, dict[str, str | None]] = {}
 
     for photo in enriched.get("photos") or []:
         if not isinstance(photo, dict):
             continue
-        preview_url = _safe_presigned_url(photo.get("storage_bucket"), photo.get("storage_object_key"))
+        preview_url = _safe_photo_url(request, photo.get("storage_bucket"), photo.get("storage_object_key"))
         photo["preview_url"] = preview_url
         photo["thumbnail_url"] = preview_url
         if photo.get("id"):
@@ -309,11 +320,11 @@ def _trial_archive_data(
     }
 
 
-def _report_data(db: Session, report: InspectionReport, project: Project) -> dict[str, Any]:
+def _report_data(db: Session, report: InspectionReport, project: Project, request: Request | None = None) -> dict[str, Any]:
     data = report.report_data_json or {}
     if "defects" not in data or "buildings" not in data:
         data = build_report_data(db, project, report.detection_task_id)
-    return _data_with_photo_urls(data)
+    return _data_with_photo_urls(data, request)
 
 
 def _list_item(report: InspectionReport, project: Project) -> ReportListItem:
@@ -360,8 +371,8 @@ def _trial_list_item(result: TrialDetectionResult) -> ReportListItem:
     )
 
 
-def _detail_item(db: Session, report: InspectionReport, project: Project) -> ReportDetailRead:
-    data = _report_data(db, report, project)
+def _detail_item(db: Session, report: InspectionReport, project: Project, request: Request | None = None) -> ReportDetailRead:
+    data = _report_data(db, report, project, request)
     return ReportDetailRead(
         id=report.id,
         source_type="formal",
@@ -388,8 +399,8 @@ def _detail_item(db: Session, report: InspectionReport, project: Project) -> Rep
     )
 
 
-def _trial_detail_item(result: TrialDetectionResult) -> ReportDetailRead:
-    data = _trial_data_with_photo_urls(result.report_data_json or {})
+def _trial_detail_item(result: TrialDetectionResult, request: Request | None = None) -> ReportDetailRead:
+    data = _trial_data_with_photo_urls(result.report_data_json or {}, request)
     return ReportDetailRead(
         id=result.id,
         source_type="trial",
@@ -934,11 +945,12 @@ async def create_trial_result(
             photo.generated_result_id = result_id
     db.commit()
     db.refresh(result)
-    return _trial_detail_item(result)
+    return _trial_detail_item(result, request)
 
 
 @router.get("/reports/{report_id}", response_model=ReportDetailRead)
 def get_report(
+    request: Request,
     report_id: UUID,
     include_generated: bool = Query(default=False),
     db: Session = Depends(get_db),
@@ -951,15 +963,16 @@ def get_report(
             current_user=current_user,
             include_generated=include_generated,
         )
-        return _detail_item(db, report, project)
+        return _detail_item(db, report, project, request)
     except HTTPException as exc:
         if exc.status_code != status.HTTP_404_NOT_FOUND:
             raise
-    return _trial_detail_item(_get_trial_result_or_404(db, report_id, current_user=current_user))
+    return _trial_detail_item(_get_trial_result_or_404(db, report_id, current_user=current_user), request)
 
 
 @router.post("/reports/{report_id}/push", response_model=ReportDetailRead)
 def push_report(
+    request: Request,
     report_id: UUID,
     db: Session = Depends(get_db),
     current_user: AuthenticatedUser = Depends(require_roles(UserRole.REVIEWER, UserRole.ADMIN)),
@@ -992,7 +1005,7 @@ def push_report(
     db.commit()
     db.refresh(report)
     db.refresh(project)
-    return _detail_item(db, report, project)
+    return _detail_item(db, report, project, request)
 
 
 @router.delete("/reports/{report_id}", response_model=DeleteResponse)
