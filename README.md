@@ -77,10 +77,9 @@ sudo docker run -d \
 
 ```env
 TRIAL_ALGORITHM_INFERENCE_URL=http://localhost:9004
-TRIAL_INFERENCE_REQUIRED=true
 ```
 
-`TRIAL_INFERENCE_REQUIRED=true` 表示模型服务不可用时 `/api/trial/generate` 直接报错，不再降级为模拟结果。
+模型服务未配置或不可用时，`/api/trial/generate` 会直接报错；简易体验入口不再降级为模拟结果。
 
 项目检测任务流仍保留 `algorithm-worker` 适配层，但当前验收优先级是简易体验入口。
 

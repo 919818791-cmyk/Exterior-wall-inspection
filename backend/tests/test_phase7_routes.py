@@ -156,6 +156,45 @@ def _post_trial_generate(files: list[tuple[str, tuple[str, bytes, str]]]):
         app.dependency_overrides.clear()
 
 
+class FakeInferenceResponse:
+    def __init__(self, payload: dict) -> None:
+        self.payload = payload
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return None
+
+    def read(self) -> bytes:
+        return dumps(self.payload).encode("utf-8")
+
+
+def _mock_trial_inference(monkeypatch, payload: dict | None = None) -> None:
+    inference_payload = payload or {
+        "image": {"width": 1000, "height": 500},
+        "detections": [
+            {
+                "id": "det-1",
+                "type": "missing",
+                "confidence": 0.57,
+                "bbox": {"x": 100, "y": 50, "width": 240, "height": 80},
+            }
+        ],
+    }
+    monkeypatch.setattr(
+        "app.api.reports.get_settings",
+        lambda: SimpleNamespace(
+            trial_algorithm_inference_url="http://trial-model.local",
+            trial_algorithm_inference_timeout_seconds=120,
+        ),
+    )
+    monkeypatch.setattr(
+        "app.api.reports.urlopen",
+        lambda request, timeout: FakeInferenceResponse(inference_payload),
+    )
+
+
 def _uploaded_photo(photo_id: UUID, *, filename: str = "quick-001.jpg") -> QuickDetectionPhoto:
     return QuickDetectionPhoto(
         id=photo_id,
@@ -292,7 +331,8 @@ def test_trial_generated_result_can_feed_archive_contract() -> None:
     assert archive_payload.findings[0].model == "裂缝"
 
 
-def test_trial_generate_endpoint_returns_preview_payload() -> None:
+def test_trial_generate_endpoint_returns_preview_payload(monkeypatch) -> None:
+    _mock_trial_inference(monkeypatch)
     response = _post_trial_generate(
         [("files", ("trial-001.jpg", TRIAL_JPEG_BYTES, "image/jpeg"))]
     )
@@ -302,14 +342,24 @@ def test_trial_generate_endpoint_returns_preview_payload() -> None:
     assert payload["report_name"] == "东立面体验结果"
     assert payload["models"] == ["裂缝", "面砖剥落"]
     assert payload["files"] == [{"filename": "trial-001.jpg", "size": len(TRIAL_JPEG_BYTES)}]
-    assert payload["findings"][0]["filename"] == "trial-001.jpg"
-    assert "confidence" not in payload["findings"][0]
+    assert payload["findings"] == [
+        {
+            "filename": "trial-001.jpg",
+            "model": "面砖剥落",
+            "confidence": 0.57,
+            "bbox": {"x": 100, "y": 50, "width": 240, "height": 80},
+            "image_width": 1000,
+            "image_height": 500,
+            "detection_id": "det-1",
+        }
+    ]
 
 
 def test_trial_generate_endpoint_accepts_uploaded_photo_ids(monkeypatch) -> None:
+    _mock_trial_inference(monkeypatch)
     monkeypatch.setattr(
-        "app.api.reports.get_settings",
-        lambda: SimpleNamespace(trial_algorithm_inference_url="", trial_inference_required=False),
+        "app.api.reports.get_object_bytes",
+        lambda bucket, object_key: TRIAL_JPEG_BYTES,
     )
     photo_id = UUID("00000000-0000-0000-0000-000000000901")
     app.dependency_overrides[get_current_user] = _trial_customer
@@ -329,7 +379,35 @@ def test_trial_generate_endpoint_accepts_uploaded_photo_ids(monkeypatch) -> None
     assert response.status_code == 200
     payload = response.json()
     assert payload["files"] == [{"photo_id": str(photo_id), "filename": "quick-001.jpg", "size": 1200}]
-    assert payload["findings"] == [{"photo_id": str(photo_id), "filename": "quick-001.jpg", "model": "裂缝"}]
+    assert payload["findings"] == [
+        {
+            "photo_id": str(photo_id),
+            "filename": "quick-001.jpg",
+            "model": "面砖剥落",
+            "confidence": 0.57,
+            "bbox": {"x": 100, "y": 50, "width": 240, "height": 80},
+            "image_width": 1000,
+            "image_height": 500,
+            "detection_id": "det-1",
+        }
+    ]
+
+
+def test_trial_generate_endpoint_requires_configured_inference_service(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.api.reports.get_settings",
+        lambda: SimpleNamespace(
+            trial_algorithm_inference_url="",
+            trial_algorithm_inference_timeout_seconds=120,
+        ),
+    )
+
+    response = _post_trial_generate(
+        [("files", ("trial-001.jpg", TRIAL_JPEG_BYTES, "image/jpeg"))]
+    )
+
+    assert response.status_code == 503
+    assert "TRIAL_ALGORITHM_INFERENCE_URL" in response.json()["message"]
 
 
 def test_trial_result_archive_accepts_generated_photo_ids() -> None:

@@ -93,6 +93,14 @@ export interface ReportDefectSnapshot {
   status?: string;
   confidence?: string | null;
   model_version?: string | null;
+  raw_result_json?: {
+    finding?: {
+      image_width?: number | string | null;
+      image_height?: number | string | null;
+      [key: string]: unknown;
+    } | null;
+    [key: string]: unknown;
+  } | null;
   review_note?: string | null;
   reviewed_at?: string | null;
 }

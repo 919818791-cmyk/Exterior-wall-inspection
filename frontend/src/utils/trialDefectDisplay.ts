@@ -40,15 +40,17 @@ const TRIAL_MODEL_TO_DEFECT_TYPE: Record<string, string> = {
   "潮湿": "moisture"
 };
 
-const FALLBACK_TRIAL_DEFECT_DISPLAY = TRIAL_DEFECT_DISPLAY_BY_TYPE.crack;
-
 function normalizeTrialDefectKey(value: string | null | undefined) {
   return (value ?? "").trim();
 }
 
 export function trialDefectDisplayFromType(defectType: string | null | undefined) {
   const key = normalizeTrialDefectKey(defectType);
-  return TRIAL_DEFECT_DISPLAY_BY_TYPE[key] ?? FALLBACK_TRIAL_DEFECT_DISPLAY;
+  return TRIAL_DEFECT_DISPLAY_BY_TYPE[key] ?? {
+    label: key || "缺陷",
+    descriptionClassName: "trial-report-description-default",
+    boxClassName: "trial-defect-box-default"
+  };
 }
 
 export function trialDefectDisplayFromModel(model: string | null | undefined) {

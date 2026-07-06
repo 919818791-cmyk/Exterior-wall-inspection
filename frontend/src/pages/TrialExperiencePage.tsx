@@ -580,11 +580,13 @@ export function TrialExperiencePage() {
                                 <img alt={`${row.filename} 检测标注`} src={row.previewUrl} />
                                 {row.findings.slice(0, 8).map((finding, findingIndex) => {
                                   const display = trialDefectDisplayFromModel(finding.model);
+                                  const boxStyle = trialFindingBoxStyle(finding);
+                                  if (!boxStyle) return null;
                                   return (
                                     <span
                                       key={finding.detection_id ?? `${finding.model}-${findingIndex}`}
-                                      className={`trial-defect-box trial-defect-box-${findingIndex % 3} ${display.boxClassName}`}
-                                      style={trialFindingBoxStyle(finding)}
+                                      className={`trial-defect-box ${display.boxClassName}`}
+                                      style={boxStyle}
                                     >
                                       <span className="trial-defect-label">
                                         {trialDefectBoxLabel(display, finding.confidence)}
@@ -666,11 +668,13 @@ export function TrialExperiencePage() {
                 <img alt={`${annotatedPreview.filename} 检测标注预览`} src={annotatedPreview.previewUrl} />
                 {annotatedPreview.findings.slice(0, 8).map((finding, findingIndex) => {
                   const display = trialDefectDisplayFromModel(finding.model);
+                  const boxStyle = trialFindingBoxStyle(finding);
+                  if (!boxStyle) return null;
                   return (
                     <span
                       key={finding.detection_id ?? `${finding.model}-${findingIndex}`}
-                      className={`trial-defect-box trial-defect-box-${findingIndex % 3} ${display.boxClassName}`}
-                      style={trialFindingBoxStyle(finding)}
+                      className={`trial-defect-box ${display.boxClassName}`}
+                      style={boxStyle}
                     >
                       <span className="trial-defect-label">
                         {trialDefectBoxLabel(display, finding.confidence)}

@@ -613,18 +613,6 @@ def _trial_file_entries_for_quick_photos(photos: list[QuickDetectionPhoto]) -> l
     ]
 
 
-def _trial_findings_for_files(file_entries: list[dict[str, Any]], models: list[str]) -> list[dict[str, Any]]:
-    selected_models = [model for model in models if model] or TRIAL_DEFAULT_MODELS
-    return [
-        {
-            "photo_id": entry.get("photo_id"),
-            "filename": str(entry["filename"]),
-            "model": selected_models[index % len(selected_models)],
-        }
-        for index, entry in enumerate(file_entries)
-    ]
-
-
 def _multipart_body(
     fields: dict[str, str],
     *,
@@ -720,15 +708,41 @@ def _trial_findings_from_inference(
     return findings
 
 
+def _trial_inference_unavailable(exc: Exception) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail=f"简易检测模型服务不可用：{exc}",
+    )
+
+
+def _trial_findings_for_uploaded_files(
+    uploaded_files: list[UploadFile],
+    file_entries: list[dict[str, Any]],
+    models: list[str],
+) -> list[dict[str, Any]]:
+    findings: list[dict[str, Any]] = []
+    try:
+        for uploaded_file, entry in zip(uploaded_files, file_entries, strict=True):
+            uploaded_file.file.seek(0)
+            content = uploaded_file.file.read()
+            uploaded_file.file.seek(0)
+            inference = _trial_inference_request(
+                filename=entry["filename"],
+                content_type=uploaded_file.content_type,
+                content=content,
+                models=models,
+            )
+            findings.extend(_trial_findings_from_inference(entry=entry, inference=inference))
+    except Exception as exc:
+        raise _trial_inference_unavailable(exc) from exc
+    return findings
+
+
 def _trial_findings_for_quick_photos(
     photos: list[QuickDetectionPhoto],
     file_entries: list[dict[str, Any]],
     models: list[str],
 ) -> list[dict[str, Any]]:
-    settings = get_settings()
-    if not settings.trial_algorithm_inference_url:
-        return _trial_findings_for_files(file_entries, models)
-
     findings: list[dict[str, Any]] = []
     try:
         for photo, entry in zip(photos, file_entries, strict=True):
@@ -741,12 +755,7 @@ def _trial_findings_for_quick_photos(
             )
             findings.extend(_trial_findings_from_inference(entry=entry, inference=inference))
     except Exception as exc:
-        if settings.trial_inference_required:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=f"简易检测模型服务不可用：{exc}",
-            ) from exc
-        return _trial_findings_for_files(file_entries, models)
+        raise _trial_inference_unavailable(exc) from exc
     return findings
 
 
@@ -800,7 +809,7 @@ def _stored_quick_detection_photos(photos: list[QuickDetectionPhoto]) -> list[di
 def _trial_generated_result(
     trial_request: TrialGenerateRequest,
     file_entries: list[dict[str, Any]],
-    findings: list[dict[str, Any]] | None = None,
+    findings: list[dict[str, Any]],
 ) -> TrialGeneratedResult:
     models = [model for model in trial_request.models if model] or TRIAL_DEFAULT_MODELS
     return TrialGeneratedResult(
@@ -808,7 +817,7 @@ def _trial_generated_result(
         generated_at=datetime.now(UTC).isoformat(),
         models=models,
         files=file_entries,
-        findings=findings if findings is not None else _trial_findings_for_files(file_entries, models),
+        findings=findings,
     )
 
 
@@ -877,7 +886,12 @@ async def generate_trial_result(
     if _is_multipart_request(request):
         payload, files = await _trial_form_payload_and_files(request)
         trial_request, file_entries = _trial_generate_request_from_form(payload, files)
-        return _trial_generated_result(trial_request, file_entries)
+        models = [model for model in trial_request.models if model] or TRIAL_DEFAULT_MODELS
+        return _trial_generated_result(
+            trial_request,
+            file_entries,
+            _trial_findings_for_uploaded_files(files, file_entries, models),
+        )
 
     trial_request = _trial_generate_request_from_payload(await _trial_payload_from_json_request(request))
     photos = _quick_detection_photos_for_user(db, current_user, trial_request.photo_ids)

@@ -10,7 +10,7 @@ import {
   X,
   ZoomIn
 } from "lucide-react";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { useMemo, useState } from "react";
 import { Link as RouterLink, useParams, useSearchParams } from "react-router-dom";
 
@@ -24,11 +24,7 @@ import type {
 import { useAuthStore } from "@/stores/useAuthStore";
 import { formatDateTime } from "@/utils/projectDisplay";
 import { saveBlobAsFile } from "@/utils/download";
-import {
-  trialDefectBoxLabel,
-  trialDefectDescriptionFromType,
-  trialDefectDisplayFromType
-} from "@/utils/trialDefectDisplay";
+import { trialDefectBoxLabel, trialDefectDescriptionFromType, trialDefectDisplayFromType } from "@/utils/trialDefectDisplay";
 
 const DEFECT_LABELS: Record<string, string> = {
   crack: "裂缝",
@@ -58,11 +54,6 @@ const REPORT_STATUS_TONES = {
   pushed: "success",
   revoked: "danger"
 } as const;
-
-const TRIAL_RESULT_DESCRIPTION_LINES = [
-  trialDefectDescriptionFromType("missing"),
-  trialDefectDescriptionFromType("crack")
-] as const;
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "操作失败，请稍后重试。";
@@ -360,13 +351,6 @@ function TrialResultDetail({ report }: { report: ReportDetail }) {
   const [annotatedPreview, setAnnotatedPreview] = useState<TrialReportAnnotatedPreview | null>(null);
   const [photoPreview, setPhotoPreview] = useState<TrialReportPhotoPreview | null>(null);
   const defects = report.defects ?? [];
-  const rows = defects.length ? defects : report.photos.map((photo) => ({
-    id: photo.id,
-    photo_id: photo.id,
-    photo_filename: photo.original_filename,
-    photo_preview_url: photo.preview_url,
-    photo_thumbnail_url: photo.thumbnail_url
-  }));
 
   return (
     <div className="trial-result-detail-page">
@@ -455,7 +439,7 @@ function TrialResultDetail({ report }: { report: ReportDetail }) {
                   <h2>检测结果明细</h2>
                 </div>
               </div>
-              {rows.length ? (
+              {defects.length ? (
                 <div className="trial-report-table-wrap">
                   <table className="trial-report-table">
                     <thead>
@@ -466,7 +450,7 @@ function TrialResultDetail({ report }: { report: ReportDetail }) {
                       </tr>
                     </thead>
                     <tbody>
-                      {rows.map((defect, index) => (
+                      {defects.map((defect, index) => (
                         <TrialResultRow
                           key={defect.id || `${defect.photo_filename}-${index}`}
                           defect={defect}
@@ -519,10 +503,7 @@ function TrialResultDetail({ report }: { report: ReportDetail }) {
               <div className="trial-annotated-photo trial-photo-preview-annotated">
                 <img alt={`${annotatedPreview.filename} 检测标注预览`} src={annotatedPreview.imageUrl} />
                 {annotatedPreview.defect.defect_type ? (
-                  <TrialReportDefectBox
-                    defect={annotatedPreview.defect}
-                    index={annotatedPreview.index}
-                  />
+                  <TrialReportDefectBox defect={annotatedPreview.defect} />
                 ) : null}
               </div>
             ) : photoPreview ? (
@@ -540,7 +521,6 @@ interface TrialReportAnnotatedPreview {
   filename: string;
   imageUrl: string;
   defect: ReportDefectSnapshot;
-  index: number;
 }
 
 interface TrialReportPhotoPreview {
@@ -561,14 +541,12 @@ function TrialResultRow({
 }) {
   const imageUrl = defect.photo_preview_url || defect.photo_thumbnail_url || photo?.preview_url || photo?.thumbnail_url;
   const filename = defect.photo_filename || photo?.original_filename || "检测结果照片";
-  const descriptionLines = defect.defect_type
-    ? [trialDefectDescriptionFromType(defect.defect_type)]
-    : TRIAL_RESULT_DESCRIPTION_LINES;
+  const description = trialDefectDescriptionFromType(defect.defect_type);
   const canPreview = Boolean(imageUrl);
 
   function previewAnnotatedPhoto() {
     if (!imageUrl) return;
-    onPreview({ filename, imageUrl, defect, index });
+    onPreview({ filename, imageUrl, defect });
   }
 
   return (
@@ -583,7 +561,7 @@ function TrialResultRow({
           >
             {imageUrl ? <img alt={`${filename} 检测标注`} src={imageUrl} /> : <FileImage aria-hidden="true" />}
             {defect.defect_type ? (
-              <TrialReportDefectBox defect={defect} index={index} />
+              <TrialReportDefectBox defect={defect} />
             ) : null}
             {canPreview ? (
               <div className="trial-annotated-photo-actions">
@@ -606,25 +584,71 @@ function TrialResultRow({
       </td>
       <td className="trial-report-description">
         <p>
-          {descriptionLines.map((line) => (
-            <span key={line.text} className={line.className}>{line.text}</span>
-          ))}
+          <span className={description.className}>{description.text}</span>
         </p>
       </td>
     </tr>
   );
 }
 
-function TrialReportDefectBox({ defect, index }: { defect: ReportDefectSnapshot; index: number }) {
+function TrialReportDefectBox({ defect }: { defect: ReportDefectSnapshot }) {
   const defectDisplay = trialDefectDisplayFromType(defect.defect_type);
+  const boxStyle = trialReportDefectBoxStyle(defect);
+  if (!boxStyle) return null;
 
   return (
-    <span className={`trial-defect-box trial-defect-box-${index % 3} ${defectDisplay.boxClassName}`}>
+    <span
+      className={`trial-defect-box ${defectDisplay.boxClassName}`}
+      style={boxStyle}
+    >
       <span className="trial-defect-label">
         {trialDefectBoxLabel(defectDisplay, defect.confidence)}
       </span>
     </span>
   );
+}
+
+function trialReportDefectBoxStyle(defect: ReportDefectSnapshot): CSSProperties | undefined {
+  const bbox = defect.bbox_json;
+  const x = finiteNumber(bbox?.x);
+  const y = finiteNumber(bbox?.y);
+  const width = finiteNumber(bbox?.width);
+  const height = finiteNumber(bbox?.height);
+  const imageWidth = finiteNumber(defect.raw_result_json?.finding?.image_width);
+  const imageHeight = finiteNumber(defect.raw_result_json?.finding?.image_height);
+
+  if (x === null || y === null || width === null || height === null || width <= 0 || height <= 0) {
+    return undefined;
+  }
+
+  if (imageWidth && imageHeight) {
+    return {
+      left: `${(x / imageWidth) * 100}%`,
+      top: `${(y / imageHeight) * 100}%`,
+      width: `${(width / imageWidth) * 100}%`,
+      height: `${(height / imageHeight) * 100}%`,
+      right: "auto",
+      bottom: "auto"
+    };
+  }
+
+  if (x <= 1 && y <= 1 && width <= 1 && height <= 1) {
+    return {
+      left: `${x * 100}%`,
+      top: `${y * 100}%`,
+      width: `${width * 100}%`,
+      height: `${height * 100}%`,
+      right: "auto",
+      bottom: "auto"
+    };
+  }
+
+  return undefined;
+}
+
+function finiteNumber(value: number | string | null | undefined) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
 }
 
 function findTrialPhoto(report: ReportDetail, defect: ReportDefectSnapshot) {

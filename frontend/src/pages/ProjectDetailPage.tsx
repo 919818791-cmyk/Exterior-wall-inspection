@@ -212,7 +212,7 @@ export function ProjectDetailPage() {
     mutationFn: () => startDetection(id),
     onSuccess: async () => {
       setFormError("");
-      setActionMessage("AI 检测任务已创建，模拟 Worker 或正式 Worker 可开始拉取任务。");
+      setActionMessage("AI 检测任务已创建，检测服务可开始拉取任务。");
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["projects"] }),
         queryClient.invalidateQueries({ queryKey: ["projects", id] }),

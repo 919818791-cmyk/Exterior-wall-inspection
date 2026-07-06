@@ -2749,8 +2749,6 @@ body.auth-modal-open {
 .trial-defect-box {
   --trial-defect-color: #245cff;
   position: absolute;
-  width: 34%;
-  height: 28%;
   box-sizing: border-box;
   border: 2px solid var(--trial-defect-color);
   border-radius: 4px;
@@ -2761,23 +2759,27 @@ body.auth-modal-open {
 .trial-defect-label {
   position: absolute;
   z-index: 3;
-  top: -2px;
+  bottom: 100%;
   left: -2px;
   display: block;
   max-width: min(240px, calc(100vw - 48px));
   overflow: hidden;
-  padding: 0 12px;
+  padding: 0 10px;
   background: var(--trial-defect-color);
   color: #fff;
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 700;
-  line-height: 26px;
+  line-height: 22px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .trial-defect-box-crack {
   --trial-defect-color: #dc2626;
+}
+
+.trial-defect-box-default {
+  --trial-defect-color: #245cff;
 }
 
 .trial-defect-box-missing,
@@ -2787,21 +2789,6 @@ body.auth-modal-open {
 
 .trial-defect-box-moisture {
   --trial-defect-color: #0ea5e9;
-}
-
-.trial-defect-box-0 {
-  top: 24%;
-  left: 18%;
-}
-
-.trial-defect-box-1 {
-  top: 38%;
-  right: 15%;
-}
-
-.trial-defect-box-2 {
-  right: 28%;
-  bottom: 18%;
 }
 
 .trial-report-description p {
@@ -2817,6 +2804,10 @@ body.auth-modal-open {
 
 .trial-report-description-missing {
   color: #f97316;
+}
+
+.trial-report-description-default {
+  color: #245cff;
 }
 
 .trial-report-description-spalling {

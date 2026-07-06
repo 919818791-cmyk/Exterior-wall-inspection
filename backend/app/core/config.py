@@ -46,7 +46,6 @@ class Settings(BaseSettings):
     worker_lease_seconds: int = 600
     trial_algorithm_inference_url: str = ""
     trial_algorithm_inference_timeout_seconds: int = 120
-    trial_inference_required: bool = False
 
     auth_secret_key: str = "change-this-auth-secret-key-before-production"
     auth_access_token_expire_minutes: int = 480
