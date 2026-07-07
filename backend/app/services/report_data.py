@@ -68,6 +68,11 @@ def build_report_data(
     )
     detection_config = db.scalar(select(DetectionConfig).where(DetectionConfig.project_id == project.id))
     detection_task = db.get(DetectionTask, detection_task_id) if detection_task_id else None
+    detection_task_summary = (
+        detection_task.result_summary
+        if detection_task is not None and isinstance(detection_task.result_summary, dict)
+        else {}
+    )
 
     if review_results is None:
         criteria = [
@@ -201,6 +206,7 @@ def build_report_data(
             "model_version": detection_task.model_version if detection_task else None,
             "finished_at": detection_task.finished_at if detection_task else None,
         },
+        "raw_model_outputs": detection_task_summary.get("raw_model_outputs") or [],
         "summary": {
             "total_review_results": len(review_results),
             "by_defect_type": by_defect_type,

@@ -77,15 +77,19 @@ wait_for_http() {
   local url="$1"
   local label="$2"
   local attempt
+  local last_error=""
 
   for attempt in $(seq 1 30); do
-    if curl --noproxy '*' -fsS "$url" >/dev/null; then
+    if last_error="$(curl --noproxy '*' -fsS "$url" 2>&1 >/dev/null)"; then
       return 0
     fi
     sleep 1
   done
 
   echo "Health check failed for $label: $url" >&2
+  if [ -n "$last_error" ]; then
+    echo "$last_error" >&2
+  fi
   return 1
 }
 

@@ -3,6 +3,16 @@ import type { CSSProperties } from "react";
 import { useEffect, useRef, useState } from "react";
 import { Link, Navigate, useParams } from "react-router-dom";
 
+import { ApiError } from "@/api/client";
+import { getWeatherDaily, getWeatherHourly, type QWeatherHourlyForecast } from "@/api/weather";
+import { ProjectLocationMap } from "@/components/project/ProjectLocationMap";
+import {
+  calculateTimeRecommendation,
+  forecastDaysForDate,
+  forecastHoursForDate,
+  type TimeRecommendationResult
+} from "@/utils/timeRecommendation";
+
 const details = {
   crack: {
     title: "裂缝识别", summary: "自动识别建筑外墙线状、网状及分叉裂缝，记录位置、长度、走向和识别置信度，为工程复核提供清晰依据。",
@@ -49,18 +59,19 @@ function DefectDetail({ detail }: { detail: (typeof details)[keyof typeof detail
   </>;
 }
 
-const orientationWindows = {
-  东: { primary: "07:30–09:00", backup: "16:00–17:00", summary: "上午低角度光线更稳定，适合东向立面连续采集" },
-  南: { primary: "09:30–11:00", backup: "14:30–16:00", summary: "避开正午强反光，优先选择光照更均匀的过渡时段" },
-  西: { primary: "15:30–17:00", backup: "08:00–09:00", summary: "下午光照条件更适合西向立面，风速风险较低" },
-  北: { primary: "10:00–11:30", backup: "14:00–15:30", summary: "北向立面直射影响较小，可在温差稳定后采集" },
-  东南: { primary: "08:00–10:00", backup: "15:30–16:30", summary: "上午光照稳定，适合东南向主立面采集" },
-  东北: { primary: "08:30–10:00", backup: "14:00–15:30", summary: "上午反光较弱，可减少可见光照片过曝风险" },
-  西南: { primary: "15:00–16:30", backup: "09:00–10:30", summary: "下午光线角度更合适，适合西南向立面补采" },
-  西北: { primary: "14:30–16:00", backup: "10:00–11:00", summary: "午后光照更均匀，适合西北向立面巡检" }
+const orientationAzimuth = {
+  东: 90,
+  南: 180,
+  西: 270,
+  北: 0,
+  东南: 135,
+  东北: 45,
+  西南: 225,
+  西北: 315
 } as const;
 
-type Orientation = keyof typeof orientationWindows;
+type Orientation = keyof typeof orientationAzimuth;
+type RecommendationPosition = { longitude: number; latitude: number };
 
 function today() {
   const date = new Date();
@@ -72,31 +83,91 @@ function today() {
 function TimeRecommendation() {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isMapMounted, setIsMapMounted] = useState(false);
   const [date, setDate] = useState(today);
   const [orientation, setOrientation] = useState<Orientation>("东");
-  const [hasResult, setHasResult] = useState(false);
-  const window = orientationWindows[orientation];
+  const [address, setAddress] = useState("");
+  const [position, setPosition] = useState<RecommendationPosition | null>(null);
+  const [recommendation, setRecommendation] = useState<TimeRecommendationResult | null>(null);
+  const [recommendationError, setRecommendationError] = useState("");
+  const [isQuerying, setIsQuerying] = useState(false);
+  const qweatherLocation = position ? `${position.longitude.toFixed(2)},${position.latitude.toFixed(2)}` : "";
+  const preciseLocation = position ? `${position.longitude.toFixed(6)},${position.latitude.toFixed(6)}` : "";
 
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
-    if (isDialogOpen && !dialog.open) dialog.showModal();
-    if (!isDialogOpen && dialog.open) dialog.close();
+    let frame = 0;
+    if (isDialogOpen) {
+      if (!dialog.open) dialog.showModal();
+      frame = window.requestAnimationFrame(() => setIsMapMounted(true));
+    } else {
+      setIsMapMounted(false);
+      if (dialog.open) dialog.close();
+    }
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame);
+    };
   }, [isDialogOpen]);
 
   function openDialog() {
     setDate(today());
-    setHasResult(false);
+    setRecommendation(null);
+    setRecommendationError("");
     setIsDialogOpen(true);
   }
 
   function resetResult() {
-    setHasResult(false);
+    setRecommendation(null);
+    setRecommendationError("");
   }
 
-  function queryRecommendation() {
-    if (!date) return;
-    setHasResult(true);
+  function updatePosition(nextPosition: RecommendationPosition) {
+    setPosition(nextPosition);
+    resetResult();
+  }
+
+  async function queryRecommendation() {
+    if (!date || !position || isQuerying) return;
+    const dailyDays = forecastDaysForDate(date);
+    if (!dailyDays) {
+      setRecommendation(null);
+      setRecommendationError("目前支持从今天起未来 30 天内的单日推荐。");
+      return;
+    }
+
+    const hourlyHours = forecastHoursForDate(date);
+    setIsQuerying(true);
+    setRecommendation(null);
+    setRecommendationError("");
+    try {
+      const dailyForecast = await getWeatherDaily(qweatherLocation, dailyDays);
+      let hourlyItems: QWeatherHourlyForecast[] = [];
+      const warnings: string[] = [];
+      if (hourlyHours) {
+        try {
+          const hourlyForecast = await getWeatherHourly(qweatherLocation, hourlyHours);
+          hourlyItems = hourlyForecast.hourly;
+        } catch (error) {
+          warnings.push(`逐小时预报暂不可用，已使用逐日预报估算：${readableError(error)}`);
+        }
+      }
+      const nextRecommendation = calculateTimeRecommendation({
+        date,
+        latitude: position.latitude,
+        longitude: position.longitude,
+        orientationName: orientation,
+        azimuth: orientationAzimuth[orientation],
+        daily: dailyForecast.daily,
+        hourly: hourlyItems
+      });
+      nextRecommendation.modelWarnings = [...warnings, ...nextRecommendation.modelWarnings];
+      setRecommendation(nextRecommendation);
+    } catch (error) {
+      setRecommendationError(readableError(error));
+    } finally {
+      setIsQuerying(false);
+    }
   }
 
   return <>
@@ -108,14 +179,53 @@ function TimeRecommendation() {
       <div className="dialog-heading"><h2 id="time-recommendation-title">检测时段推荐</h2><button aria-label="关闭检测时段推荐" className="icon-button" type="button" onClick={() => dialogRef.current?.close()}><X aria-hidden="true" /></button></div>
       <div className="recommendation-content">
         <div className="recommendation-form-grid recommendation-form-grid--without-project">
-          <label className="recommendation-date-field"><span>日期</span><input aria-label="选择日期" type="date" value={date} onChange={(event) => { setDate(event.target.value); resetResult(); }} /></label>
-          <label className="recommendation-date-field"><span>立面朝向</span><select aria-label="选择立面朝向" value={orientation} onChange={(event) => { setOrientation(event.target.value as Orientation); resetResult(); }}>{(Object.keys(orientationWindows) as Orientation[]).map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+          <label className="recommendation-date-field"><span>日期</span><input aria-label="选择日期" className="recommendation-date-input" type="date" value={date} onChange={(event) => { setDate(event.target.value); resetResult(); }} /></label>
+          <label className="recommendation-date-field"><span>立面朝向</span><select aria-label="选择立面朝向" value={orientation} onChange={(event) => { setOrientation(event.target.value as Orientation); resetResult(); }}>{(Object.keys(orientationAzimuth) as Orientation[]).map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
         </div>
-        {hasResult ? <div className="recommendation-results"><div className="recommendation-primary"><span>最佳采集时段</span><strong>{window.primary}</strong><small>{date} · {window.summary}</small></div></div> : null}
+        <div className="recommendation-location-section">
+          <label className="recommendation-date-field recommendation-address-field"><span>检测位置</span><input aria-label="输入检测位置" placeholder="输入地址后可搜索定位，也可直接点击地图" value={address} onChange={(event) => { setAddress(event.target.value); resetResult(); }} /></label>
+          {isMapMounted ? <ProjectLocationMap address={address} className="recommendation-location-map" initialPosition={position} onPositionChange={updatePosition} usageLabel="检测位置" /> : null}
+        </div>
+        {isQuerying ? <div className="recommendation-weather-input"><span>计算状态</span><strong>正在获取天气并计算</strong></div> : null}
+        {recommendationError ? <div className="recommendation-weather-input recommendation-weather-input--error"><span>计算失败</span><strong>{recommendationError}</strong></div> : null}
+        {recommendation && position ? <div className="recommendation-results">
+          <div className="recommendation-primary">
+            <span>{recommendation.status}</span>
+            <strong>{recommendation.primaryWindow?.label ?? "不推荐检测"}</strong>
+            <small>{date} · {recommendation.headline} · {recommendation.reason}</small>
+          </div>
+          <div className="recommendation-meta">
+            <div><span>正温差窗口</span><strong>{windowText(recommendation.positiveWindow)}</strong></div>
+            <div><span>负温差窗口</span><strong>{windowText(recommendation.negativeWindow)}</strong></div>
+            <div><span>最大正温差</span><strong>{formatSigned(recommendation.maxPositiveDeltaC)} ℃</strong></div>
+            <div><span>最小负温差</span><strong>{recommendation.minNegativeDeltaC.toFixed(2)} ℃</strong></div>
+            <div><span>墙面辐照峰值</span><strong>{recommendation.peakRadiationWm2.toFixed(0)} W/m²</strong></div>
+            <div><span>辐照峰值时刻</span><strong>{recommendation.peakRadiationTime}</strong></div>
+          </div>
+          <div className="recommendation-weather-input"><span>天气查询坐标</span><strong>{qweatherLocation}</strong></div>
+          <div className="recommendation-weather-input"><span>地图原始坐标</span><strong>{preciseLocation}</strong></div>
+          <div className="recommendation-weather-input"><span>天气条件</span><strong>{recommendation.weatherSummary}</strong></div>
+          {recommendation.modelWarnings.map((warning) => <div className="recommendation-weather-input recommendation-weather-input--warning" key={warning}><span>提示</span><strong>{warning}</strong></div>)}
+        </div> : null}
       </div>
-      <div className="dialog-actions"><button className="button secondary" type="button" onClick={() => dialogRef.current?.close()}>取消</button><button className="button primary" disabled={!date} type="button" onClick={queryRecommendation}>{hasResult ? "重新查询" : "查询推荐"}</button></div>
+      <div className="dialog-actions"><button className="button secondary" type="button" onClick={() => dialogRef.current?.close()}>取消</button><button className="button primary" disabled={!date || !position || isQuerying} type="button" onClick={() => void queryRecommendation()}>{isQuerying ? "计算中" : recommendation ? "重新查询" : "查询推荐"}</button></div>
     </dialog>
   </>;
+}
+
+function windowText(window: TimeRecommendationResult["positiveWindow"]) {
+  if (!window) return "未达到阈值";
+  const state = window.qualifies ? "有效" : "短窗口";
+  return `${window.label} · ${state} · ${formatSigned(window.extremum)} ℃`;
+}
+
+function formatSigned(value: number) {
+  return `${value >= 0 ? "+" : ""}${value.toFixed(2)}`;
+}
+
+function readableError(error: unknown) {
+  if (error instanceof ApiError || error instanceof Error) return error.message;
+  return "天气数据获取或推荐计算失败。";
 }
 
 export function CapabilityDetailPage() {

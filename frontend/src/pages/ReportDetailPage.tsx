@@ -7,7 +7,6 @@ import {
   FileImage,
   FileText,
   Send,
-  X,
   ZoomIn
 } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
@@ -15,6 +14,7 @@ import { useMemo, useState } from "react";
 import { Link as RouterLink, useParams, useSearchParams } from "react-router-dom";
 
 import { downloadReportDocx, pushReport, reportQueryOptions } from "@/api/reports";
+import { ModelOutputDialog } from "@/components/ModelOutputDialog";
 import { StatusPill } from "@/components/StatusPill";
 import type {
   ReportBuildingSnapshot,
@@ -24,6 +24,7 @@ import type {
 import { useAuthStore } from "@/stores/useAuthStore";
 import { formatDateTime } from "@/utils/projectDisplay";
 import { saveBlobAsFile } from "@/utils/download";
+import { formatModelOutputs, hasModelOutputs } from "@/utils/modelOutputs";
 import { trialDefectBoxLabel, trialDefectDescriptionFromType, trialDefectDisplayFromType } from "@/utils/trialDefectDisplay";
 
 const DEFECT_LABELS: Record<string, string> = {
@@ -69,6 +70,7 @@ export function ReportDetailPage() {
   const reportQuery = useQuery(reportQueryOptions(id, includeGenerated, user));
   const report = reportQuery.data;
   const [message, setMessage] = useState("");
+  const [isModelOutputOpen, setIsModelOutputOpen] = useState(false);
   const isTrialResult = report?.source_type === "trial";
 
   const pushMutation = useMutation({
@@ -97,6 +99,11 @@ export function ReportDetailPage() {
     () => Object.entries(summary.by_defect_type ?? {}),
     [summary.by_defect_type]
   );
+  const modelOutputText = useMemo(
+    () => formatModelOutputs(report?.raw_model_outputs),
+    [report?.raw_model_outputs]
+  );
+  const canShowModelOutputs = hasModelOutputs(report?.raw_model_outputs);
 
   if (reportQuery.isLoading) {
     return (
@@ -137,6 +144,7 @@ export function ReportDetailPage() {
   }
 
   return (
+    <>
     <div className="grid gap-5 pb-8">
       <section className="flex flex-wrap items-end justify-between gap-4">
         <div>
@@ -245,8 +253,17 @@ export function ReportDetailPage() {
             <CardBody className="gap-0 p-0">
               <SectionHeader
                 icon={<FileImage className="h-5 w-5" aria-hidden="true" />}
-                title="缺陷明细"
+                title="检测结果明细"
                 subtitle="标注框坐标按原图像素记录"
+                action={canShowModelOutputs ? (
+                  <button
+                    className="model-output-link"
+                    type="button"
+                    onClick={() => setIsModelOutputOpen(true)}
+                  >
+                    模型原始输出
+                  </button>
+                ) : null}
               />
               <Divider />
               {defects.length ? (
@@ -344,13 +361,26 @@ export function ReportDetailPage() {
         </aside>
       </section>
     </div>
+    {isModelOutputOpen ? (
+      <ModelOutputDialog
+        text={modelOutputText}
+        onClose={() => setIsModelOutputOpen(false)}
+      />
+    ) : null}
+    </>
   );
 }
 
 function TrialResultDetail({ report }: { report: ReportDetail }) {
   const [annotatedPreview, setAnnotatedPreview] = useState<TrialReportAnnotatedPreview | null>(null);
   const [photoPreview, setPhotoPreview] = useState<TrialReportPhotoPreview | null>(null);
-  const defects = report.defects ?? [];
+  const [isModelOutputOpen, setIsModelOutputOpen] = useState(false);
+  const resultRows = useMemo(() => buildTrialResultRows(report), [report]);
+  const modelOutputText = useMemo(
+    () => formatModelOutputs(report.raw_model_outputs),
+    [report.raw_model_outputs]
+  );
+  const canShowModelOutputs = hasModelOutputs(report.raw_model_outputs);
 
   return (
     <div className="trial-result-detail-page">
@@ -435,11 +465,20 @@ function TrialResultDetail({ report }: { report: ReportDetail }) {
           <aside className="trial-report-panel">
             <div className="trial-report-result">
               <div className="trial-report-head">
-                <div>
+                <div className="trial-report-title-row">
                   <h2>检测结果明细</h2>
+                  {canShowModelOutputs ? (
+                    <button
+                      className="model-output-link"
+                      type="button"
+                      onClick={() => setIsModelOutputOpen(true)}
+                    >
+                      模型原始输出
+                    </button>
+                  ) : null}
                 </div>
               </div>
-              {defects.length ? (
+              {resultRows.length ? (
                 <div className="trial-report-table-wrap">
                   <table className="trial-report-table">
                     <thead>
@@ -450,12 +489,11 @@ function TrialResultDetail({ report }: { report: ReportDetail }) {
                       </tr>
                     </thead>
                     <tbody>
-                      {defects.map((defect, index) => (
+                      {resultRows.map((row, index) => (
                         <TrialResultRow
-                          key={defect.id || `${defect.photo_filename}-${index}`}
-                          defect={defect}
+                          key={row.key}
+                          row={row}
                           index={index}
-                          photo={findTrialPhoto(report, defect)}
                           onPreview={(preview) => {
                             setAnnotatedPreview(preview);
                             setPhotoPreview(null);
@@ -488,23 +526,15 @@ function TrialResultDetail({ report }: { report: ReportDetail }) {
           }}
         >
           <figure onClick={(event) => event.stopPropagation()}>
-            <button
-              className="trial-photo-preview-close"
-              type="button"
-              aria-label="关闭预览"
-              onClick={() => {
-                setAnnotatedPreview(null);
-                setPhotoPreview(null);
-              }}
-            >
-              <X aria-hidden="true" />
-            </button>
             {annotatedPreview ? (
               <div className="trial-annotated-photo trial-photo-preview-annotated">
                 <img alt={`${annotatedPreview.filename} 检测标注预览`} src={annotatedPreview.imageUrl} />
-                {annotatedPreview.defect.defect_type ? (
-                  <TrialReportDefectBox defect={annotatedPreview.defect} />
-                ) : null}
+                {annotatedPreview.defects.map((defect, defectIndex) => (
+                  <TrialReportDefectBox
+                    key={defect.id || `${defect.defect_type}-${defectIndex}`}
+                    defect={defect}
+                  />
+                ))}
               </div>
             ) : photoPreview ? (
               <img alt={`${photoPreview.filename} 预览`} src={photoPreview.imageUrl} />
@@ -513,6 +543,12 @@ function TrialResultDetail({ report }: { report: ReportDetail }) {
           </figure>
         </div>
       ) : null}
+      {isModelOutputOpen ? (
+        <ModelOutputDialog
+          text={modelOutputText}
+          onClose={() => setIsModelOutputOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -520,7 +556,7 @@ function TrialResultDetail({ report }: { report: ReportDetail }) {
 interface TrialReportAnnotatedPreview {
   filename: string;
   imageUrl: string;
-  defect: ReportDefectSnapshot;
+  defects: ReportDefectSnapshot[];
 }
 
 interface TrialReportPhotoPreview {
@@ -528,25 +564,28 @@ interface TrialReportPhotoPreview {
   imageUrl: string;
 }
 
+interface TrialResultPhotoRow {
+  key: string;
+  filename: string;
+  imageUrl: string;
+  defects: ReportDefectSnapshot[];
+}
+
 function TrialResultRow({
-  defect,
+  row,
   index,
-  photo,
   onPreview
 }: {
-  defect: ReportDefectSnapshot;
+  row: TrialResultPhotoRow;
   index: number;
-  photo?: ReportDetail["photos"][number];
   onPreview: (preview: TrialReportAnnotatedPreview) => void;
 }) {
-  const imageUrl = defect.photo_preview_url || defect.photo_thumbnail_url || photo?.preview_url || photo?.thumbnail_url;
-  const filename = defect.photo_filename || photo?.original_filename || "检测结果照片";
-  const description = trialDefectDescriptionFromType(defect.defect_type);
-  const canPreview = Boolean(imageUrl);
+  const canPreview = Boolean(row.imageUrl);
+  const summary = trialResultDefectSummary(row.defects);
 
   function previewAnnotatedPhoto() {
-    if (!imageUrl) return;
-    onPreview({ filename, imageUrl, defect });
+    if (!row.imageUrl) return;
+    onPreview({ filename: row.filename, imageUrl: row.imageUrl, defects: row.defects });
   }
 
   return (
@@ -555,14 +594,17 @@ function TrialResultRow({
       <td>
         <figure className="trial-annotated-photo-frame">
           <div
-            className={`trial-annotated-photo ${imageUrl ? "" : "trial-annotated-photo-placeholder"} ${canPreview ? "is-clickable" : ""}`}
+            className={`trial-annotated-photo ${row.imageUrl ? "" : "trial-annotated-photo-placeholder"} ${canPreview ? "is-clickable" : ""}`}
             title={canPreview ? "点击放大查看" : undefined}
             onClick={previewAnnotatedPhoto}
           >
-            {imageUrl ? <img alt={`${filename} 检测标注`} src={imageUrl} /> : <FileImage aria-hidden="true" />}
-            {defect.defect_type ? (
-              <TrialReportDefectBox defect={defect} />
-            ) : null}
+            {row.imageUrl ? <img alt={`${row.filename} 检测标注`} src={row.imageUrl} /> : <FileImage aria-hidden="true" />}
+            {row.defects.map((defect, defectIndex) => (
+              <TrialReportDefectBox
+                key={defect.id || `${defect.defect_type}-${defectIndex}`}
+                defect={defect}
+              />
+            ))}
             {canPreview ? (
               <div className="trial-annotated-photo-actions">
                 <button
@@ -579,13 +621,24 @@ function TrialResultRow({
               </div>
             ) : null}
           </div>
-          <figcaption>{filename}</figcaption>
+          <figcaption>{row.filename}</figcaption>
         </figure>
       </td>
       <td className="trial-report-description">
-        <p>
-          <span className={description.className}>{description.text}</span>
-        </p>
+        {summary.length ? (
+          <p>
+            {summary.map((item) => {
+              const description = trialDefectDescriptionFromType(item.defectType, item.count);
+              return (
+                <span key={item.defectType} className={description.className}>
+                  {description.text}
+                </span>
+              );
+            })}
+          </p>
+        ) : (
+          <p><span>未检出明显缺陷</span></p>
+        )}
       </td>
     </tr>
   );
@@ -649,6 +702,79 @@ function trialReportDefectBoxStyle(defect: ReportDefectSnapshot): CSSProperties 
 function finiteNumber(value: number | string | null | undefined) {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : null;
+}
+
+function buildTrialResultRows(report: ReportDetail): TrialResultPhotoRow[] {
+  const defectsByPhoto = new Map<string, ReportDefectSnapshot[]>();
+  for (const defect of report.defects ?? []) {
+    const photo = findTrialPhoto(report, defect);
+    const key = photo ? trialPhotoGroupKey(photo) : trialDefectGroupKey(defect);
+    if (!key) continue;
+    const group = defectsByPhoto.get(key) ?? [];
+    group.push(defect);
+    defectsByPhoto.set(key, group);
+  }
+
+  const consumedKeys = new Set<string>();
+  const rows = report.photos
+    .map((photo, index) => {
+      const key = trialPhotoGroupKey(photo) || `photo-index:${index}`;
+      consumedKeys.add(key);
+      const rowDefects = defectsByPhoto.get(key) ?? [];
+      return {
+        key,
+        filename: photo.original_filename || "检测结果照片",
+        imageUrl: trialResultRowImageUrl(rowDefects, photo),
+        defects: rowDefects
+      };
+    })
+    .filter((row) => row.defects.length > 0);
+
+  for (const [key, rowDefects] of defectsByPhoto) {
+    if (consumedKeys.has(key) || !rowDefects.length) continue;
+    rows.push({
+      key,
+      filename: rowDefects[0]?.photo_filename || "检测结果照片",
+      imageUrl: trialResultRowImageUrl(rowDefects),
+      defects: rowDefects
+    });
+  }
+
+  return rows;
+}
+
+function trialPhotoGroupKey(photo: ReportDetail["photos"][number]) {
+  if (photo.id) return `photo:${photo.id}`;
+  if (photo.original_filename) return `filename:${photo.original_filename}`;
+  return "";
+}
+
+function trialDefectGroupKey(defect: ReportDefectSnapshot) {
+  if (defect.photo_id) return `photo:${defect.photo_id}`;
+  if (defect.photo_filename) return `filename:${defect.photo_filename}`;
+  if (defect.id) return `defect:${defect.id}`;
+  return "";
+}
+
+function trialResultRowImageUrl(
+  defects: ReportDefectSnapshot[],
+  photo?: ReportDetail["photos"][number]
+) {
+  const defectWithUrl = defects.find((defect) => defect.photo_preview_url || defect.photo_thumbnail_url);
+  return defectWithUrl?.photo_preview_url
+    || defectWithUrl?.photo_thumbnail_url
+    || photo?.preview_url
+    || photo?.thumbnail_url
+    || "";
+}
+
+function trialResultDefectSummary(defects: ReportDefectSnapshot[]) {
+  const counts = new Map<string, number>();
+  defects.forEach((defect) => {
+    const defectType = defect.defect_type || "";
+    counts.set(defectType, (counts.get(defectType) ?? 0) + 1);
+  });
+  return Array.from(counts, ([defectType, count]) => ({ defectType, count }));
 }
 
 function findTrialPhoto(report: ReportDetail, defect: ReportDefectSnapshot) {
@@ -733,11 +859,13 @@ function BuildingBlock({ building }: { building: ReportBuildingSnapshot }) {
 function SectionHeader({
   icon,
   title,
-  subtitle
+  subtitle,
+  action
 }: {
   icon: ReactNode;
   title: string;
   subtitle: string;
+  action?: ReactNode;
 }) {
   return (
     <div className="flex items-center gap-3 px-5 py-4">
@@ -745,7 +873,10 @@ function SectionHeader({
         {icon}
       </span>
       <div>
-        <h2 className="text-lg font-black text-ink">{title}</h2>
+        <div className="model-output-title-row">
+          <h2 className="text-lg font-black text-ink">{title}</h2>
+          {action}
+        </div>
         <p className="mt-1 text-xs font-bold text-slate-500">{subtitle}</p>
       </div>
     </div>

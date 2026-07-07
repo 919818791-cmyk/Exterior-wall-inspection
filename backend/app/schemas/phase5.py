@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -82,6 +83,7 @@ class DetectionPayload(ApiSchema):
 class PhotoDetectionResult(ApiSchema):
     photo_id: UUID
     detections: list[DetectionPayload] = Field(default_factory=list)
+    model_output: dict[str, Any] | None = None
 
 
 class AlgorithmResultPayload(ApiSchema):

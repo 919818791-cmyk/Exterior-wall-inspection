@@ -51,6 +51,18 @@ class Settings(BaseSettings):
     auth_access_token_expire_minutes: int = 480
     auth_seed_demo_users: bool = True
 
+    qweather_api_host: str = ""
+    qweather_developer_id: str = ""
+    qweather_project_id: str = ""
+    qweather_credential_id: str = ""
+    qweather_public_key_path: str = ""
+    qweather_public_key_sha256: str = ""
+    qweather_private_key_path: str = ""
+    qweather_test_location: str = "116.41,39.92"
+    qweather_language: str = "zh"
+    qweather_jwt_ttl_seconds: int = 900
+    qweather_request_timeout_seconds: int = 10
+
     @field_validator("backend_cors_origins", mode="before")
     @classmethod
     def parse_cors_origins(cls, value: Any) -> list[str] | Any:

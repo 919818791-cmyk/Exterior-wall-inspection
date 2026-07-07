@@ -2869,15 +2869,123 @@ body.auth-modal-open {
   width: min(92vw, 600px);
 }
 
+.detection-time-dialog {
+  width: min(96vw, 920px);
+  max-height: min(90vh, 840px);
+  overflow: hidden;
+}
+
 .recommendation-content {
   display: grid;
   gap: 14px;
+}
+
+.detection-time-dialog .recommendation-content {
+  max-height: calc(90vh - 150px);
+  overflow: auto;
+  padding-right: 2px;
 }
 
 .recommendation-form-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr);
   gap: 12px;
+}
+
+.recommendation-location-section {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+}
+
+.recommendation-address-field {
+  grid-column: 1 / -1;
+}
+
+.project-dialog input.recommendation-date-input {
+  padding-right: 12px;
+  appearance: auto;
+}
+
+.project-dialog input.recommendation-date-input::-webkit-calendar-picker-indicator {
+  display: block;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  padding: 0;
+  cursor: pointer;
+  opacity: 0.68;
+}
+
+.recommendation-location-map.map-panel {
+  min-height: 334px;
+  border: 1px solid #dce7f3;
+  border-radius: 8px;
+}
+
+.recommendation-location-map #project-map {
+  min-height: 250px;
+}
+
+.recommendation-location-map #project-map.map-unavailable::after {
+  min-height: 250px;
+}
+
+.recommendation-location-map .map-panel-heading {
+  padding: 12px 14px;
+}
+
+.recommendation-location-map .map-credit {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-height: 40px;
+  text-align: right;
+}
+
+.recommendation-location-map .map-credit svg {
+  width: 14px;
+  height: 14px;
+}
+
+.recommendation-weather-input {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid #e1eaf6;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.recommendation-weather-input span {
+  color: #7385a2;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.recommendation-weather-input strong {
+  color: #243657;
+  font-size: 14px;
+  line-height: 1.45;
+  text-align: right;
+}
+
+.recommendation-weather-input--error {
+  border-color: #f0b8b8;
+  background: #fff7f7;
+}
+
+.recommendation-weather-input--error strong {
+  color: #b42318;
+}
+
+.recommendation-weather-input--warning {
+  border-color: #ead6a4;
+  background: #fffaf0;
 }
 
 .recommendation-date-field {
@@ -2945,9 +3053,19 @@ body.auth-modal-open {
   border-left: 1px solid #e3eaf3;
 }
 
+.recommendation-meta div:nth-child(odd) {
+  padding-left: 4px;
+  border-left: 0;
+}
+
+.recommendation-meta div:nth-child(n + 3) {
+  border-top: 1px solid #e3eaf3;
+}
+
 .recommendation-meta strong {
   color: #2b405f;
   font-size: 15px;
+  line-height: 1.45;
 }
 
 .upload-dialog {
@@ -4618,6 +4736,12 @@ body.auth-modal-open {
   background: #e8eff8;
 }
 
+#project-map .amap-layer-tile img {
+  width: 256px;
+  height: 256px;
+  max-width: none;
+}
+
 #project-map.map-unavailable::after {
   display: grid;
   place-items: center;
@@ -5320,7 +5444,8 @@ body.auth-modal-open {
 
   .trial-model-panel,
   .trial-report-metrics,
-  .recommendation-form-grid {
+  .recommendation-form-grid,
+  .recommendation-location-section {
     grid-template-columns: 1fr;
   }
 

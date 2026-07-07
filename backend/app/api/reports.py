@@ -66,6 +66,7 @@ TRIAL_DEFECT_TYPE_TO_MODEL = {
     "moisture": "潮湿",
 }
 TRIAL_DEFAULT_MODELS = ["裂缝", "面砖剥落"]
+TRIAL_MIN_VISIBLE_CONFIDENCE = 0.6
 TRIAL_ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/png"}
 TRIAL_MAX_FILE_COUNT = 20
 TRIAL_MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024
@@ -253,6 +254,7 @@ def _trial_archive_data(
     models: list[str],
     photos: list[dict[str, Any]],
     findings: list[dict[str, Any]],
+    raw_model_outputs: list[dict[str, Any]],
 ) -> dict[str, Any]:
     photo_by_id = {str(photo.get("id")): photo for photo in photos if photo.get("id")}
     photo_by_name = {photo.get("original_filename"): photo for photo in photos}
@@ -317,6 +319,7 @@ def _trial_archive_data(
         },
         "photos": photos,
         "defects": defects,
+        "raw_model_outputs": raw_model_outputs,
     }
 
 
@@ -389,6 +392,7 @@ def _detail_item(db: Session, report: InspectionReport, project: Project, reques
         summary=data.get("summary") or {},
         defects=data.get("defects") or [],
         photos=data.get("photos") or [],
+        raw_model_outputs=data.get("raw_model_outputs") or [],
         docx_bucket=report.docx_bucket,
         docx_object_key=report.docx_object_key,
         generated_by=report.generated_by,
@@ -417,6 +421,7 @@ def _trial_detail_item(result: TrialDetectionResult, request: Request | None = N
         summary=data.get("summary") or {},
         defects=data.get("defects") or [],
         photos=data.get("photos") or [],
+        raw_model_outputs=data.get("raw_model_outputs") or [],
         docx_bucket=None,
         docx_object_key=None,
         generated_by=result.generated_by,
@@ -693,12 +698,18 @@ def _trial_findings_from_inference(
         bbox = detection.get("bbox")
         if model is None or not isinstance(bbox, dict):
             continue
+        try:
+            confidence = float(detection.get("confidence"))
+        except (TypeError, ValueError):
+            continue
+        if confidence < TRIAL_MIN_VISIBLE_CONFIDENCE:
+            continue
         findings.append(
             {
                 "photo_id": entry.get("photo_id"),
                 "filename": str(entry["filename"]),
                 "model": model,
-                "confidence": detection.get("confidence"),
+                "confidence": confidence,
                 "bbox": bbox,
                 "image_width": image.get("width"),
                 "image_height": image.get("height"),
@@ -708,6 +719,51 @@ def _trial_findings_from_inference(
     return findings
 
 
+def _trial_confidence(value: object) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _trial_model_output_from_inference(
+    *,
+    entry: dict[str, Any],
+    inference: dict[str, Any],
+) -> dict[str, Any]:
+    image = inference.get("image") if isinstance(inference.get("image"), dict) else {}
+    detections: list[dict[str, Any]] = []
+    for index, detection in enumerate(inference.get("detections") or []):
+        if not isinstance(detection, dict):
+            continue
+        defect_type = _trial_model_to_defect_type(str(detection.get("type") or ""))
+        model = TRIAL_DEFECT_TYPE_TO_MODEL.get(defect_type, defect_type)
+        confidence = _trial_confidence(detection.get("confidence"))
+        detections.append(
+            {
+                "detection_id": detection.get("id") or f"trial-{index + 1}",
+                "type": defect_type,
+                "type_name": detection.get("type_name"),
+                "model": model,
+                "confidence": confidence,
+                "bbox": detection.get("bbox") if isinstance(detection.get("bbox"), dict) else None,
+                "severity": detection.get("severity"),
+                "description": detection.get("description"),
+                "visible": confidence is not None and confidence >= TRIAL_MIN_VISIBLE_CONFIDENCE,
+            }
+        )
+    return {
+        "photo_id": entry.get("photo_id"),
+        "filename": str(entry["filename"]),
+        "image_width": image.get("width"),
+        "image_height": image.get("height"),
+        "model_version": inference.get("model_version"),
+        "requested_models": inference.get("requested_models") or [],
+        "executed_models": inference.get("executed_models") or [],
+        "detections": detections,
+    }
+
+
 def _trial_inference_unavailable(exc: Exception) -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -715,12 +771,13 @@ def _trial_inference_unavailable(exc: Exception) -> HTTPException:
     )
 
 
-def _trial_findings_for_uploaded_files(
+def _trial_outputs_for_uploaded_files(
     uploaded_files: list[UploadFile],
     file_entries: list[dict[str, Any]],
     models: list[str],
-) -> list[dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     findings: list[dict[str, Any]] = []
+    raw_model_outputs: list[dict[str, Any]] = []
     try:
         for uploaded_file, entry in zip(uploaded_files, file_entries, strict=True):
             uploaded_file.file.seek(0)
@@ -732,18 +789,20 @@ def _trial_findings_for_uploaded_files(
                 content=content,
                 models=models,
             )
+            raw_model_outputs.append(_trial_model_output_from_inference(entry=entry, inference=inference))
             findings.extend(_trial_findings_from_inference(entry=entry, inference=inference))
     except Exception as exc:
         raise _trial_inference_unavailable(exc) from exc
-    return findings
+    return findings, raw_model_outputs
 
 
-def _trial_findings_for_quick_photos(
+def _trial_outputs_for_quick_photos(
     photos: list[QuickDetectionPhoto],
     file_entries: list[dict[str, Any]],
     models: list[str],
-) -> list[dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     findings: list[dict[str, Any]] = []
+    raw_model_outputs: list[dict[str, Any]] = []
     try:
         for photo, entry in zip(photos, file_entries, strict=True):
             content = get_object_bytes(photo.storage_bucket, photo.storage_object_key)
@@ -753,10 +812,11 @@ def _trial_findings_for_quick_photos(
                 content=content,
                 models=models,
             )
+            raw_model_outputs.append(_trial_model_output_from_inference(entry=entry, inference=inference))
             findings.extend(_trial_findings_from_inference(entry=entry, inference=inference))
     except Exception as exc:
         raise _trial_inference_unavailable(exc) from exc
-    return findings
+    return findings, raw_model_outputs
 
 
 def _stored_trial_photos(result_id: UUID, uploaded_files: list[UploadFile], file_entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -810,6 +870,7 @@ def _trial_generated_result(
     trial_request: TrialGenerateRequest,
     file_entries: list[dict[str, Any]],
     findings: list[dict[str, Any]],
+    raw_model_outputs: list[dict[str, Any]],
 ) -> TrialGeneratedResult:
     models = [model for model in trial_request.models if model] or TRIAL_DEFAULT_MODELS
     return TrialGeneratedResult(
@@ -818,6 +879,7 @@ def _trial_generated_result(
         models=models,
         files=file_entries,
         findings=findings,
+        raw_model_outputs=raw_model_outputs,
     )
 
 
@@ -887,20 +949,24 @@ async def generate_trial_result(
         payload, files = await _trial_form_payload_and_files(request)
         trial_request, file_entries = _trial_generate_request_from_form(payload, files)
         models = [model for model in trial_request.models if model] or TRIAL_DEFAULT_MODELS
+        findings, raw_model_outputs = _trial_outputs_for_uploaded_files(files, file_entries, models)
         return _trial_generated_result(
             trial_request,
             file_entries,
-            _trial_findings_for_uploaded_files(files, file_entries, models),
+            findings,
+            raw_model_outputs,
         )
 
     trial_request = _trial_generate_request_from_payload(await _trial_payload_from_json_request(request))
     photos = _quick_detection_photos_for_user(db, current_user, trial_request.photo_ids)
     file_entries = _trial_file_entries_for_quick_photos(photos)
     models = [model for model in trial_request.models if model] or TRIAL_DEFAULT_MODELS
+    findings, raw_model_outputs = _trial_outputs_for_quick_photos(photos, file_entries, models)
     return _trial_generated_result(
         trial_request,
         file_entries,
-        _trial_findings_for_quick_photos(photos, file_entries, models),
+        findings,
+        raw_model_outputs,
     )
 
 
@@ -937,6 +1003,7 @@ async def create_trial_result(
         models=request_data["models"],
         photos=stored_photos,
         findings=request_data["findings"],
+        raw_model_outputs=request_data.get("raw_model_outputs") or [],
     )
     result = TrialDetectionResult(
         id=result_id,

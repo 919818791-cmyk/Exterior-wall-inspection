@@ -188,12 +188,17 @@ def normalize_detection(detection: dict[str, Any]) -> dict[str, Any] | None:
     if not isinstance(bbox, dict):
         print(f"Skip detection without bbox: {detection.get('id')}", file=sys.stderr)
         return None
+    try:
+        confidence = float(detection.get("confidence"))
+    except (TypeError, ValueError):
+        print(f"Skip detection without valid confidence: {detection.get('id')}", file=sys.stderr)
+        return None
 
     return {
         "id": detection.get("id"),
         "type": defect_type,
         "type_name": DEFECT_TYPE_NAMES[defect_type],
-        "confidence": detection.get("confidence"),
+        "confidence": confidence,
         "bbox": bbox,
         "mask": detection.get("mask"),
         "severity": detection.get("severity"),
@@ -253,7 +258,19 @@ def build_real_results(task: dict[str, Any]) -> dict[str, Any]:
             for detection in inference.get("detections", [])
             if (normalized := normalize_detection(detection)) is not None
         ]
-        photo_results.append({"photo_id": photo["photo_id"], "detections": detections})
+        photo_results.append(
+            {
+                "photo_id": photo["photo_id"],
+                "detections": detections,
+                "model_output": {
+                    "image": inference.get("image"),
+                    "model_version": inference.get("model_version") or MODEL_VERSION,
+                    "requested_models": inference.get("requested_models") or models,
+                    "executed_models": inference.get("executed_models") or [],
+                    "detections": detections,
+                },
+            }
+        )
         print(f"Inference completed for photo {photo['photo_id']}: {len(detections)} detections")
 
     return {

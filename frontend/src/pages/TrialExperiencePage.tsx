@@ -1,4 +1,5 @@
-import { Archive, Check, FileSearch, Home, ImageUp, RefreshCcw, Sparkles, Trash2, Undo2, X, ZoomIn } from "lucide-react";
+import { Skeleton, Spinner } from "@heroui/react";
+import { Archive, Check, FileSearch, Home, ImageUp, RefreshCcw, Sparkles, Trash2, Undo2, ZoomIn } from "lucide-react";
 import { type CSSProperties, type ChangeEvent, type DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
@@ -11,15 +12,23 @@ import {
   type TrialGeneratedResult,
   type TrialUploadedPhoto
 } from "@/api/reports";
+import { ModelOutputDialog } from "@/components/ModelOutputDialog";
 import { trialDefectBoxLabel, trialDefectDisplayFromModel } from "@/utils/trialDefectDisplay";
 import { readTrialPhotoMetadata, type TrialPhotoMetadata } from "@/utils/photoMetadata";
 import { createClientId } from "@/utils/id";
+import { formatModelOutputs, hasModelOutputs } from "@/utils/modelOutputs";
 
 const MODEL_OPTIONS = ["裂缝", "面砖剥落"] as const;
 const MAX_TRIAL_PHOTO_COUNT = 20;
 const MAX_TRIAL_PHOTO_SIZE_BYTES = 20 * 1024 * 1024;
 const ACCEPTED_TRIAL_PHOTO_TYPES = new Set(["image/jpeg", "image/png"]);
 const UPLOAD_LIMIT_TIP = "支持 JPG、PNG 图片，单张最大 20MB，单次最多 20 张";
+const GENERATION_STEP_MESSAGES = [
+  "正在读取照片信息",
+  "正在调用裂缝与剥落识别模型",
+  "正在分析外墙缺陷区域",
+  "正在生成标注结果"
+] as const;
 const EMPTY_TRIAL_PHOTO_METADATA: TrialPhotoMetadata = {
   xmpDroneDjiImageSource: null,
   ifd0ImageDescription: null,
@@ -66,6 +75,9 @@ export function TrialExperiencePage() {
   const [archivedReportId, setArchivedReportId] = useState<string | null>(null);
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [annotatedPreview, setAnnotatedPreview] = useState<TrialAnnotatedPreview | null>(null);
+  const [generationStepIndex, setGenerationStepIndex] = useState(0);
+  const [showGenerationLongWait, setShowGenerationLongWait] = useState(false);
+  const [isModelOutputOpen, setIsModelOutputOpen] = useState(false);
 
   const photoPreviews = useMemo<SelectedPhotoPreview[]>(
     () => selectedPhotos.map((photo) => ({
@@ -93,12 +105,38 @@ export function TrialExperiencePage() {
     });
   }, [generatedResult, photoPreviews]);
   const uploadSummary = useMemo(() => trialUploadSummary(selectedPhotos), [selectedPhotos]);
+  const modelOutputText = useMemo(
+    () => formatModelOutputs(generatedResult?.raw_model_outputs),
+    [generatedResult?.raw_model_outputs]
+  );
+  const canShowModelOutputs = hasModelOutputs(generatedResult?.raw_model_outputs);
   const isUploading = selectedPhotos.some((photo) => photo.uploadStatus === "uploading");
   const isUploadLocked = isUploading || isGenerating || isArchiving || Boolean(archivedReportId);
 
   useEffect(() => () => {
     photoPreviews.forEach((photo) => URL.revokeObjectURL(photo.previewUrl));
   }, [photoPreviews]);
+
+  useEffect(() => {
+    if (!isGenerating) {
+      setGenerationStepIndex(0);
+      setShowGenerationLongWait(false);
+      return;
+    }
+
+    setShowGenerationLongWait(false);
+    const stepTimer = window.setInterval(() => {
+      setGenerationStepIndex((current) => (current + 1) % GENERATION_STEP_MESSAGES.length);
+    }, 1600);
+    const longWaitTimer = window.setTimeout(() => {
+      setShowGenerationLongWait(true);
+    }, 15000);
+
+    return () => {
+      window.clearInterval(stepTimer);
+      window.clearTimeout(longWaitTimer);
+    };
+  }, [isGenerating]);
 
   async function applyFiles(fileList: File[]) {
     if (!fileList.length || isUploadLocked) return;
@@ -549,8 +587,17 @@ export function TrialExperiencePage() {
             {generatedResult ? (
               <div className="trial-report-result">
                 <div className="trial-report-head">
-                  <div>
+                  <div className="trial-report-title-row">
                     <h2>检测结果明细</h2>
+                    {canShowModelOutputs ? (
+                      <button
+                        className="model-output-link"
+                        type="button"
+                        onClick={() => setIsModelOutputOpen(true)}
+                      >
+                        模型原始输出
+                      </button>
+                    ) : null}
                   </div>
                 </div>
                 <div className="trial-report-table-wrap">
@@ -636,6 +683,12 @@ export function TrialExperiencePage() {
                   </table>
                 </div>
               </div>
+            ) : isGenerating ? (
+              <TrialGeneratingResult
+                photos={photoPreviews}
+                stepIndex={generationStepIndex}
+                showLongWait={showGenerationLongWait}
+              />
             ) : (
               <div className="trial-report-empty">
                 <FileSearch aria-hidden="true" />
@@ -655,14 +708,6 @@ export function TrialExperiencePage() {
           onClick={closePhotoPreview}
         >
           <figure onClick={(event) => event.stopPropagation()}>
-            <button
-              className="trial-photo-preview-close"
-              type="button"
-              aria-label="关闭预览"
-              onClick={closePhotoPreview}
-            >
-              <X aria-hidden="true" />
-            </button>
             {annotatedPreview ? (
               <div className="trial-annotated-photo trial-photo-preview-annotated">
                 <img alt={`${annotatedPreview.filename} 检测标注预览`} src={annotatedPreview.previewUrl} />
@@ -690,7 +735,109 @@ export function TrialExperiencePage() {
           </figure>
         </div>
       ) : null}
+      {isModelOutputOpen ? (
+        <ModelOutputDialog
+          text={modelOutputText}
+          onClose={() => setIsModelOutputOpen(false)}
+        />
+      ) : null}
     </>
+  );
+}
+
+function TrialGeneratingResult({
+  photos,
+  stepIndex,
+  showLongWait
+}: {
+  photos: SelectedPhotoPreview[];
+  stepIndex: number;
+  showLongWait: boolean;
+}) {
+  const rows = photos.length
+    ? photos.map((photo) => ({
+      id: photo.id,
+      filename: photo.file.name,
+      previewUrl: photo.previewUrl
+    }))
+    : Array.from({ length: 3 }, (_, index) => ({
+      id: `placeholder-${index}`,
+      filename: "",
+      previewUrl: ""
+    }));
+
+  return (
+    <div
+      className="trial-report-result trial-generating-result"
+      role="status"
+      aria-live="polite"
+      aria-label="检测结果生成中"
+    >
+      <div className="trial-report-head trial-generating-head">
+        <div>
+          <h2>检测结果明细</h2>
+          <p>{showLongWait ? "模型仍在运行，完成后将自动展示结果。" : "算法正在检测照片，结果生成后会自动更新。"}</p>
+        </div>
+        <span className="trial-generating-status">
+          <Spinner size="sm" color="primary" />
+          模型检测中
+        </span>
+      </div>
+      <div className="trial-report-table-wrap trial-generating-table-wrap">
+        <table className="trial-report-table trial-generating-table" aria-busy="true">
+          <thead>
+            <tr>
+              <th>序号</th>
+              <th>含标注的照片</th>
+              <th>检测说明</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, index) => {
+              const message = GENERATION_STEP_MESSAGES[(stepIndex + index) % GENERATION_STEP_MESSAGES.length];
+              return (
+                <tr key={row.id}>
+                  <td>
+                    <span className="trial-generating-index">{String(index + 1).padStart(2, "0")}</span>
+                  </td>
+                  <td>
+                    <figure className="trial-annotated-photo-frame trial-generating-photo-frame">
+                      <div className={`trial-generating-photo ${row.previewUrl ? "has-preview" : ""}`}>
+                        {row.previewUrl ? (
+                          <img alt={`${row.filename} 正在检测`} src={row.previewUrl} />
+                        ) : (
+                          <Skeleton className="trial-generating-photo-skeleton" />
+                        )}
+                        <span className="trial-generating-scan-line" aria-hidden="true" />
+                      </div>
+                      {row.filename ? (
+                        <figcaption>{row.filename}</figcaption>
+                      ) : (
+                        <Skeleton className="trial-generating-caption-skeleton" />
+                      )}
+                    </figure>
+                  </td>
+                  <td className="trial-report-description trial-generating-description">
+                    <div className="trial-generating-description-stack">
+                      <span className="trial-generating-message">
+                        {message}
+                        <span className="trial-loading-dots" aria-hidden="true">
+                          <span>.</span>
+                          <span>.</span>
+                          <span>.</span>
+                        </span>
+                      </span>
+                      <Skeleton className="trial-generating-line is-wide" />
+                      <Skeleton className="trial-generating-line is-short" />
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 

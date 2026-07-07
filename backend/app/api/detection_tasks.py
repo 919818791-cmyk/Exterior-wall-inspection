@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from typing import Any
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
@@ -39,6 +40,12 @@ from app.schemas.phase5 import (
 from app.services.object_storage import presigned_get_url
 
 router = APIRouter(tags=["detection-tasks"])
+
+MIN_VISIBLE_CONFIDENCE = 0.6
+DEFECT_TYPE_NAMES = {
+    "crack": "裂缝",
+    "missing": "面砖剥落",
+}
 
 
 @dataclass(frozen=True)
@@ -121,6 +128,42 @@ def _set_task_photo_status(
     for task_photo, photo in task_photos:
         task_photo.status = photo_status.value
         photo.status = photo_status.value
+
+
+def _defect_type_value(value: object) -> str:
+    return value.value if hasattr(value, "value") else str(value)
+
+
+def _raw_model_output_detection(detection: Any) -> dict[str, Any]:
+    detection_data = detection.model_dump(mode="json")
+    defect_type = _defect_type_value(detection.type)
+    confidence = detection.confidence
+    detection_data["type"] = defect_type
+    detection_data["model"] = DEFECT_TYPE_NAMES.get(defect_type, defect_type)
+    detection_data["visible"] = confidence is not None and confidence >= MIN_VISIBLE_CONFIDENCE
+    return detection_data
+
+
+def _raw_model_output_for_photo(
+    photo_result: Any,
+    photo: Photo | None,
+    model_version: str,
+) -> dict[str, Any]:
+    model_output = photo_result.model_output if isinstance(photo_result.model_output, dict) else {}
+    image = model_output.get("image") if isinstance(model_output.get("image"), dict) else {}
+    return {
+        "photo_id": str(photo_result.photo_id),
+        "filename": photo.original_filename if photo else None,
+        "image_width": image.get("width"),
+        "image_height": image.get("height"),
+        "model_version": model_output.get("model_version") or model_version,
+        "requested_models": model_output.get("requested_models") or [],
+        "executed_models": model_output.get("executed_models") or [],
+        "detections": [
+            _raw_model_output_detection(detection)
+            for detection in photo_result.detections
+        ],
+    }
 
 
 @router.post(
@@ -327,6 +370,7 @@ def submit_task_results(
 
     task_photo_rows = _task_photos(db, task.id)
     task_photo_ids = {photo.id for _, photo in task_photo_rows}
+    photo_by_id = {photo.id: photo for _, photo in task_photo_rows}
     payload_photo_ids = {result.photo_id for result in payload.results}
     unknown_photo_ids = payload_photo_ids - task_photo_ids
     if unknown_photo_ids:
@@ -337,12 +381,22 @@ def submit_task_results(
 
     db.execute(delete(AiDetectionResult).where(AiDetectionResult.detection_task_id == task.id))
 
+    raw_model_outputs = [
+        _raw_model_output_for_photo(
+            photo_result,
+            photo_by_id.get(photo_result.photo_id),
+            payload.model_version,
+        )
+        for photo_result in payload.results
+    ]
     result_counts: dict[str, int] = {}
     total_detections = 0
     for photo_result in payload.results:
         for detection in photo_result.detections:
+            if detection.confidence is None or detection.confidence < MIN_VISIBLE_CONFIDENCE:
+                continue
             detection_data = detection.model_dump(mode="json")
-            defect_type = detection.type.value if hasattr(detection.type, "value") else detection.type
+            defect_type = _defect_type_value(detection.type)
             result_counts[defect_type] = result_counts.get(defect_type, 0) + 1
             total_detections += 1
             db.add(
@@ -383,6 +437,8 @@ def submit_task_results(
         "photo_count": len(task_photo_rows),
         "by_defect_type": result_counts,
         "model_version": payload.model_version,
+        "raw_model_output_count": sum(len(item.get("detections") or []) for item in raw_model_outputs),
+        "raw_model_outputs": raw_model_outputs,
     }
     task.updated_at = now
     project.status = ProjectStatus.PENDING_REVIEW.value

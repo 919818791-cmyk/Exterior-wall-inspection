@@ -46,6 +46,7 @@ class ReportDetailRead(ApiSchema):
     summary: dict
     defects: list[dict]
     photos: list[dict]
+    raw_model_outputs: list[dict] = Field(default_factory=list)
     docx_bucket: str | None
     docx_object_key: str | None
     generated_by: UUID
@@ -94,6 +95,7 @@ class TrialReportRequest(ApiSchema):
     models: list[str]
     files: list[TrialReportFile]
     findings: list[TrialReportFinding]
+    raw_model_outputs: list[dict] = Field(default_factory=list)
 
 
 class TrialGeneratedResult(TrialReportRequest):

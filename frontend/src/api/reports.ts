@@ -2,7 +2,7 @@ import { queryOptions } from "@tanstack/react-query";
 
 import { ApiError, apiFetch, apiRequest, apiUploadRequest, type ApiUploadProgress } from "@/api/client";
 import type { AuthUser } from "@/types/auth";
-import type { ReportDetail, ReportListItem } from "@/types/reports";
+import type { ModelOutputPhoto, ReportDetail, ReportListItem } from "@/types/reports";
 
 function generatedParam(includeGenerated: boolean) {
   return includeGenerated ? "?include_generated=true" : "";
@@ -70,6 +70,7 @@ export interface TrialReportPayload {
     image_height?: number | null;
     detection_id?: string | null;
   }>;
+  raw_model_outputs?: ModelOutputPhoto[];
 }
 
 export interface TrialGeneratePayload {

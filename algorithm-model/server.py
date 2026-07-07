@@ -165,6 +165,41 @@ def _bbox_from_xyxy(xyxy: list[float]) -> dict[str, float]:
     }
 
 
+def _box_class_id(box: Any) -> int | None:
+    raw_class = getattr(box, "cls", None)
+    if raw_class is None:
+        return None
+    try:
+        return int(raw_class[0].item())
+    except (AttributeError, IndexError, TypeError, ValueError):
+        try:
+            return int(raw_class)
+        except (TypeError, ValueError):
+            return None
+
+
+def _result_class_name(result: Any, class_id: int) -> str | None:
+    names = getattr(result, "names", {}) or {}
+    if isinstance(names, dict):
+        raw_name = names.get(class_id, names.get(str(class_id)))
+    else:
+        try:
+            raw_name = names[class_id]
+        except (IndexError, TypeError):
+            raw_name = None
+    return None if raw_name is None else str(raw_name)
+
+
+def _result_defect_type(result: Any, box: Any) -> str | None:
+    class_id = _box_class_id(box)
+    if class_id is None:
+        return None
+    class_name = _result_class_name(result, class_id)
+    if class_name is None:
+        return None
+    return _normalize_class_name(class_name)
+
+
 def _target_model_types(selected_models: set[str]) -> list[str]:
     configured = _configured_model_paths()
     return [
@@ -181,6 +216,10 @@ def _result_detections(result: Any, defect_type: str, detection_offset: int) -> 
         return detections
 
     for index, box in enumerate(boxes):
+        detected_type = _result_defect_type(result, box)
+        if detected_type is not None and detected_type != defect_type:
+            continue
+
         xyxy = [float(value) for value in box.xyxy[0].tolist()]
         confidence = float(box.conf[0].item())
         if confidence < MODEL_CONFIDENCE_THRESHOLD:

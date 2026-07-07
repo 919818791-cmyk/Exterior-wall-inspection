@@ -41,12 +41,23 @@ declare global {
 }
 
 const DEFAULT_POSITION = { longitude: 114.0579, latitude: 22.5431 };
-const AMAP_KEY = import.meta.env.VITE_AMAP_KEY || "33d426f69fb683c1ee00fe669f6bea0d";
-const AMAP_SECURITY_JS_CODE =
-  import.meta.env.VITE_AMAP_SECURITY_JS_CODE || "f1b53e0a76ea9bd92771b94c48152d51";
+const DEFAULT_AMAP_KEY = "33d426f69fb683c1ee00fe669f6bea0d";
+const DEFAULT_AMAP_SECURITY_JS_CODE = "f1b53e0a76ea9bd92771b94c48152d51";
 const MARKER_CONTENT = '<span class="project-map-marker" aria-hidden="true"></span>';
 
 let amapLoader: Promise<AMapNamespace> | null = null;
+
+function cleanAmapCredential(value: string | undefined, fallback: string) {
+  const credential = value?.trim();
+  if (!credential || credential.startsWith("your-")) return fallback;
+  return credential;
+}
+
+const AMAP_KEY = cleanAmapCredential(import.meta.env.VITE_AMAP_KEY, DEFAULT_AMAP_KEY);
+const AMAP_SECURITY_JS_CODE = cleanAmapCredential(
+  import.meta.env.VITE_AMAP_SECURITY_JS_CODE,
+  DEFAULT_AMAP_SECURITY_JS_CODE
+);
 
 function loadAmap(key: string, securityJsCode: string) {
   if (window.AMap) return Promise.resolve(window.AMap);
@@ -75,7 +86,8 @@ export function ProjectLocationMap({
   initialPosition,
   isEditable = true,
   locateSignal = 0,
-  onPositionChange
+  onPositionChange,
+  usageLabel = "项目"
 }: {
   address: string;
   className?: string;
@@ -83,6 +95,7 @@ export function ProjectLocationMap({
   isEditable?: boolean;
   locateSignal?: number;
   onPositionChange?: (position: { longitude: number; latitude: number }) => void;
+  usageLabel?: string;
 }) {
   const mapElementRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<AMapMap | null>(null);
@@ -91,7 +104,7 @@ export function ProjectLocationMap({
   const initialMapPosition = initialPosition ?? DEFAULT_POSITION;
   const [isReady, setIsReady] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
-  const [statusText, setStatusText] = useState("点击地图或拖动标记可选择项目坐标");
+  const [statusText, setStatusText] = useState(`点击地图或拖动标记可选择${usageLabel}坐标`);
   const [selectedPosition, setSelectedPosition] = useState(initialMapPosition);
 
   const setPosition = useCallback((
@@ -175,7 +188,7 @@ export function ProjectLocationMap({
         markerRef.current = marker;
         setPosition(
           initialMapPosition,
-          initialPosition ? "已加载保存坐标" : isEditable ? "点击地图或拖动标记可选择项目坐标" : "项目位置标记",
+          initialPosition ? "已加载保存坐标" : isEditable ? `点击地图或拖动标记可选择${usageLabel}坐标` : `${usageLabel}位置标记`,
           false
         );
         setIsReady(true);
@@ -243,7 +256,7 @@ export function ProjectLocationMap({
         </div>
       </div>
       <div
-        aria-label="项目位置地图"
+        aria-label={`${usageLabel}位置地图`}
         className={unavailable ? "map-unavailable" : undefined}
         id="project-map"
         ref={mapElementRef}

@@ -177,7 +177,7 @@ def _mock_trial_inference(monkeypatch, payload: dict | None = None) -> None:
             {
                 "id": "det-1",
                 "type": "missing",
-                "confidence": 0.57,
+                "confidence": 0.67,
                 "bbox": {"x": 100, "y": 50, "width": 240, "height": 80},
             }
         ],
@@ -346,11 +346,48 @@ def test_trial_generate_endpoint_returns_preview_payload(monkeypatch) -> None:
         {
             "filename": "trial-001.jpg",
             "model": "面砖剥落",
-            "confidence": 0.57,
+            "confidence": 0.67,
             "bbox": {"x": 100, "y": 50, "width": 240, "height": 80},
             "image_width": 1000,
             "image_height": 500,
             "detection_id": "det-1",
+        }
+    ]
+
+
+def test_trial_generate_endpoint_hides_low_confidence_findings(monkeypatch) -> None:
+    _mock_trial_inference(
+        monkeypatch,
+        {
+            "image": {"width": 1000, "height": 500},
+            "detections": [
+                {
+                    "id": "det-low",
+                    "type": "missing",
+                    "confidence": 0.59,
+                    "bbox": {"x": 100, "y": 50, "width": 240, "height": 80},
+                }
+            ],
+        },
+    )
+    response = _post_trial_generate(
+        [("files", ("trial-001.jpg", TRIAL_JPEG_BYTES, "image/jpeg"))]
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["findings"] == []
+    assert payload["raw_model_outputs"][0]["detections"] == [
+        {
+            "detection_id": "det-low",
+            "type": "missing",
+            "type_name": None,
+            "model": "面砖剥落",
+            "confidence": 0.59,
+            "bbox": {"x": 100, "y": 50, "width": 240, "height": 80},
+            "severity": None,
+            "description": None,
+            "visible": False,
         }
     ]
 
@@ -384,7 +421,7 @@ def test_trial_generate_endpoint_accepts_uploaded_photo_ids(monkeypatch) -> None
             "photo_id": str(photo_id),
             "filename": "quick-001.jpg",
             "model": "面砖剥落",
-            "confidence": 0.57,
+            "confidence": 0.67,
             "bbox": {"x": 100, "y": 50, "width": 240, "height": 80},
             "image_width": 1000,
             "image_height": 500,

@@ -37,6 +37,10 @@ def test_algorithm_result_payload_accepts_fixed_json_contract() -> None:
             "results": [
                 {
                     "photo_id": str(photo_id),
+                    "model_output": {
+                        "image": {"width": 1000, "height": 600},
+                        "detections": [],
+                    },
                     "detections": [
                         {
                             "id": "mock-1",
@@ -56,4 +60,5 @@ def test_algorithm_result_payload_accepts_fixed_json_contract() -> None:
     assert payload.task_id == task_id
     assert payload.project_id == project_id
     assert payload.results[0].photo_id == photo_id
+    assert payload.results[0].model_output["image"]["width"] == 1000
     assert payload.results[0].detections[0].type == "crack"

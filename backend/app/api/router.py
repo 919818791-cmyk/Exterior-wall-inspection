@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api import accounts, auth, detection_config, detection_tasks, health, object_storage, photos, projects, reports, review
+from app.api import accounts, auth, detection_config, detection_tasks, health, object_storage, photos, projects, reports, review, weather
 
 api_router = APIRouter()
 api_router.include_router(health.router, tags=["health"])
@@ -13,3 +13,4 @@ api_router.include_router(detection_config.router)
 api_router.include_router(detection_tasks.router)
 api_router.include_router(review.router)
 api_router.include_router(reports.router)
+api_router.include_router(weather.router)

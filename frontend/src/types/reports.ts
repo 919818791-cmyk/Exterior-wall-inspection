@@ -105,6 +105,35 @@ export interface ReportDefectSnapshot {
   reviewed_at?: string | null;
 }
 
+export interface ModelOutputDetection {
+  id?: string | null;
+  detection_id?: string | null;
+  type?: string | null;
+  type_name?: string | null;
+  model?: string | null;
+  confidence?: number | string | null;
+  bbox?: {
+    x?: number | string | null;
+    y?: number | string | null;
+    width?: number | string | null;
+    height?: number | string | null;
+  } | null;
+  severity?: string | null;
+  description?: string | null;
+  visible?: boolean | null;
+}
+
+export interface ModelOutputPhoto {
+  photo_id?: string | null;
+  filename?: string | null;
+  image_width?: number | string | null;
+  image_height?: number | string | null;
+  model_version?: string | null;
+  requested_models?: string[];
+  executed_models?: string[];
+  detections?: ModelOutputDetection[];
+}
+
 export interface ReportDetail {
   id: string;
   source_type: "formal" | "trial";
@@ -138,6 +167,7 @@ export interface ReportDetail {
   };
   defects: ReportDefectSnapshot[];
   photos: ReportPhotoSnapshot[];
+  raw_model_outputs: ModelOutputPhoto[];
   docx_bucket: string | null;
   docx_object_key: string | null;
   generated_by: string;
