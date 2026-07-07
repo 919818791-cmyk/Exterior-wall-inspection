@@ -29,7 +29,12 @@ COPY server.py verify_environment.py /model/
 ENV MODEL_DEVICE=auto \
     MODEL_VERSION=trial-crack-missing-v1 \
     CRACK_MODEL_WEIGHTS_PATH=/models/wall_crack_yolo11x.pt \
-    MISSING_MODEL_WEIGHTS_PATH=/models/missing.pt
+    MISSING_MODEL_WEIGHTS_PATH=/models/missing.pt \
+    MODEL_TILED_INFERENCE_ENABLED=true \
+    MODEL_TILE_SIZE=1280 \
+    MODEL_HIGH_PRECISION_TILE_SIZE=1280 \
+    MODEL_TILE_OVERLAP_RATIO=0.25 \
+    MODEL_TILE_NMS_IOU_THRESHOLD=0.5
 
 EXPOSE 9002
 

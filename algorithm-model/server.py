@@ -19,6 +19,33 @@ MODEL_CONFIDENCE_THRESHOLD = float(os.getenv("MODEL_CONFIDENCE_THRESHOLD", "0.25
 MODEL_IMAGE_SIZE = int(os.getenv("MODEL_IMAGE_SIZE", "1280"))
 MODEL_HIGH_PRECISION_IMAGE_SIZE = int(os.getenv("MODEL_HIGH_PRECISION_IMAGE_SIZE", str(MODEL_IMAGE_SIZE)))
 
+
+def _env_flag(name: str, default: bool) -> bool:
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+    return raw_value.strip().lower() not in {"0", "false", "no", "off", "disabled"}
+
+
+def _env_int(name: str, default: int, minimum: int = 1) -> int:
+    return max(minimum, int(os.getenv(name, str(default))))
+
+
+def _env_float(name: str, default: float, minimum: float, maximum: float) -> float:
+    value = float(os.getenv(name, str(default)))
+    return min(maximum, max(minimum, value))
+
+
+MODEL_TILED_INFERENCE_ENABLED = _env_flag("MODEL_TILED_INFERENCE_ENABLED", True)
+MODEL_TILE_SIZE = _env_int("MODEL_TILE_SIZE", MODEL_IMAGE_SIZE, minimum=64)
+MODEL_HIGH_PRECISION_TILE_SIZE = _env_int(
+    "MODEL_HIGH_PRECISION_TILE_SIZE",
+    int(os.getenv("MODEL_TILE_SIZE", str(MODEL_HIGH_PRECISION_IMAGE_SIZE))),
+    minimum=64,
+)
+MODEL_TILE_OVERLAP_RATIO = _env_float("MODEL_TILE_OVERLAP_RATIO", 0.25, minimum=0.0, maximum=0.85)
+MODEL_TILE_NMS_IOU_THRESHOLD = _env_float("MODEL_TILE_NMS_IOU_THRESHOLD", 0.5, minimum=0.0, maximum=1.0)
+
 DEFECT_CLASS_ORDER = ("crack", "missing")
 DEFECT_LABELS = {
     "crack": "裂缝",
@@ -42,7 +69,7 @@ CLASS_ALIASES = {
     "面砖缺失": "missing",
 }
 
-app = FastAPI(title="Building Exterior Algorithm Model", version="0.3.0")
+app = FastAPI(title="Building Exterior Algorithm Model", version="0.4.0")
 
 _models: dict[str, YOLO] = {}
 _model_lock = Lock()
@@ -155,6 +182,23 @@ def _open_image(content: bytes) -> Image.Image:
         raise HTTPException(status_code=400, detail="Invalid image file.") from exc
 
 
+def _clip_xyxy(
+    xyxy: list[float],
+    image_width: int | None = None,
+    image_height: int | None = None,
+) -> list[float] | None:
+    x1, y1, x2, y2 = xyxy
+    if image_width is not None:
+        x1 = min(float(image_width), max(0.0, x1))
+        x2 = min(float(image_width), max(0.0, x2))
+    if image_height is not None:
+        y1 = min(float(image_height), max(0.0, y1))
+        y2 = min(float(image_height), max(0.0, y2))
+    if x2 <= x1 or y2 <= y1:
+        return None
+    return [x1, y1, x2, y2]
+
+
 def _bbox_from_xyxy(xyxy: list[float]) -> dict[str, float]:
     x1, y1, x2, y2 = xyxy
     return {
@@ -163,6 +207,81 @@ def _bbox_from_xyxy(xyxy: list[float]) -> dict[str, float]:
         "width": max(0.0, x2 - x1),
         "height": max(0.0, y2 - y1),
     }
+
+
+def _xyxy_from_bbox(bbox: dict[str, Any]) -> list[float]:
+    x1 = float(bbox.get("x", 0.0))
+    y1 = float(bbox.get("y", 0.0))
+    return [
+        x1,
+        y1,
+        x1 + float(bbox.get("width", 0.0)),
+        y1 + float(bbox.get("height", 0.0)),
+    ]
+
+
+def _bbox_iou(left: dict[str, Any], right: dict[str, Any]) -> float:
+    left_x1, left_y1, left_x2, left_y2 = _xyxy_from_bbox(left)
+    right_x1, right_y1, right_x2, right_y2 = _xyxy_from_bbox(right)
+    intersection_width = max(0.0, min(left_x2, right_x2) - max(left_x1, right_x1))
+    intersection_height = max(0.0, min(left_y2, right_y2) - max(left_y1, right_y1))
+    intersection_area = intersection_width * intersection_height
+    if intersection_area <= 0:
+        return 0.0
+    left_area = max(0.0, left_x2 - left_x1) * max(0.0, left_y2 - left_y1)
+    right_area = max(0.0, right_x2 - right_x1) * max(0.0, right_y2 - right_y1)
+    union_area = left_area + right_area - intersection_area
+    return intersection_area / union_area if union_area > 0 else 0.0
+
+
+def _confidence_value(detection: dict[str, Any]) -> float:
+    try:
+        return float(detection.get("confidence", 0.0))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _nms_detections(detections: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    kept: list[dict[str, Any]] = []
+    remaining = sorted(detections, key=_confidence_value, reverse=True)
+    while remaining:
+        current = remaining.pop(0)
+        kept.append(current)
+        current_bbox = current.get("bbox") if isinstance(current.get("bbox"), dict) else None
+        if current_bbox is None:
+            continue
+        remaining = [
+            candidate
+            for candidate in remaining
+            if not isinstance(candidate.get("bbox"), dict)
+            or _bbox_iou(current_bbox, candidate["bbox"]) <= MODEL_TILE_NMS_IOU_THRESHOLD
+        ]
+    return kept
+
+
+def _merge_detections(detections: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    merged: list[dict[str, Any]] = []
+    known_types = list(DEFECT_CLASS_ORDER)
+    extra_types = sorted({
+        str(detection.get("type"))
+        for detection in detections
+        if str(detection.get("type")) not in known_types
+    })
+
+    for defect_type in [*known_types, *extra_types]:
+        type_detections = [
+            detection
+            for detection in detections
+            if str(detection.get("type")) == defect_type
+        ]
+        merged.extend(_nms_detections(type_detections))
+
+    counters: dict[str, int] = {}
+    for detection in merged:
+        defect_type = str(detection.get("type") or "detection")
+        counters[defect_type] = counters.get(defect_type, 0) + 1
+        detection["id"] = f"{defect_type}-{counters[defect_type]}"
+    return merged
 
 
 def _box_class_id(box: Any) -> int | None:
@@ -209,7 +328,15 @@ def _target_model_types(selected_models: set[str]) -> list[str]:
     ]
 
 
-def _result_detections(result: Any, defect_type: str, detection_offset: int) -> list[dict[str, Any]]:
+def _result_detections(
+    result: Any,
+    defect_type: str,
+    detection_offset: int,
+    offset_x: float = 0.0,
+    offset_y: float = 0.0,
+    image_width: int | None = None,
+    image_height: int | None = None,
+) -> list[dict[str, Any]]:
     detections: list[dict[str, Any]] = []
     boxes = getattr(result, "boxes", None)
     if boxes is None:
@@ -221,6 +348,16 @@ def _result_detections(result: Any, defect_type: str, detection_offset: int) -> 
             continue
 
         xyxy = [float(value) for value in box.xyxy[0].tolist()]
+        xyxy = [
+            xyxy[0] + offset_x,
+            xyxy[1] + offset_y,
+            xyxy[2] + offset_x,
+            xyxy[3] + offset_y,
+        ]
+        clipped_xyxy = _clip_xyxy(xyxy, image_width=image_width, image_height=image_height)
+        if clipped_xyxy is None:
+            continue
+
         confidence = float(box.conf[0].item())
         if confidence < MODEL_CONFIDENCE_THRESHOLD:
             continue
@@ -231,11 +368,98 @@ def _result_detections(result: Any, defect_type: str, detection_offset: int) -> 
                 "type": defect_type,
                 "type_name": DEFECT_LABELS[defect_type],
                 "confidence": confidence,
-                "bbox": _bbox_from_xyxy(xyxy),
+                "bbox": _bbox_from_xyxy(clipped_xyxy),
                 "mask": None,
                 "severity": None,
                 "description": f"疑似{DEFECT_LABELS[defect_type]}。",
             }
+        )
+    return detections
+
+
+def _tile_starts(length: int, tile_size: int, overlap_ratio: float) -> list[int]:
+    if length <= tile_size:
+        return [0]
+
+    overlap_pixels = int(round(tile_size * overlap_ratio))
+    step = max(1, tile_size - overlap_pixels)
+    last_start = length - tile_size
+    starts = list(range(0, last_start + 1, step))
+    if starts[-1] != last_start:
+        starts.append(last_start)
+    return sorted(set(starts))
+
+
+def _image_tiles(image: Image.Image, tile_size: int) -> list[tuple[int, int, Image.Image]]:
+    tiles: list[tuple[int, int, Image.Image]] = []
+    for y in _tile_starts(image.height, tile_size, MODEL_TILE_OVERLAP_RATIO):
+        for x in _tile_starts(image.width, tile_size, MODEL_TILE_OVERLAP_RATIO):
+            right = min(image.width, x + tile_size)
+            lower = min(image.height, y + tile_size)
+            tiles.append((x, y, image.crop((x, y, right, lower))))
+    return tiles
+
+
+def _tile_count(image: Image.Image, tile_size: int) -> int:
+    return (
+        len(_tile_starts(image.width, tile_size, MODEL_TILE_OVERLAP_RATIO))
+        * len(_tile_starts(image.height, tile_size, MODEL_TILE_OVERLAP_RATIO))
+    )
+
+
+def _predict_result(model: YOLO, image: Image.Image, image_size: int) -> Any | None:
+    results = model.predict(
+        source=image,
+        conf=MODEL_CONFIDENCE_THRESHOLD,
+        imgsz=image_size,
+        device=_device_for_predict(),
+        verbose=False,
+    )
+    return results[0] if results else None
+
+
+def _predict_full_image(
+    model: YOLO,
+    defect_type: str,
+    image: Image.Image,
+    image_size: int,
+    detection_offset: int,
+) -> list[dict[str, Any]]:
+    result = _predict_result(model, image, image_size)
+    if result is None:
+        return []
+    return _result_detections(
+        result,
+        defect_type,
+        detection_offset,
+        image_width=image.width,
+        image_height=image.height,
+    )
+
+
+def _predict_tiled_image(
+    model: YOLO,
+    defect_type: str,
+    image: Image.Image,
+    image_size: int,
+    tile_size: int,
+    detection_offset: int,
+) -> list[dict[str, Any]]:
+    detections: list[dict[str, Any]] = []
+    for tile_x, tile_y, tile in _image_tiles(image, tile_size):
+        result = _predict_result(model, tile, image_size)
+        if result is None:
+            continue
+        detections.extend(
+            _result_detections(
+                result,
+                defect_type,
+                detection_offset + len(detections),
+                offset_x=tile_x,
+                offset_y=tile_y,
+                image_width=image.width,
+                image_height=image.height,
+            )
         )
     return detections
 
@@ -263,7 +487,17 @@ def _model_metadata(load: bool = False) -> dict[str, Any]:
                 }
             )
         models[defect_type] = metadata
-    return {"model_version": MODEL_VERSION, "models": models}
+    return {
+        "model_version": MODEL_VERSION,
+        "inference": {
+            "tiled_enabled": MODEL_TILED_INFERENCE_ENABLED,
+            "tile_size": MODEL_TILE_SIZE,
+            "high_precision_tile_size": MODEL_HIGH_PRECISION_TILE_SIZE,
+            "tile_overlap_ratio": MODEL_TILE_OVERLAP_RATIO,
+            "tile_nms_iou_threshold": MODEL_TILE_NMS_IOU_THRESHOLD,
+        },
+        "models": models,
+    }
 
 
 @app.get("/health")
@@ -310,28 +544,51 @@ async def predict(
     selected_models = _parse_selected_models(models)
     target_model_types = _target_model_types(selected_models)
     image_size = MODEL_HIGH_PRECISION_IMAGE_SIZE if high_precision else MODEL_IMAGE_SIZE
+    tile_size = MODEL_HIGH_PRECISION_TILE_SIZE if high_precision else MODEL_TILE_SIZE
+    use_tiled_inference = MODEL_TILED_INFERENCE_ENABLED
 
     detections: list[dict[str, Any]] = []
     try:
         for defect_type in target_model_types:
             model = _load_model(defect_type)
-            results = model.predict(
-                source=image,
-                conf=MODEL_CONFIDENCE_THRESHOLD,
-                imgsz=image_size,
-                device=_device_for_predict(),
-                verbose=False,
-            )
-            result = results[0] if results else None
-            if result is not None:
-                detections.extend(_result_detections(result, defect_type, len(detections)))
+            if use_tiled_inference:
+                detections.extend(
+                    _predict_tiled_image(
+                        model,
+                        defect_type,
+                        image,
+                        image_size,
+                        tile_size,
+                        len(detections),
+                    )
+                )
+            else:
+                detections.extend(
+                    _predict_full_image(
+                        model,
+                        defect_type,
+                        image,
+                        image_size,
+                        len(detections),
+                    )
+                )
     except Exception as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    detections = _merge_detections(detections)
 
     return {
         "model_version": MODEL_VERSION,
         "filename": file.filename,
         "image": {"width": image.width, "height": image.height},
+        "inference": {
+            "mode": "tiled" if use_tiled_inference else "full",
+            "image_size": image_size,
+            "tile_size": tile_size if use_tiled_inference else None,
+            "tile_overlap_ratio": MODEL_TILE_OVERLAP_RATIO if use_tiled_inference else None,
+            "tile_count": _tile_count(image, tile_size) if use_tiled_inference else 1,
+            "nms_iou_threshold": MODEL_TILE_NMS_IOU_THRESHOLD,
+        },
         "requested_models": sorted(selected_models),
         "executed_models": target_model_types,
         "detections": detections,

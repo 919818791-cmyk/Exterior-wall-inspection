@@ -34,3 +34,18 @@ The service exposes `/health`, `/ready`, `/metadata`, and `/predict`.
 | --- | --- |
 | `crack` | 裂缝 |
 | `missing` | 面砖剥落 |
+
+Inference uses tiled/sliding-window prediction by default so high-resolution
+photos keep enough detail for small facade defects. Each tile is predicted in
+original-image coordinates, then detections are merged per defect type with
+global NMS.
+
+Tunable environment variables:
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `MODEL_TILED_INFERENCE_ENABLED` | `true` | Enable tiled inference. Set `false` to return to full-image prediction. |
+| `MODEL_TILE_SIZE` | `1280` | Tile side length for normal mode. |
+| `MODEL_HIGH_PRECISION_TILE_SIZE` | `1280` | Tile side length when `high_precision=true`. |
+| `MODEL_TILE_OVERLAP_RATIO` | `0.25` | Overlap ratio between adjacent tiles. |
+| `MODEL_TILE_NMS_IOU_THRESHOLD` | `0.5` | IoU threshold used to merge duplicate boxes from overlapping tiles. |
