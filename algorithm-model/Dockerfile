@@ -6,7 +6,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     ULTRALYTICS_SETTINGS_DIR=/tmp/ultralytics
 
-ARG PYTORCH_INDEX_URL=https://download.pytorch.org/whl/cu126
+ARG PYTORCH_INDEX_URL=https://download.pytorch.org/whl/cu128
 
 WORKDIR /model
 

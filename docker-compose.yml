@@ -52,7 +52,7 @@ services:
       context: ./algorithm-model
       args:
         PYTHON_BASE_IMAGE: ${PYTHON_BASE_IMAGE:-python:3.12-slim-bookworm}
-        PYTORCH_INDEX_URL: ${PYTORCH_INDEX_URL:-https://download.pytorch.org/whl/cu126}
+        PYTORCH_INDEX_URL: ${PYTORCH_INDEX_URL:-https://download.pytorch.org/whl/cu128}
     image: building-exterior-algorithm-model:cuda
     container_name: building-exterior-algorithm-model
     restart: unless-stopped
