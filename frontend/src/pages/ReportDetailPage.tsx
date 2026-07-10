@@ -15,8 +15,10 @@ import { Link as RouterLink, useParams, useSearchParams } from "react-router-dom
 
 import { downloadReportDocx, pushReport, reportQueryOptions } from "@/api/reports";
 import { ModelOutputDialog } from "@/components/ModelOutputDialog";
+import { TilePreviewDialog, type TilePreviewSource } from "@/components/TilePreviewDialog";
 import { StatusPill } from "@/components/StatusPill";
 import type {
+  ModelOutputPhoto,
   ReportBuildingSnapshot,
   ReportDefectSnapshot,
   ReportDetail
@@ -29,7 +31,7 @@ import { trialDefectBoxLabel, trialDefectDescriptionFromType, trialDefectDisplay
 
 const DEFECT_LABELS: Record<string, string> = {
   crack: "裂缝",
-  missing: "面砖剥落",
+  missing: "剥落",
   spalling: "剥落",
   moisture: "潮湿"
 };
@@ -375,6 +377,7 @@ function TrialResultDetail({ report }: { report: ReportDetail }) {
   const [annotatedPreview, setAnnotatedPreview] = useState<TrialReportAnnotatedPreview | null>(null);
   const [photoPreview, setPhotoPreview] = useState<TrialReportPhotoPreview | null>(null);
   const [isModelOutputOpen, setIsModelOutputOpen] = useState(false);
+  const [tilePreview, setTilePreview] = useState<TilePreviewSource | null>(null);
   const resultRows = useMemo(() => buildTrialResultRows(report), [report]);
   const modelOutputText = useMemo(
     () => formatModelOutputs(report.raw_model_outputs),
@@ -486,6 +489,7 @@ function TrialResultDetail({ report }: { report: ReportDetail }) {
                         <th>序号</th>
                         <th>含标注的照片</th>
                         <th>检测说明</th>
+                        <th>tile</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -498,6 +502,7 @@ function TrialResultDetail({ report }: { report: ReportDetail }) {
                             setAnnotatedPreview(preview);
                             setPhotoPreview(null);
                           }}
+                          onTilePreview={setTilePreview}
                         />
                       ))}
                     </tbody>
@@ -549,6 +554,9 @@ function TrialResultDetail({ report }: { report: ReportDetail }) {
           onClose={() => setIsModelOutputOpen(false)}
         />
       ) : null}
+      {tilePreview ? (
+        <TilePreviewDialog source={tilePreview} onClose={() => setTilePreview(null)} />
+      ) : null}
     </div>
   );
 }
@@ -568,17 +576,25 @@ interface TrialResultPhotoRow {
   key: string;
   filename: string;
   imageUrl: string;
+  imageWidth?: number | string | null;
+  imageHeight?: number | string | null;
+  tileWidth?: number | string | null;
+  tileHeight?: number | string | null;
+  tileOverlapRatio?: number | string | null;
+  detections?: ModelOutputPhoto["detections"];
   defects: ReportDefectSnapshot[];
 }
 
 function TrialResultRow({
   row,
   index,
-  onPreview
+  onPreview,
+  onTilePreview
 }: {
   row: TrialResultPhotoRow;
   index: number;
   onPreview: (preview: TrialReportAnnotatedPreview) => void;
+  onTilePreview: (source: TilePreviewSource) => void;
 }) {
   const canPreview = Boolean(row.imageUrl);
   const summary = trialResultDefectSummary(row.defects);
@@ -590,7 +606,11 @@ function TrialResultRow({
 
   return (
     <tr>
-      <td>{String(index + 1).padStart(2, "0")}</td>
+      <td>
+        <span className="trial-report-index">
+          {String(index + 1).padStart(2, "0")}
+        </span>
+      </td>
       <td>
         <figure className="trial-annotated-photo-frame">
           <div
@@ -639,6 +659,25 @@ function TrialResultRow({
         ) : (
           <p><span>未检出明显缺陷</span></p>
         )}
+      </td>
+      <td className="trial-tile-column">
+        <button
+          className="trial-tile-view-button"
+          disabled={!row.imageUrl}
+          type="button"
+          onClick={() => onTilePreview({
+            filename: row.filename,
+            imageUrl: row.imageUrl,
+            imageWidth: row.imageWidth,
+            imageHeight: row.imageHeight,
+            tileWidth: row.tileWidth,
+            tileHeight: row.tileHeight,
+            tileOverlapRatio: row.tileOverlapRatio,
+            detections: row.detections
+          })}
+        >
+          查看tile
+        </button>
       </td>
     </tr>
   );
@@ -721,14 +760,20 @@ function buildTrialResultRows(report: ReportDetail): TrialResultPhotoRow[] {
       const key = trialPhotoGroupKey(photo) || `photo-index:${index}`;
       consumedKeys.add(key);
       const rowDefects = defectsByPhoto.get(key) ?? [];
+      const modelOutput = findTrialModelOutput(report, photo.id, photo.original_filename);
       return {
         key,
         filename: photo.original_filename || "检测结果照片",
         imageUrl: trialResultRowImageUrl(rowDefects, photo),
+        imageWidth: modelOutput?.image_width ?? photo.image_width,
+        imageHeight: modelOutput?.image_height ?? photo.image_height,
+        tileWidth: modelOutput?.tile_width,
+        tileHeight: modelOutput?.tile_height,
+        tileOverlapRatio: modelOutput?.tile_overlap_ratio,
+        detections: modelOutput?.detections,
         defects: rowDefects
       };
-    })
-    .filter((row) => row.defects.length > 0);
+    });
 
   for (const [key, rowDefects] of defectsByPhoto) {
     if (consumedKeys.has(key) || !rowDefects.length) continue;
@@ -736,11 +781,22 @@ function buildTrialResultRows(report: ReportDetail): TrialResultPhotoRow[] {
       key,
       filename: rowDefects[0]?.photo_filename || "检测结果照片",
       imageUrl: trialResultRowImageUrl(rowDefects),
+      imageWidth: rowDefects[0]?.raw_result_json?.finding?.image_width,
+      imageHeight: rowDefects[0]?.raw_result_json?.finding?.image_height,
+      tileWidth: undefined,
+      tileHeight: undefined,
+      tileOverlapRatio: undefined,
+      detections: undefined,
       defects: rowDefects
     });
   }
 
   return rows;
+}
+
+function findTrialModelOutput(report: ReportDetail, photoId?: string, filename?: string | null) {
+  return report.raw_model_outputs.find((output) => photoId && output.photo_id === photoId)
+    ?? report.raw_model_outputs.find((output) => filename && output.filename === filename);
 }
 
 function trialPhotoGroupKey(photo: ReportDetail["photos"][number]) {

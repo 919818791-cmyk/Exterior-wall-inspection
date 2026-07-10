@@ -27,9 +27,9 @@ RUN python -m pip install -r /model/requirements.txt
 COPY server.py verify_environment.py /model/
 
 ENV MODEL_DEVICE=auto \
-    MODEL_VERSION=trial-crack-missing-v1 \
+    MODEL_VERSION=trial-crack-spalling-v1 \
     CRACK_MODEL_WEIGHTS_PATH=/models/wall_crack_yolo11x.pt \
-    MISSING_MODEL_WEIGHTS_PATH=/models/missing.pt \
+    SPALLING_MODEL_WEIGHTS_PATH=/models/missing.pt \
     MODEL_TILED_INFERENCE_ENABLED=true \
     MODEL_TILE_SIZE=1280 \
     MODEL_HIGH_PRECISION_TILE_SIZE=1280 \

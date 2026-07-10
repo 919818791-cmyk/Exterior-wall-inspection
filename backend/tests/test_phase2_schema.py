@@ -1,5 +1,6 @@
 from app.db.base import Base
 from app.enums.status import (
+    DefectType,
     DetectionTaskStatus,
     InspectionReportStatus,
     ProjectStatus,
@@ -59,6 +60,12 @@ def test_phase2_required_status_values_are_centralized() -> None:
         "deleted",
         "added",
     }
+    assert {item.value for item in DefectType} == {
+        "crack",
+        "spalling",
+        "moisture",
+    }
+    assert DefectType("missing") is DefectType.SPALLING
 
 
 def test_facade_orientation_moved_to_recommendation_input() -> None:

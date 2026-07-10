@@ -20,23 +20,26 @@ def env(name: str, default: str) -> str:
 API_BASE_URL = env("WORKER_BACKEND_BASE_URL", "http://localhost:8000").rstrip("/")
 WORKER_ID = env("WORKER_ID", "mock-worker-local")
 WORKER_TOKEN = env("WORKER_TOKEN", "change-this-worker-token")
-MODEL_VERSION = env("WORKER_MODEL_VERSION", "trial-crack-missing-v1")
+MODEL_VERSION = env("WORKER_MODEL_VERSION", "trial-crack-spalling-v1")
 WORKER_MODE = env("WORKER_MODE", "mock").lower()
 ALGORITHM_INFERENCE_URL = env("ALGORITHM_INFERENCE_URL", "http://algorithm-model:9002").rstrip("/")
 ALGORITHM_INFERENCE_TIMEOUT_SECONDS = int(env("ALGORITHM_INFERENCE_TIMEOUT_SECONDS", "120"))
 
 DEFECT_TYPE_NAMES = {
     "crack": "裂缝",
-    "missing": "面砖剥落",
+    "spalling": "剥落",
 }
 DEFECT_ALIASES = {
     "crack": "crack",
     "裂缝": "crack",
     "开裂": "crack",
-    "missing": "missing",
-    "面砖剥落": "missing",
-    "瓷砖剥落": "missing",
-    "hollowing": "missing",
+    "missing": "spalling",
+    "spalling": "spalling",
+    "剥落": "spalling",
+    "面砖剥落": "spalling",
+    "瓷砖剥落": "spalling",
+    "面砖缺失": "spalling",
+    "hollowing": "spalling",
 }
 
 

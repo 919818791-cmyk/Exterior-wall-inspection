@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import json
+import asyncio
 from copy import deepcopy
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from io import BytesIO
 from json import JSONDecodeError, loads
@@ -9,8 +10,6 @@ from pathlib import Path
 from re import sub
 from typing import Any
 from urllib.parse import quote
-from urllib.error import HTTPError, URLError
-from urllib.request import Request as UrlRequest, urlopen
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
@@ -43,6 +42,14 @@ from app.services.docx_report import build_report_docx
 from app.services.object_storage import get_object_bytes, presigned_get_url, put_object, remove_object, signed_object_url
 from app.services.photo_metadata import extract_photo_metadata
 from app.services.report_data import build_report_data
+from app.services.trial_qwen_inference import (
+    NMS_IOU_THRESHOLD,
+    TILE_HEIGHT,
+    TILE_OVERLAP_RATIO,
+    TILE_WIDTH,
+    TrialQwenImageInput,
+    infer_trial_images,
+)
 
 router = APIRouter(tags=["reports"])
 
@@ -51,27 +58,38 @@ TRIAL_RESULT_TITLE = "简易AI检测结果"
 TRIAL_RESULT_SOURCE_NAME = "简易AI检测"
 TRIAL_RESULT_ARCHIVE_ADDRESS = "简易检测归档"
 TRIAL_RESULT_CLIENT_NAME = "平台用户"
-TRIAL_MODEL_VERSION = "trial-crack-missing-v1"
+TRIAL_MODEL_VERSION = "exterior-wall-vision-1280x960-overlap-nms-v2"
 TRIAL_MODEL_TO_DEFECT_TYPE = {
     "裂缝": "crack",
     "开裂": "crack",
-    "面砖剥落": "missing",
+    "missing": "spalling",
+    "面砖剥落": "spalling",
+    "瓷砖剥落": "spalling",
+    "面砖缺失": "spalling",
     "剥落": "spalling",
     "潮湿": "moisture",
 }
 TRIAL_DEFECT_TYPE_TO_MODEL = {
     "crack": "裂缝",
-    "missing": "面砖剥落",
     "spalling": "剥落",
     "moisture": "潮湿",
 }
-TRIAL_DEFAULT_MODELS = ["裂缝", "面砖剥落"]
-TRIAL_MIN_VISIBLE_CONFIDENCE = 0.6
+TRIAL_DEFAULT_MODELS = ["裂缝", "剥落"]
+TRIAL_RESULT_CONFIDENCE_THRESHOLD = 0.6
 TRIAL_ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/png"}
-TRIAL_MAX_FILE_COUNT = 20
+TRIAL_MAX_FILE_COUNT = 10
 TRIAL_MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024
 JPEG_MAGIC_PREFIX = b"\xff\xd8\xff"
 PNG_MAGIC_PREFIX = b"\x89PNG\r\n\x1a\n"
+
+
+@dataclass(frozen=True, slots=True)
+class _TrialStoredPhotoSource:
+    photo_id: UUID
+    filename: str
+    content_type: str | None
+    storage_bucket: str
+    storage_object_key: str
 
 
 def _safe_filename(value: str) -> str:
@@ -618,71 +636,20 @@ def _trial_file_entries_for_quick_photos(photos: list[QuickDetectionPhoto]) -> l
     ]
 
 
-def _multipart_body(
-    fields: dict[str, str],
-    *,
-    filename: str,
-    content_type: str,
-    content: bytes,
-) -> tuple[str, bytes]:
-    boundary = f"----trial-inference-{uuid4().hex}"
-    chunks: list[bytes] = []
-    for name, value in fields.items():
-        chunks.extend(
-            [
-                f"--{boundary}\r\n".encode(),
-                f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode(),
-                value.encode(),
-                b"\r\n",
-            ]
-        )
-    chunks.extend(
-        [
-            f"--{boundary}\r\n".encode(),
-            f'Content-Disposition: form-data; name="file"; filename="{filename}"\r\n'.encode(),
-            f"Content-Type: {content_type}\r\n\r\n".encode(),
-            content,
-            b"\r\n",
-            f"--{boundary}--\r\n".encode(),
-        ]
-    )
-    return boundary, b"".join(chunks)
-
-
-def _trial_inference_request(
-    *,
-    filename: str,
-    content_type: str | None,
-    content: bytes,
-    models: list[str],
-) -> dict[str, Any]:
+async def _trial_inference_requests(
+    images: list[TrialQwenImageInput],
+) -> list[dict[str, Any]]:
     settings = get_settings()
-    inference_url = settings.trial_algorithm_inference_url.rstrip("/")
-    if not inference_url:
-        raise RuntimeError("TRIAL_ALGORITHM_INFERENCE_URL is not configured.")
-    boundary, body = _multipart_body(
-        {
-            "models": json.dumps([_trial_model_to_defect_type(model) for model in models], ensure_ascii=False),
-            "high_precision": "false",
-        },
-        filename=filename,
-        content_type=content_type or "application/octet-stream",
-        content=content,
+    if not settings.dashscope_api_key.strip():
+        raise RuntimeError("DASHSCOPE_API_KEY is not configured.")
+    return await infer_trial_images(
+        images,
+        api_key=settings.dashscope_api_key,
+        base_url=settings.qwen_api_base_url,
+        model=settings.qwen_model,
+        timeout_seconds=settings.qwen_request_timeout_seconds,
+        max_concurrency=settings.qwen_max_concurrency,
     )
-    request = UrlRequest(
-        f"{inference_url}/predict",
-        data=body,
-        method="POST",
-        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
-    )
-    try:
-        with urlopen(request, timeout=settings.trial_algorithm_inference_timeout_seconds) as response:
-            return json.loads(response.read().decode("utf-8"))
-    except HTTPError as exc:
-        body_text = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"Trial inference failed with {exc.code}: {body_text}") from exc
-    except URLError as exc:
-        raise RuntimeError(f"Trial inference request failed: {exc.reason}") from exc
 
 
 def _trial_findings_from_inference(
@@ -702,7 +669,7 @@ def _trial_findings_from_inference(
             confidence = float(detection.get("confidence"))
         except (TypeError, ValueError):
             continue
-        if confidence < TRIAL_MIN_VISIBLE_CONFIDENCE:
+        if confidence <= TRIAL_RESULT_CONFIDENCE_THRESHOLD:
             continue
         findings.append(
             {
@@ -714,6 +681,7 @@ def _trial_findings_from_inference(
                 "image_width": image.get("width"),
                 "image_height": image.get("height"),
                 "detection_id": detection.get("id") or f"trial-{index + 1}",
+                "description": detection.get("description"),
             }
         )
     return findings
@@ -724,6 +692,17 @@ def _trial_confidence(value: object) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _trial_result_findings(findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        finding
+        for finding in findings
+        if (
+            (confidence := _trial_confidence(finding.get("confidence"))) is not None
+            and confidence > TRIAL_RESULT_CONFIDENCE_THRESHOLD
+        )
+    ]
 
 
 def _trial_model_output_from_inference(
@@ -749,17 +728,24 @@ def _trial_model_output_from_inference(
                 "bbox": detection.get("bbox") if isinstance(detection.get("bbox"), dict) else None,
                 "severity": detection.get("severity"),
                 "description": detection.get("description"),
-                "visible": confidence is not None and confidence >= TRIAL_MIN_VISIBLE_CONFIDENCE,
+                "visible": confidence is not None and confidence > TRIAL_RESULT_CONFIDENCE_THRESHOLD,
             }
         )
+    inference_config = inference.get("inference") if isinstance(inference.get("inference"), dict) else {}
     return {
         "photo_id": entry.get("photo_id"),
         "filename": str(entry["filename"]),
         "image_width": image.get("width"),
         "image_height": image.get("height"),
-        "model_version": inference.get("model_version"),
-        "requested_models": inference.get("requested_models") or [],
-        "executed_models": inference.get("executed_models") or [],
+        "model_version": TRIAL_MODEL_VERSION,
+        "requested_models": TRIAL_DEFAULT_MODELS,
+        "executed_models": [],
+        "tile_width": inference_config.get("tile_width", TILE_WIDTH),
+        "tile_height": inference_config.get("tile_height", TILE_HEIGHT),
+        "tile_overlap_ratio": inference_config.get("tile_overlap_ratio", TILE_OVERLAP_RATIO),
+        "tile_count": inference_config.get("tile_count"),
+        "deduplication_method": "nms",
+        "nms_iou_threshold": inference_config.get("nms_iou_threshold", NMS_IOU_THRESHOLD),
         "detections": detections,
     }
 
@@ -767,28 +753,32 @@ def _trial_model_output_from_inference(
 def _trial_inference_unavailable(exc: Exception) -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-        detail=f"简易检测模型服务不可用：{exc}",
+        detail="视觉检测服务暂时不可用，请稍后重试。",
     )
 
 
-def _trial_outputs_for_uploaded_files(
+async def _trial_outputs_for_uploaded_files(
     uploaded_files: list[UploadFile],
     file_entries: list[dict[str, Any]],
-    models: list[str],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     findings: list[dict[str, Any]] = []
     raw_model_outputs: list[dict[str, Any]] = []
     try:
+        images: list[TrialQwenImageInput] = []
         for uploaded_file, entry in zip(uploaded_files, file_entries, strict=True):
-            uploaded_file.file.seek(0)
-            content = uploaded_file.file.read()
-            uploaded_file.file.seek(0)
-            inference = _trial_inference_request(
-                filename=entry["filename"],
-                content_type=uploaded_file.content_type,
-                content=content,
-                models=models,
+            await uploaded_file.seek(0)
+            content = await uploaded_file.read()
+            await uploaded_file.seek(0)
+            images.append(
+                TrialQwenImageInput(
+                    filename=str(entry["filename"]),
+                    content=content,
+                    content_type=uploaded_file.content_type,
+                    photo_id=entry.get("photo_id"),
+                )
             )
+        inferences = await _trial_inference_requests(images)
+        for entry, inference in zip(file_entries, inferences, strict=True):
             raw_model_outputs.append(_trial_model_output_from_inference(entry=entry, inference=inference))
             findings.extend(_trial_findings_from_inference(entry=entry, inference=inference))
     except Exception as exc:
@@ -796,22 +786,30 @@ def _trial_outputs_for_uploaded_files(
     return findings, raw_model_outputs
 
 
-def _trial_outputs_for_quick_photos(
-    photos: list[QuickDetectionPhoto],
+async def _trial_outputs_for_quick_photos(
+    photos: list[_TrialStoredPhotoSource],
     file_entries: list[dict[str, Any]],
-    models: list[str],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     findings: list[dict[str, Any]] = []
     raw_model_outputs: list[dict[str, Any]] = []
     try:
+        images: list[TrialQwenImageInput] = []
         for photo, entry in zip(photos, file_entries, strict=True):
-            content = get_object_bytes(photo.storage_bucket, photo.storage_object_key)
-            inference = _trial_inference_request(
-                filename=photo.original_filename,
-                content_type=photo.mime_type,
-                content=content,
-                models=models,
+            content = await asyncio.to_thread(
+                get_object_bytes,
+                photo.storage_bucket,
+                photo.storage_object_key,
             )
+            images.append(
+                TrialQwenImageInput(
+                    filename=photo.filename,
+                    content=content,
+                    content_type=photo.content_type,
+                    photo_id=photo.photo_id,
+                )
+            )
+        inferences = await _trial_inference_requests(images)
+        for entry, inference in zip(file_entries, inferences, strict=True):
             raw_model_outputs.append(_trial_model_output_from_inference(entry=entry, inference=inference))
             findings.extend(_trial_findings_from_inference(entry=entry, inference=inference))
     except Exception as exc:
@@ -872,11 +870,10 @@ def _trial_generated_result(
     findings: list[dict[str, Any]],
     raw_model_outputs: list[dict[str, Any]],
 ) -> TrialGeneratedResult:
-    models = [model for model in trial_request.models if model] or TRIAL_DEFAULT_MODELS
     return TrialGeneratedResult(
         report_name=trial_request.report_name,
         generated_at=datetime.now(UTC).isoformat(),
-        models=models,
+        models=list(TRIAL_DEFAULT_MODELS),
         files=file_entries,
         findings=findings,
         raw_model_outputs=raw_model_outputs,
@@ -948,8 +945,7 @@ async def generate_trial_result(
     if _is_multipart_request(request):
         payload, files = await _trial_form_payload_and_files(request)
         trial_request, file_entries = _trial_generate_request_from_form(payload, files)
-        models = [model for model in trial_request.models if model] or TRIAL_DEFAULT_MODELS
-        findings, raw_model_outputs = _trial_outputs_for_uploaded_files(files, file_entries, models)
+        findings, raw_model_outputs = await _trial_outputs_for_uploaded_files(files, file_entries)
         return _trial_generated_result(
             trial_request,
             file_entries,
@@ -960,8 +956,20 @@ async def generate_trial_result(
     trial_request = _trial_generate_request_from_payload(await _trial_payload_from_json_request(request))
     photos = _quick_detection_photos_for_user(db, current_user, trial_request.photo_ids)
     file_entries = _trial_file_entries_for_quick_photos(photos)
-    models = [model for model in trial_request.models if model] or TRIAL_DEFAULT_MODELS
-    findings, raw_model_outputs = _trial_outputs_for_quick_photos(photos, file_entries, models)
+    photo_sources = [
+        _TrialStoredPhotoSource(
+            photo_id=photo.id,
+            filename=photo.original_filename,
+            content_type=photo.mime_type,
+            storage_bucket=photo.storage_bucket,
+            storage_object_key=photo.storage_object_key,
+        )
+        for photo in photos
+    ]
+    rollback = getattr(db, "rollback", None)
+    if callable(rollback):
+        rollback()
+    findings, raw_model_outputs = await _trial_outputs_for_quick_photos(photo_sources, file_entries)
     return _trial_generated_result(
         trial_request,
         file_entries,
@@ -989,6 +997,7 @@ async def create_trial_result(
 
     result_id = uuid4()
     request_data = trial_request.model_dump(mode="json")
+    result_findings = _trial_result_findings(request_data["findings"])
     generated_at = _trial_generated_at(request_data["generated_at"])
     result_no = _trial_result_no()
     stored_photos = (
@@ -1002,7 +1011,7 @@ async def create_trial_result(
         generated_at=generated_at,
         models=request_data["models"],
         photos=stored_photos,
-        findings=request_data["findings"],
+        findings=result_findings,
         raw_model_outputs=request_data.get("raw_model_outputs") or [],
     )
     result = TrialDetectionResult(
@@ -1012,7 +1021,7 @@ async def create_trial_result(
         status=InspectionReportStatus.GENERATED.value,
         report_data_json=archive_data,
         photo_count=len(stored_photos),
-        finding_count=len(request_data["findings"]),
+        finding_count=len(result_findings),
         thermal_available_photo_count=sum(
             1 for photo in stored_photos if photo.get("thermal_imaging_available")
         ),

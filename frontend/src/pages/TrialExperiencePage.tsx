@@ -1,5 +1,18 @@
-import { Skeleton, Spinner } from "@heroui/react";
-import { Archive, Check, FileSearch, Home, ImageUp, RefreshCcw, Sparkles, Trash2, Undo2, ZoomIn } from "lucide-react";
+import { Skeleton } from "@heroui/react";
+import {
+  Archive,
+  ChartNoAxesCombined,
+  Check,
+  Home,
+  Images,
+  ImageUp,
+  RefreshCcw,
+  ScanSearch,
+  Sparkles,
+  Trash2,
+  Undo2,
+  ZoomIn
+} from "lucide-react";
 import { type CSSProperties, type ChangeEvent, type DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
@@ -13,19 +26,21 @@ import {
   type TrialUploadedPhoto
 } from "@/api/reports";
 import { ModelOutputDialog } from "@/components/ModelOutputDialog";
+import { TilePreviewDialog, type TilePreviewSource } from "@/components/TilePreviewDialog";
 import { trialDefectBoxLabel, trialDefectDisplayFromModel } from "@/utils/trialDefectDisplay";
 import { readTrialPhotoMetadata, type TrialPhotoMetadata } from "@/utils/photoMetadata";
 import { createClientId } from "@/utils/id";
 import { formatModelOutputs, hasModelOutputs } from "@/utils/modelOutputs";
 
-const MODEL_OPTIONS = ["裂缝", "面砖剥落"] as const;
-const MAX_TRIAL_PHOTO_COUNT = 20;
+const MODEL_OPTIONS = ["裂缝", "剥落"] as const;
+const MAX_TRIAL_PHOTO_COUNT = 10;
 const MAX_TRIAL_PHOTO_SIZE_BYTES = 20 * 1024 * 1024;
+const TRIAL_RESULT_CONFIDENCE_THRESHOLD = 0.6;
 const ACCEPTED_TRIAL_PHOTO_TYPES = new Set(["image/jpeg", "image/png"]);
-const UPLOAD_LIMIT_TIP = "支持 JPG、PNG 图片，单张最大 20MB，单次最多 20 张";
+const UPLOAD_LIMIT_TIP = "支持 JPG、PNG 图片，单张最大 20MB，单次最多 10 张";
 const GENERATION_STEP_MESSAGES = [
   "正在读取照片信息",
-  "正在调用裂缝与剥落识别模型",
+  "正在调用视觉检测服务",
   "正在分析外墙缺陷区域",
   "正在生成标注结果"
 ] as const;
@@ -76,8 +91,8 @@ export function TrialExperiencePage() {
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [annotatedPreview, setAnnotatedPreview] = useState<TrialAnnotatedPreview | null>(null);
   const [generationStepIndex, setGenerationStepIndex] = useState(0);
-  const [showGenerationLongWait, setShowGenerationLongWait] = useState(false);
   const [isModelOutputOpen, setIsModelOutputOpen] = useState(false);
+  const [tilePreview, setTilePreview] = useState<TilePreviewSource | null>(null);
 
   const photoPreviews = useMemo<SelectedPhotoPreview[]>(
     () => selectedPhotos.map((photo) => ({
@@ -95,11 +110,21 @@ export function TrialExperiencePage() {
     );
     return generatedResult.files.map((file, index) => {
       const findings = generatedResult.findings.filter((item) => (
+        isTrialResultFinding(item)
+        && (file.photo_id ? item.photo_id === file.photo_id : item.filename === file.filename)
+      ));
+      const modelOutput = generatedResult.raw_model_outputs?.find((item) => (
         file.photo_id ? item.photo_id === file.photo_id : item.filename === file.filename
       ));
       return {
         filename: file.filename,
         previewUrl: file.photo_id ? previewByPhotoId.get(file.photo_id) ?? "" : photoPreviews[index]?.previewUrl ?? "",
+        imageWidth: modelOutput?.image_width,
+        imageHeight: modelOutput?.image_height,
+        tileWidth: modelOutput?.tile_width,
+        tileHeight: modelOutput?.tile_height,
+        tileOverlapRatio: modelOutput?.tile_overlap_ratio,
+        detections: modelOutput?.detections,
         findings
       };
     });
@@ -111,7 +136,9 @@ export function TrialExperiencePage() {
   );
   const canShowModelOutputs = hasModelOutputs(generatedResult?.raw_model_outputs);
   const isUploading = selectedPhotos.some((photo) => photo.uploadStatus === "uploading");
-  const isUploadLocked = isUploading || isGenerating || isArchiving || Boolean(archivedReportId);
+  const isInteractionBusy = isUploading || isGenerating || isArchiving;
+  const isPhotoEditingLocked = isInteractionBusy || Boolean(generatedResult) || Boolean(archivedReportId);
+  const isReportNameLocked = isInteractionBusy || Boolean(archivedReportId);
 
   useEffect(() => () => {
     photoPreviews.forEach((photo) => URL.revokeObjectURL(photo.previewUrl));
@@ -120,26 +147,20 @@ export function TrialExperiencePage() {
   useEffect(() => {
     if (!isGenerating) {
       setGenerationStepIndex(0);
-      setShowGenerationLongWait(false);
       return;
     }
 
-    setShowGenerationLongWait(false);
     const stepTimer = window.setInterval(() => {
       setGenerationStepIndex((current) => (current + 1) % GENERATION_STEP_MESSAGES.length);
     }, 1600);
-    const longWaitTimer = window.setTimeout(() => {
-      setShowGenerationLongWait(true);
-    }, 15000);
 
     return () => {
       window.clearInterval(stepTimer);
-      window.clearTimeout(longWaitTimer);
     };
   }, [isGenerating]);
 
   async function applyFiles(fileList: File[]) {
-    if (!fileList.length || isUploadLocked) return;
+    if (!fileList.length || isPhotoEditingLocked) return;
 
     const rejectionMessages: string[] = [];
     const selected = fileList.filter((file) => {
@@ -191,12 +212,12 @@ export function TrialExperiencePage() {
 
   function dropFiles(event: DragEvent<HTMLDivElement>) {
     event.preventDefault();
-    if (isUploadLocked) return;
+    if (isPhotoEditingLocked) return;
     void applyFiles(Array.from(event.dataTransfer.files));
   }
 
   function openFilePicker() {
-    if (isUploadLocked) return;
+    if (isPhotoEditingLocked) return;
     fileInputRef.current?.click();
   }
 
@@ -212,7 +233,7 @@ export function TrialExperiencePage() {
   }
 
   async function removePhoto(index: number) {
-    if (isUploadLocked) return;
+    if (isPhotoEditingLocked) return;
     const photo = selectedPhotos[index];
     if (!photo) return;
     if (photo.uploadedPhoto) {
@@ -240,8 +261,6 @@ export function TrialExperiencePage() {
 
   function updateReportName(value: string) {
     setReportName(value);
-    setGeneratedResult(null);
-    setArchivedReportId(null);
     setError("");
   }
 
@@ -311,7 +330,7 @@ export function TrialExperiencePage() {
 
   async function retryPhoto(index: number) {
     const photo = selectedPhotos[index];
-    if (!photo || isUploadLocked) return;
+    if (!photo || isPhotoEditingLocked) return;
 
     setArchivedReportId(null);
     setGeneratedResult(null);
@@ -375,7 +394,11 @@ export function TrialExperiencePage() {
     setIsArchiving(true);
     setError("");
     try {
-      const archivedResult = await archiveTrialResult(generatedResult);
+      const archivedResult = await archiveTrialResult({
+        ...generatedResult,
+        report_name: reportName.trim() || undefined,
+        findings: generatedResult.findings.filter(isTrialResultFinding)
+      });
       setArchivedReportId(archivedResult.id);
     } catch (archiveError) {
       const message = archiveError instanceof ApiError && archiveError.status === 401
@@ -391,13 +414,13 @@ export function TrialExperiencePage() {
 
   return (
     <>
-      <div className="trial-experience-shell trial-experience-content-shell">
+      <div className="trial-experience-shell trial-experience-content-shell trial-live-shell">
         <section className="trial-experience-grid">
           <div className="trial-upload-panel">
             <label className="trial-report-name-field">
               <span>报告名称</span>
               <input
-                disabled={isUploadLocked}
+                disabled={isReportNameLocked}
                 maxLength={255}
                 placeholder="请输入报告名称"
                 value={reportName}
@@ -414,7 +437,7 @@ export function TrialExperiencePage() {
                 ref={fileInputRef}
                 className="sr-only"
                 accept="image/jpeg,image/png"
-                disabled={isUploadLocked}
+                disabled={isPhotoEditingLocked}
                 multiple
                 type="file"
                 onChange={updateFiles}
@@ -451,7 +474,7 @@ export function TrialExperiencePage() {
                                 </button>
                                 <button
                                   className="danger"
-                                  disabled={isUploadLocked}
+                                  disabled={isPhotoEditingLocked}
                                   type="button"
                                   aria-label="删除"
                                   title="删除"
@@ -486,7 +509,7 @@ export function TrialExperiencePage() {
                               <p className="trial-photo-upload-error">{photo.uploadError || "上传失败，请重新上传。"}</p>
                               <button
                                 className="trial-photo-retry-button"
-                                disabled={isUploadLocked}
+                                disabled={isPhotoEditingLocked}
                                 type="button"
                                 onClick={() => void retryPhoto(index)}
                               >
@@ -500,7 +523,7 @@ export function TrialExperiencePage() {
                     })}
                     <button
                       className="trial-photo-add-button"
-                      disabled={isUploadLocked}
+                      disabled={isPhotoEditingLocked}
                       type="button"
                       onClick={openFilePicker}
                     >
@@ -530,7 +553,7 @@ export function TrialExperiencePage() {
               ) : (
                 <button
                   className="trial-upload-empty"
-                  disabled={isUploadLocked}
+                  disabled={isPhotoEditingLocked}
                   type="button"
                   onClick={openFilePicker}
                 >
@@ -568,7 +591,7 @@ export function TrialExperiencePage() {
                 <>
                   <button
                     className="button primary"
-                    disabled={isUploadLocked}
+                    disabled={isPhotoEditingLocked}
                     type="button"
                     onClick={() => void generateReport()}
                   >
@@ -607,12 +630,17 @@ export function TrialExperiencePage() {
                         <th>序号</th>
                         <th>含标注的照片</th>
                         <th>检测说明</th>
+                        <th>tile</th>
                       </tr>
                     </thead>
                     <tbody>
                       {reportRows.map((row, index) => (
                         <tr key={`finding-${row.filename}-${index}`}>
-                          <td>{String(index + 1).padStart(2, "0")}</td>
+                          <td>
+                            <span className="trial-report-index">
+                              {String(index + 1).padStart(2, "0")}
+                            </span>
+                          </td>
                           <td>
                             <figure className="trial-annotated-photo-frame">
                               <div
@@ -625,7 +653,7 @@ export function TrialExperiencePage() {
                                 })}
                               >
                                 <img alt={`${row.filename} 检测标注`} src={row.previewUrl} />
-                                {row.findings.slice(0, 8).map((finding, findingIndex) => {
+                                {row.findings.map((finding, findingIndex) => {
                                   const display = trialDefectDisplayFromModel(finding.model);
                                   const boxStyle = trialFindingBoxStyle(finding);
                                   if (!boxStyle) return null;
@@ -677,6 +705,25 @@ export function TrialExperiencePage() {
                               <p><span>未检出明显缺陷</span></p>
                             )}
                           </td>
+                          <td className="trial-tile-column">
+                            <button
+                              className="trial-tile-view-button"
+                              disabled={!row.previewUrl}
+                              type="button"
+                              onClick={() => setTilePreview({
+                                filename: row.filename,
+                                imageUrl: row.previewUrl,
+                                imageWidth: row.imageWidth,
+                                imageHeight: row.imageHeight,
+                                tileWidth: row.tileWidth,
+                                tileHeight: row.tileHeight,
+                                tileOverlapRatio: row.tileOverlapRatio,
+                                detections: row.detections
+                              })}
+                            >
+                              查看tile
+                            </button>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -687,15 +734,104 @@ export function TrialExperiencePage() {
               <TrialGeneratingResult
                 photos={photoPreviews}
                 stepIndex={generationStepIndex}
-                showLongWait={showGenerationLongWait}
               />
             ) : (
               <div className="trial-report-empty">
-                <FileSearch aria-hidden="true" />
-                <h2>等待生成结果</h2>
-                <p>照片上传完成后点击“生成检测结果”。</p>
+                <div className="trial-report-empty-content">
+                  <div className="trial-report-empty-illustration" aria-hidden="true">
+                    <img src="/images/capabilities/等待报告图案.jpeg" alt="" />
+                  </div>
+                  <h2>等待生成结果</h2>
+                  <p>上传外墙照片并选择检测类型，即可生成智能检测结果。</p>
+                </div>
               </div>
             )}
+          </aside>
+          <aside className="trial-guide-panel" aria-labelledby="trial-guide-title">
+            <div className="trial-guide-heading">
+              <h2 id="trial-guide-title">示例说明</h2>
+            </div>
+            <div className="trial-guide-list">
+              <article className="trial-guide-card trial-guide-card-detection">
+                <span className="trial-guide-icon" aria-hidden="true">
+                  <ScanSearch />
+                </span>
+                <div>
+                  <h3>支持检测类型</h3>
+                  <p>体验版目前支持两类常见外墙缺陷识别</p>
+                  <div className="trial-guide-tags" aria-label="支持裂缝检测和剥落检测">
+                    <span>裂缝检测</span>
+                    <span>剥落检测</span>
+                  </div>
+                </div>
+              </article>
+              <article className="trial-guide-card trial-guide-card-photo">
+                <span className="trial-guide-icon" aria-hidden="true">
+                  <Images />
+                </span>
+                <div>
+                  <h3>照片建议</h3>
+                  <p>正面拍摄完整墙面，保持画面清晰、光线均匀并避免遮挡。</p>
+                  <div className="trial-guide-tags" aria-label="照片建议：清晰、完整、无遮挡">
+                    <span>画面清晰</span>
+                    <span>墙面完整</span>
+                    <span>无遮挡</span>
+                  </div>
+                </div>
+              </article>
+              <article className="trial-guide-card trial-guide-card-output">
+                <span className="trial-guide-icon" aria-hidden="true">
+                  <ChartNoAxesCombined />
+                </span>
+                <div>
+                  <h3>输出内容</h3>
+                  <p>检测结果将直观呈现缺陷位置及识别信息</p>
+                  <div className="trial-guide-tags" aria-label="输出缺陷位置、缺陷类型和置信度">
+                    <span>缺陷位置</span>
+                    <span>缺陷类型</span>
+                    <span>置信度</span>
+                  </div>
+                </div>
+              </article>
+              <article className="trial-guide-card trial-guide-example-card">
+                <h3>原图示例</h3>
+                <div className="trial-guide-example-images">
+                  <div className="trial-guide-example-image-frame">
+                    <img
+                      alt="空鼓检测原图示例"
+                      loading="lazy"
+                      src="/images/trial/空鼓原图.JPG"
+                    />
+                  </div>
+                  <div className="trial-guide-example-image-frame">
+                    <img
+                      alt="裂缝检测原图示例"
+                      loading="lazy"
+                      src="/images/trial/裂缝原图.jpeg"
+                    />
+                  </div>
+                </div>
+              </article>
+              <article className="trial-guide-card trial-guide-example-card">
+                <h3>标注示例</h3>
+                <div className="trial-guide-example-images">
+                  <div className="trial-guide-example-image-frame">
+                    <img
+                      alt="空鼓检测标注结果示例"
+                      loading="lazy"
+                      src="/images/trial/空鼓检测结果图.png"
+                    />
+                  </div>
+                  <div className="trial-guide-example-image-frame">
+                    <img
+                      alt="裂缝检测标注结果示例"
+                      loading="lazy"
+                      src="/images/trial/裂缝结果图l.jpeg"
+                    />
+                  </div>
+                </div>
+              </article>
+            </div>
           </aside>
         </section>
       </div>
@@ -711,7 +847,7 @@ export function TrialExperiencePage() {
             {annotatedPreview ? (
               <div className="trial-annotated-photo trial-photo-preview-annotated">
                 <img alt={`${annotatedPreview.filename} 检测标注预览`} src={annotatedPreview.previewUrl} />
-                {annotatedPreview.findings.slice(0, 8).map((finding, findingIndex) => {
+                {annotatedPreview.findings.map((finding, findingIndex) => {
                   const display = trialDefectDisplayFromModel(finding.model);
                   const boxStyle = trialFindingBoxStyle(finding);
                   if (!boxStyle) return null;
@@ -741,18 +877,19 @@ export function TrialExperiencePage() {
           onClose={() => setIsModelOutputOpen(false)}
         />
       ) : null}
+      {tilePreview ? (
+        <TilePreviewDialog source={tilePreview} onClose={() => setTilePreview(null)} />
+      ) : null}
     </>
   );
 }
 
 function TrialGeneratingResult({
   photos,
-  stepIndex,
-  showLongWait
+  stepIndex
 }: {
   photos: SelectedPhotoPreview[];
   stepIndex: number;
-  showLongWait: boolean;
 }) {
   const rows = photos.length
     ? photos.map((photo) => ({
@@ -774,14 +911,7 @@ function TrialGeneratingResult({
       aria-label="检测结果生成中"
     >
       <div className="trial-report-head trial-generating-head">
-        <div>
-          <h2>检测结果明细</h2>
-          <p>{showLongWait ? "模型仍在运行，完成后将自动展示结果。" : "算法正在检测照片，结果生成后会自动更新。"}</p>
-        </div>
-        <span className="trial-generating-status">
-          <Spinner size="sm" color="primary" />
-          模型检测中
-        </span>
+        <h2>检测结果明细</h2>
       </div>
       <div className="trial-report-table-wrap trial-generating-table-wrap">
         <table className="trial-report-table trial-generating-table" aria-busy="true">
@@ -790,6 +920,7 @@ function TrialGeneratingResult({
               <th>序号</th>
               <th>含标注的照片</th>
               <th>检测说明</th>
+              <th>tile</th>
             </tr>
           </thead>
           <tbody>
@@ -830,6 +961,15 @@ function TrialGeneratingResult({
                       <Skeleton className="trial-generating-line is-wide" />
                       <Skeleton className="trial-generating-line is-short" />
                     </div>
+                  </td>
+                  <td className="trial-tile-column">
+                    <button
+                      className="trial-tile-view-button"
+                      disabled
+                      type="button"
+                    >
+                      生成中
+                    </button>
                   </td>
                 </tr>
               );
@@ -970,6 +1110,11 @@ function trialFindingSummary(findings: TrialGeneratedResult["findings"]) {
     counts.set(finding.model, (counts.get(finding.model) ?? 0) + 1);
   });
   return Array.from(counts, ([model, count]) => ({ model, count }));
+}
+
+function isTrialResultFinding(finding: TrialGeneratedResult["findings"][number]) {
+  const confidence = Number(finding.confidence);
+  return Number.isFinite(confidence) && confidence > TRIAL_RESULT_CONFIDENCE_THRESHOLD;
 }
 
 function trialFindingBoxStyle(finding: TrialGeneratedResult["findings"][number]): CSSProperties | undefined {

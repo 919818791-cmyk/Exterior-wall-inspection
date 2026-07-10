@@ -71,11 +71,12 @@ class TrialReportFinding(ApiSchema):
     image_width: int | None = None
     image_height: int | None = None
     detection_id: str | None = None
+    description: str | None = Field(default=None, max_length=20)
 
 
 class TrialGenerateRequest(ApiSchema):
     report_name: str | None = Field(default=None, max_length=255)
-    models: list[str] = Field(default_factory=lambda: ["裂缝", "面砖剥落"])
+    models: list[str] = Field(default_factory=lambda: ["裂缝", "剥落"])
     photo_ids: list[UUID] = Field(default_factory=list)
 
 

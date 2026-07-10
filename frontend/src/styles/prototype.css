@@ -1,4 +1,5 @@
 :root {
+  --site-inline-inset: max(24px, min(10vw, calc((100vw - 980px) / 2)));
   --ink: #061638;
   --muted: #52627d;
   --line: rgba(30, 78, 147, 0.14);
@@ -43,7 +44,7 @@ a {
   justify-content: space-between;
   gap: 32px;
   height: 74px;
-  padding: 0 clamp(24px, 5vw, 64px);
+  padding: 0 var(--site-inline-inset);
   background: rgba(255, 255, 255, 0.9);
   border-bottom: 1px solid rgba(209, 224, 245, 0.82);
   backdrop-filter: blur(18px);
@@ -162,8 +163,6 @@ a {
   transition: transform 160ms ease;
 }
 
-.nav-menu:hover .nav-menu-trigger svg,
-.nav-menu:focus-within .nav-menu-trigger svg,
 .nav-menu.is-open .nav-menu-trigger svg {
   transform: rotate(180deg);
 }
@@ -211,8 +210,6 @@ a {
   background: #f1f6ff;
 }
 
-.nav-menu:hover .nav-submenu,
-.nav-menu:focus-within .nav-submenu,
 .nav-menu.is-open .nav-submenu {
   opacity: 1;
   visibility: visible;
@@ -527,7 +524,7 @@ body.auth-modal-open {
   align-items: center;
   min-height: calc(100svh - 74px);
   overflow: hidden;
-  padding: 72px clamp(24px, 5vw, 64px) 62px;
+  padding: 72px var(--site-inline-inset) 62px;
   background:
     linear-gradient(90deg, rgba(247, 251, 255, 0.97) 0%, rgba(247, 251, 255, 0.9) 31%, rgba(247, 251, 255, 0.38) 57%, rgba(247, 251, 255, 0) 78%),
     url("/hero-facade.png") 58% center / cover no-repeat;
@@ -2870,9 +2867,15 @@ body.auth-modal-open {
 }
 
 .detection-time-dialog {
+  --detection-dialog-inline-padding: 28px;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   width: min(96vw, 920px);
   max-height: min(90vh, 840px);
   overflow: hidden;
+}
+
+.detection-time-dialog--results {
+  height: min(90vh, 840px);
 }
 
 .recommendation-content {
@@ -2881,9 +2884,13 @@ body.auth-modal-open {
 }
 
 .detection-time-dialog .recommendation-content {
-  max-height: calc(90vh - 150px);
-  overflow: auto;
-  padding-right: 2px;
+  min-height: 0;
+  max-height: none;
+  overflow-x: hidden;
+  overflow-y: auto;
+  margin-right: calc(4px - var(--detection-dialog-inline-padding));
+  padding-right: calc(var(--detection-dialog-inline-padding) - 4px);
+  scrollbar-gutter: stable;
 }
 
 .recommendation-form-grid {
@@ -2968,10 +2975,13 @@ body.auth-modal-open {
 }
 
 .recommendation-weather-input strong {
+  min-width: 0;
   color: #243657;
   font-size: 14px;
   line-height: 1.45;
+  overflow-wrap: anywhere;
   text-align: right;
+  white-space: normal;
 }
 
 .recommendation-weather-input--error {
@@ -2984,6 +2994,7 @@ body.auth-modal-open {
 }
 
 .recommendation-weather-input--warning {
+  align-items: flex-start;
   border-color: #ead6a4;
   background: #fffaf0;
 }
@@ -3006,6 +3017,115 @@ body.auth-modal-open {
 
 .recommendation-results[hidden] {
   display: none;
+}
+
+.recommendation-loading {
+  display: grid;
+  gap: 14px;
+}
+
+.recommendation-loading-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 2px 2px 0;
+}
+
+.recommendation-loading-status div {
+  display: grid;
+  gap: 4px;
+}
+
+.recommendation-loading-status strong {
+  color: #1d3557;
+  font-size: 15px;
+}
+
+.recommendation-loading-status span {
+  color: #7385a2;
+  font-size: 12px;
+}
+
+.recommendation-loading-status > i {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: #245cff;
+  box-shadow: 0 0 0 0 rgba(36, 92, 255, 0.28);
+  animation: recommendation-loading-pulse 1.5s ease-out infinite;
+}
+
+.recommendation-primary.recommendation-skeleton-primary {
+  gap: 11px;
+}
+
+.recommendation-skeleton-block {
+  display: block;
+  width: 100%;
+  height: 12px;
+  border-radius: 999px;
+  background: linear-gradient(100deg, #e8eef7 20%, #f8fbff 42%, #e8eef7 64%);
+  background-size: 220% 100%;
+  animation: recommendation-skeleton-shimmer 1.6s linear infinite;
+}
+
+.recommendation-skeleton-block--short {
+  width: 28%;
+}
+
+.recommendation-skeleton-block--medium {
+  width: 62%;
+}
+
+.recommendation-skeleton-block--title {
+  width: 44%;
+  height: 28px;
+}
+
+.recommendation-skeleton-block--wide {
+  width: 82%;
+}
+
+.recommendation-skeleton-meta i {
+  max-width: 100%;
+}
+
+.recommendation-loading-rows {
+  display: grid;
+  gap: 14px;
+}
+
+.recommendation-loading-rows > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  min-height: 48px;
+  padding: 12px 14px;
+  border: 1px solid #e1eaf6;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.recommendation-loading-rows .recommendation-skeleton-block--short {
+  flex: 0 0 18%;
+}
+
+.recommendation-loading-rows .recommendation-skeleton-block--medium,
+.recommendation-loading-rows .recommendation-skeleton-block--wide {
+  max-width: 60%;
+}
+
+@keyframes recommendation-skeleton-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: -120% 0; }
+}
+
+@keyframes recommendation-loading-pulse {
+  70% { box-shadow: 0 0 0 8px rgba(36, 92, 255, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(36, 92, 255, 0); }
 }
 
 .recommendation-primary {
@@ -3898,6 +4018,10 @@ body.auth-modal-open {
   padding: 16px 28px;
 }
 
+.dialog-actions.dialog-actions--complete {
+  grid-template-columns: 1fr;
+}
+
 .dialog-actions .button {
   min-height: 38px;
   border: 1px solid rgba(36, 92, 255, 0.4);
@@ -4070,8 +4194,6 @@ body.auth-modal-open {
     transform: translateY(8px);
   }
 
-  .nav-menu:hover .nav-submenu,
-  .nav-menu:focus-within .nav-submenu,
   .nav-menu.is-open .nav-submenu {
     transform: translateY(0);
   }
@@ -4082,6 +4204,8 @@ body.auth-modal-open {
 
   .hero {
     padding-top: 46px;
+    padding-right: 22px;
+    padding-left: 22px;
     background-position: 64% center;
   }
 
@@ -4439,6 +4563,10 @@ body.auth-modal-open {
 
   .project-dialog {
     padding: 22px 18px;
+  }
+
+  .detection-time-dialog {
+    --detection-dialog-inline-padding: 18px;
   }
 
   .dialog-heading {

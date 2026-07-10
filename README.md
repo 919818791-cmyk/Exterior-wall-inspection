@@ -44,44 +44,21 @@ MinIO 默认账号密码来自 `.env.example`：
 
 当前先跑通 `/trial` 简易检测体验，不依赖项目管理、审核工作台或正式检测任务流。
 
-已接入两个 YOLO 权重：
+简易体验使用后端视觉检测服务，不加载本地 `.pt` 模型。单次任务最多上传 10 张 JPG 或 PNG 图片；后端将每张图片按 `1280 x 960` 像素切片，相邻 TILE 保持 25% 重叠，每个 TILE 单独发起一次 API 请求。请求不携带历史上下文，同一任务最多并发 5 个 TILE 请求；Qwen3-VL 返回的 `[0,999]` 归一化 bbox 先换算为 TILE 像素坐标，再映射回原图并按缺陷类别执行 NMS 去重。
 
-| 模型 | 系统类型 | 中文 |
-| --- | --- | --- |
-| `models/wall_crack_yolo11x.pt` | `crack` | 裂缝 |
-| `models/missing.pt` | `missing` | 面砖剥落 |
-
-模型服务由 `algorithm-model` 容器提供，宿主机访问地址为：
-
-```bash
-curl http://localhost:9004/ready
-```
-
-期望返回 `ready: true`，并且 `crack`、`missing` 的 `weights_exists` 为 `true`。当前机器没有可用 NVIDIA Docker runtime 时，可用 CPU 方式启动模型容器：
-
-```bash
-sudo docker rm -f building-exterior-algorithm-model 2>/dev/null || true
-sudo docker run -d \
-  --name building-exterior-algorithm-model \
-  --restart unless-stopped \
-  -p 9004:9002 \
-  -e MODEL_DEVICE=cpu \
-  -e MODEL_VERSION=trial-crack-missing-v1 \
-  -e CRACK_MODEL_WEIGHTS_PATH=/models/wall_crack_yolo11x.pt \
-  -e MISSING_MODEL_WEIGHTS_PATH=/models/missing.pt \
-  -v /opt/Exterior-wall-inspection/models:/models:ro \
-  building-exterior-algorithm-model:cuda
-```
-
-后端通过 `.env` 中的以下配置调用模型服务：
+后端通过根目录 `.env` 中的以下配置调用 API：
 
 ```env
-TRIAL_ALGORITHM_INFERENCE_URL=http://localhost:9004
+DASHSCOPE_API_KEY=替换为实际百炼API-Key
+QWEN_API_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+QWEN_MODEL=qwen3-vl-plus
+QWEN_REQUEST_TIMEOUT_SECONDS=120
+QWEN_MAX_CONCURRENCY=5
 ```
 
-模型服务未配置或不可用时，`/api/trial/generate` 会直接报错；简易体验入口不再降级为模拟结果。
+`DASHSCOPE_API_KEY` 只能由后端读取：不要使用 `VITE_` 前缀，不要写入前端代码、`.env.example`、日志或版本库。`.env.example` 只保留占位值；密钥一旦泄露，应立即在百炼控制台撤销并重新生成。API Key 未配置或服务不可用时，`/api/trial/generate` 会直接报错，不降级为模拟结果。
 
-项目检测任务流仍保留 `algorithm-worker` 适配层，但当前验收优先级是简易体验入口。
+正式项目检测任务流仍保留 `algorithm-worker` 和 `algorithm-model` 本地权重适配层；相关 Docker、PyTorch 和模型权重配置不用于 `/trial`。
 
 ## 3. 启动后端
 

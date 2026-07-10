@@ -44,8 +44,11 @@ class Settings(BaseSettings):
     worker_backend_base_url: str = "http://localhost:8000"
     worker_token: str = "change-this-worker-token"
     worker_lease_seconds: int = 600
-    trial_algorithm_inference_url: str = ""
-    trial_algorithm_inference_timeout_seconds: int = 120
+    dashscope_api_key: str = ""
+    qwen_api_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    qwen_model: str = "qwen3-vl-plus"
+    qwen_request_timeout_seconds: float = 120
+    qwen_max_concurrency: int = Field(default=5, ge=1, le=5)
 
     auth_secret_key: str = "change-this-auth-secret-key-before-production"
     auth_access_token_expire_minutes: int = 480

@@ -44,7 +44,7 @@ router = APIRouter(tags=["detection-tasks"])
 MIN_VISIBLE_CONFIDENCE = 0.6
 DEFECT_TYPE_NAMES = {
     "crack": "裂缝",
-    "missing": "面砖剥落",
+    "spalling": "剥落",
 }
 
 

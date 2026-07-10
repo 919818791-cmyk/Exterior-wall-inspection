@@ -133,6 +133,7 @@ if [ ! -f "$ROOT_DIR/.env" ]; then
 Please edit /opt/building-exterior/.env before running this script again:
 
 - replace database, MinIO, worker and auth secrets
+- set DASHSCOPE_API_KEY for the /trial Qwen detection flow
 - set BACKEND_CORS_ORIGINS to your domain or server IP
 - set MINIO_ENDPOINT and MINIO_PUBLIC_URL to a browser-accessible address
 

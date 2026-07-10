@@ -9,7 +9,7 @@ from zipfile import ZIP_DEFLATED, ZipFile
 
 DEFECT_LABELS = {
     "crack": "裂缝",
-    "missing": "面砖剥落",
+    "missing": "剥落",
     "spalling": "剥落",
     "moisture": "潮湿",
 }

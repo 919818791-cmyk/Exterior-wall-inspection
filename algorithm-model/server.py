@@ -14,7 +14,7 @@ from ultralytics import YOLO
 
 
 MODEL_DEVICE = os.getenv("MODEL_DEVICE", "auto").strip() or "auto"
-MODEL_VERSION = os.getenv("MODEL_VERSION", "trial-crack-missing-v1").strip() or "trial-crack-missing-v1"
+MODEL_VERSION = os.getenv("MODEL_VERSION", "trial-crack-spalling-v1").strip() or "trial-crack-spalling-v1"
 MODEL_CONFIDENCE_THRESHOLD = float(os.getenv("MODEL_CONFIDENCE_THRESHOLD", "0.25"))
 MODEL_IMAGE_SIZE = int(os.getenv("MODEL_IMAGE_SIZE", "1280"))
 MODEL_HIGH_PRECISION_IMAGE_SIZE = int(os.getenv("MODEL_HIGH_PRECISION_IMAGE_SIZE", str(MODEL_IMAGE_SIZE)))
@@ -46,14 +46,14 @@ MODEL_HIGH_PRECISION_TILE_SIZE = _env_int(
 MODEL_TILE_OVERLAP_RATIO = _env_float("MODEL_TILE_OVERLAP_RATIO", 0.25, minimum=0.0, maximum=0.85)
 MODEL_TILE_NMS_IOU_THRESHOLD = _env_float("MODEL_TILE_NMS_IOU_THRESHOLD", 0.5, minimum=0.0, maximum=1.0)
 
-DEFECT_CLASS_ORDER = ("crack", "missing")
+DEFECT_CLASS_ORDER = ("crack", "spalling")
 DEFECT_LABELS = {
     "crack": "裂缝",
-    "missing": "面砖剥落",
+    "spalling": "剥落",
 }
 DEFAULT_MODEL_PATHS = {
     "crack": "/models/wall_crack_yolo11x.pt",
-    "missing": "/models/missing.pt",
+    "spalling": "/models/missing.pt",
 }
 CLASS_ALIASES = {
     "crack": "crack",
@@ -61,12 +61,14 @@ CLASS_ALIASES = {
     "开裂": "crack",
     "wall_crack": "crack",
     "wall-crack": "crack",
-    "missing": "missing",
-    "tile_missing": "missing",
-    "tile-missing": "missing",
-    "面砖剥落": "missing",
-    "瓷砖剥落": "missing",
-    "面砖缺失": "missing",
+    "missing": "spalling",
+    "tile_missing": "spalling",
+    "tile-missing": "spalling",
+    "spalling": "spalling",
+    "剥落": "spalling",
+    "面砖剥落": "spalling",
+    "瓷砖剥落": "spalling",
+    "面砖缺失": "spalling",
 }
 
 app = FastAPI(title="Building Exterior Algorithm Model", version="0.4.0")
@@ -78,6 +80,8 @@ _model_lock = Lock()
 def _env_model_path(defect_type: str) -> str | None:
     env_name = f"{defect_type.upper()}_MODEL_WEIGHTS_PATH"
     value = os.getenv(env_name, "").strip()
+    if not value and defect_type == "spalling":
+        value = os.getenv("MISSING_MODEL_WEIGHTS_PATH", "").strip()
     return value or None
 
 

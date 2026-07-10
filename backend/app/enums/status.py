@@ -49,9 +49,14 @@ class AiResultStatus(StrEnum):
 
 class DefectType(StrEnum):
     CRACK = "crack"
-    MISSING = "missing"
     SPALLING = "spalling"
     MOISTURE = "moisture"
+
+    @classmethod
+    def _missing_(cls, value: object) -> "DefectType | None":
+        if isinstance(value, str) and value.strip().lower() == "missing":
+            return cls.SPALLING
+        return None
 
 
 class PhotoType(StrEnum):

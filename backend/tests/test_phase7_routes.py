@@ -149,25 +149,11 @@ def _post_trial_generate(files: list[tuple[str, tuple[str, bytes, str]]]):
     try:
         return client.post(
             "/api/trial/generate",
-            data={"payload": '{"report_name":"东立面体验结果","models":["裂缝","面砖剥落"]}'},
+            data={"payload": '{"report_name":"东立面体验结果","models":["裂缝","剥落"]}'},
             files=files,
         )
     finally:
         app.dependency_overrides.clear()
-
-
-class FakeInferenceResponse:
-    def __init__(self, payload: dict) -> None:
-        self.payload = payload
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *args):
-        return None
-
-    def read(self) -> bytes:
-        return dumps(self.payload).encode("utf-8")
 
 
 def _mock_trial_inference(monkeypatch, payload: dict | None = None) -> None:
@@ -185,13 +171,20 @@ def _mock_trial_inference(monkeypatch, payload: dict | None = None) -> None:
     monkeypatch.setattr(
         "app.api.reports.get_settings",
         lambda: SimpleNamespace(
-            trial_algorithm_inference_url="http://trial-model.local",
-            trial_algorithm_inference_timeout_seconds=120,
+            dashscope_api_key="test-key",
+            qwen_api_base_url="https://qwen.test/compatible-mode/v1",
+            qwen_model="qwen3-vl-plus",
+            qwen_request_timeout_seconds=120,
+            qwen_max_concurrency=5,
         ),
     )
+
+    async def fake_infer_trial_images(images, **kwargs):
+        return [inference_payload for _ in images]
+
     monkeypatch.setattr(
-        "app.api.reports.urlopen",
-        lambda request, timeout: FakeInferenceResponse(inference_payload),
+        "app.api.reports.infer_trial_images",
+        fake_infer_trial_images,
     )
 
 
@@ -305,7 +298,7 @@ def test_trial_report_request_accepts_optional_report_name() -> None:
         {
             "report_name": "东立面体验结果",
             "generated_at": "2026-06-30 10:00",
-            "models": ["裂缝", "面砖剥落"],
+            "models": ["裂缝", "剥落"],
             "files": [{"filename": "trial-001.jpg", "size": 1200}],
             "findings": [{"filename": "trial-001.jpg", "model": "裂缝"}],
         }
@@ -319,7 +312,7 @@ def test_trial_generated_result_can_feed_archive_contract() -> None:
         {
             "report_name": "东立面体验结果",
             "generated_at": "2026-06-30T10:00:00+00:00",
-            "models": ["裂缝", "面砖剥落"],
+            "models": ["裂缝", "剥落"],
             "files": [{"filename": "trial-001.jpg", "size": 1200}],
             "findings": [{"filename": "trial-001.jpg", "model": "裂缝"}],
         }
@@ -340,12 +333,12 @@ def test_trial_generate_endpoint_returns_preview_payload(monkeypatch) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["report_name"] == "东立面体验结果"
-    assert payload["models"] == ["裂缝", "面砖剥落"]
+    assert payload["models"] == ["裂缝", "剥落"]
     assert payload["files"] == [{"filename": "trial-001.jpg", "size": len(TRIAL_JPEG_BYTES)}]
     assert payload["findings"] == [
         {
             "filename": "trial-001.jpg",
-            "model": "面砖剥落",
+            "model": "剥落",
             "confidence": 0.67,
             "bbox": {"x": 100, "y": 50, "width": 240, "height": 80},
             "image_width": 1000,
@@ -355,7 +348,7 @@ def test_trial_generate_endpoint_returns_preview_payload(monkeypatch) -> None:
     ]
 
 
-def test_trial_generate_endpoint_hides_low_confidence_findings(monkeypatch) -> None:
+def test_trial_generate_endpoint_hides_findings_at_point_six(monkeypatch) -> None:
     _mock_trial_inference(
         monkeypatch,
         {
@@ -364,7 +357,7 @@ def test_trial_generate_endpoint_hides_low_confidence_findings(monkeypatch) -> N
                 {
                     "id": "det-low",
                     "type": "missing",
-                    "confidence": 0.59,
+                    "confidence": 0.6,
                     "bbox": {"x": 100, "y": 50, "width": 240, "height": 80},
                 }
             ],
@@ -380,10 +373,10 @@ def test_trial_generate_endpoint_hides_low_confidence_findings(monkeypatch) -> N
     assert payload["raw_model_outputs"][0]["detections"] == [
         {
             "detection_id": "det-low",
-            "type": "missing",
+            "type": "spalling",
             "type_name": None,
-            "model": "面砖剥落",
-            "confidence": 0.59,
+            "model": "剥落",
+            "confidence": 0.6,
             "bbox": {"x": 100, "y": 50, "width": 240, "height": 80},
             "severity": None,
             "description": None,
@@ -415,12 +408,13 @@ def test_trial_generate_endpoint_accepts_uploaded_photo_ids(monkeypatch) -> None
 
     assert response.status_code == 200
     payload = response.json()
+    assert payload["models"] == ["裂缝", "剥落"]
     assert payload["files"] == [{"photo_id": str(photo_id), "filename": "quick-001.jpg", "size": 1200}]
     assert payload["findings"] == [
         {
             "photo_id": str(photo_id),
             "filename": "quick-001.jpg",
-            "model": "面砖剥落",
+            "model": "剥落",
             "confidence": 0.67,
             "bbox": {"x": 100, "y": 50, "width": 240, "height": 80},
             "image_width": 1000,
@@ -434,8 +428,11 @@ def test_trial_generate_endpoint_requires_configured_inference_service(monkeypat
     monkeypatch.setattr(
         "app.api.reports.get_settings",
         lambda: SimpleNamespace(
-            trial_algorithm_inference_url="",
-            trial_algorithm_inference_timeout_seconds=120,
+            dashscope_api_key="",
+            qwen_api_base_url="https://qwen.test/compatible-mode/v1",
+            qwen_model="qwen3-vl-plus",
+            qwen_request_timeout_seconds=120,
+            qwen_max_concurrency=5,
         ),
     )
 
@@ -444,7 +441,7 @@ def test_trial_generate_endpoint_requires_configured_inference_service(monkeypat
     )
 
     assert response.status_code == 503
-    assert "TRIAL_ALGORITHM_INFERENCE_URL" in response.json()["message"]
+    assert response.json()["message"] == "视觉检测服务暂时不可用，请稍后重试。"
 
 
 def test_trial_result_archive_accepts_generated_photo_ids() -> None:
@@ -454,7 +451,20 @@ def test_trial_result_archive_accepts_generated_photo_ids() -> None:
         "generated_at": "2026-06-30T10:00:00+00:00",
         "models": ["裂缝"],
         "files": [{"photo_id": str(photo_id), "filename": "quick-001.jpg", "size": 1200}],
-        "findings": [{"photo_id": str(photo_id), "filename": "quick-001.jpg", "model": "裂缝"}],
+        "findings": [
+            {
+                "photo_id": str(photo_id),
+                "filename": "quick-001.jpg",
+                "model": "裂缝",
+                "confidence": 0.67,
+            },
+            {
+                "photo_id": str(photo_id),
+                "filename": "quick-001.jpg",
+                "model": "剥落",
+                "confidence": 0.6,
+            },
+        ],
     }
     fake_db = ArchivingTrialDb([])
     fake_db.photos = [TrackingUploadedPhoto(photo_id, fake_db)]
@@ -469,6 +479,7 @@ def test_trial_result_archive_accepts_generated_photo_ids() -> None:
 
     assert result.source_type == "trial"
     assert result.photos[0]["id"] == str(photo_id)
+    assert len(result.defects) == 1
     assert result.defects[0]["raw_result_json"]["finding"]["photo_id"] == str(photo_id)
 
 
@@ -500,16 +511,34 @@ def test_trial_generate_rejects_mismatched_image_content() -> None:
     assert response.json()["message"] == "图片格式与文件内容不匹配。"
 
 
-def test_trial_generate_rejects_more_than_twenty_files() -> None:
+def test_trial_generate_rejects_more_than_ten_files() -> None:
     response = _post_trial_generate(
         [
             ("files", (f"trial-{index:03d}.png", TRIAL_PNG_BYTES, "image/png"))
-            for index in range(21)
+            for index in range(11)
         ]
     )
 
     assert response.status_code == 400
-    assert response.json()["message"] == "单次最多上传 20 张照片。"
+    assert response.json()["message"] == "单次最多上传 10 张照片。"
+
+
+def test_trial_generate_rejects_more_than_ten_uploaded_photo_ids() -> None:
+    app.dependency_overrides[get_current_user] = _trial_customer
+    app.dependency_overrides[get_db] = lambda: UploadedPhotoDb([])
+    try:
+        response = client.post(
+            "/api/trial/generate",
+            json={
+                "models": ["裂缝", "剥落"],
+                "photo_ids": [str(UUID(int=index + 1)) for index in range(11)],
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 400
+    assert response.json()["message"] == "单次最多上传 10 张照片。"
 
 
 def test_trial_generate_rejects_files_larger_than_twenty_mb() -> None:

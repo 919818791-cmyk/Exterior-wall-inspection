@@ -11,9 +11,9 @@ const TRIAL_DEFECT_DISPLAY_BY_TYPE: Record<string, TrialDefectDisplay> = {
     boxClassName: "trial-defect-box-crack"
   },
   missing: {
-    label: "面砖剥落",
-    descriptionClassName: "trial-report-description-missing",
-    boxClassName: "trial-defect-box-missing"
+    label: "剥落",
+    descriptionClassName: "trial-report-description-spalling",
+    boxClassName: "trial-defect-box-spalling"
   },
   spalling: {
     label: "剥落",
@@ -31,9 +31,10 @@ const TRIAL_MODEL_TO_DEFECT_TYPE: Record<string, string> = {
   crack: "crack",
   "裂缝": "crack",
   "开裂": "crack",
-  missing: "missing",
-  "面砖剥落": "missing",
-  "面砖缺失": "missing",
+  missing: "spalling",
+  "面砖剥落": "spalling",
+  "瓷砖剥落": "spalling",
+  "面砖缺失": "spalling",
   spalling: "spalling",
   "剥落": "spalling",
   moisture: "moisture",

@@ -69,6 +69,7 @@ export interface TrialReportPayload {
     image_width?: number | null;
     image_height?: number | null;
     detection_id?: string | null;
+    description?: string | null;
   }>;
   raw_model_outputs?: ModelOutputPhoto[];
 }

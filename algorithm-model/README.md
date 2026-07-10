@@ -18,7 +18,7 @@ models/wall_crack_yolo11x.pt
 models/missing.pt
 ```
 
-Or update `CRACK_MODEL_WEIGHTS_PATH` and `MISSING_MODEL_WEIGHTS_PATH` in `.env`.
+Or update `CRACK_MODEL_WEIGHTS_PATH` and `SPALLING_MODEL_WEIGHTS_PATH` in `.env`.
 
 For CPU-only validation, set:
 
@@ -33,7 +33,7 @@ The service exposes `/health`, `/ready`, `/metadata`, and `/predict`.
 | Type | Label |
 | --- | --- |
 | `crack` | 裂缝 |
-| `missing` | 面砖剥落 |
+| `spalling` | 剥落 |
 
 Inference uses tiled/sliding-window prediction by default so high-resolution
 photos keep enough detail for small facade defects. Each tile is predicted in

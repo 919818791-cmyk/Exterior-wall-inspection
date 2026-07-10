@@ -131,6 +131,12 @@ export interface ModelOutputPhoto {
   model_version?: string | null;
   requested_models?: string[];
   executed_models?: string[];
+  tile_width?: number | string | null;
+  tile_height?: number | string | null;
+  tile_overlap_ratio?: number | string | null;
+  tile_count?: number | string | null;
+  deduplication_method?: string | null;
+  nms_iou_threshold?: number | string | null;
   detections?: ModelOutputDetection[];
 }
 

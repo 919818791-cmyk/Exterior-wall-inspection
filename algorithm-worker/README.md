@@ -12,7 +12,7 @@ Current defect type mapping:
 | Type | Label |
 | --- | --- |
 | `crack` | 裂缝 |
-| `missing` | 面砖剥落 |
+| `spalling` | 剥落 |
 
 ## Local Run
 
@@ -20,7 +20,7 @@ Current defect type mapping:
 $env:WORKER_BACKEND_BASE_URL = "http://localhost:8000"
 $env:WORKER_ID = "mock-worker-local"
 $env:WORKER_TOKEN = "change-this-worker-token"
-$env:WORKER_MODEL_VERSION = "trial-crack-missing-v1"
+$env:WORKER_MODEL_VERSION = "trial-crack-spalling-v1"
 $env:WORKER_MODE = "mock"
 python .\algorithm-worker\mock_worker.py
 ```

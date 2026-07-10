@@ -38,6 +38,5 @@ postgres_data/
 minio_data/
 redis_data/
 
-# Local or production model weights
-/models/*
-!/models/README.md
+# Local or production PyTorch model weights
+/models/**/*.pt

@@ -45,7 +45,6 @@ const NEW_ANNOTATION_KEY = "new:manual";
 
 const DEFECT_OPTIONS: Array<{ value: DefectType; label: string; color: string }> = [
   { value: "crack", label: "裂缝", color: "#ef4444" },
-  { value: "missing", label: "面砖剥落", color: "#14b8a6" },
   { value: "spalling", label: "剥落", color: "#f97316" },
   { value: "moisture", label: "潮湿", color: "#0ea5e9" }
 ];

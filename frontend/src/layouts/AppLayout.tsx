@@ -10,7 +10,7 @@ import { useAuthStore } from "@/stores/useAuthStore";
 
 const defectLinks = [
   { label: "裂缝识别", to: "/capabilities/crack" },
-  { label: "面砖剥落识别", to: "/capabilities/missing" },
+  { label: "剥落识别", to: "/capabilities/spalling" },
   { label: "潮湿识别", to: "/capabilities/moisture" },
   { label: "锈蚀识别", to: "/capabilities/corrosion" },
   { label: "空鼓识别", to: "/capabilities/hollow" }
@@ -18,6 +18,7 @@ const defectLinks = [
 
 function pageClass(pathname: string) {
   if (pathname === "/trial") return "detail-page trial-experience-page";
+  if (pathname === "/capabilities/time") return "detail-page recommendation-detail-page";
   if (pathname === "/projects/new") return "project-page new-project-page";
   if (/^\/projects\/[^/]+$/.test(pathname)) return "project-page project-detail-page";
   if (pathname.startsWith("/projects") || pathname.startsWith("/accounts") || pathname.startsWith("/reports") || pathname.startsWith("/review")) {
@@ -44,7 +45,7 @@ export function AppLayout() {
   const [capabilityMenuOpen, setCapabilityMenuOpen] = useState(false);
   const [managementMenuOpen, setManagementMenuOpen] = useState(false);
   const accountMenuRef = useRef<HTMLDivElement>(null);
-  const defectKey = location.pathname.match(/^\/capabilities\/(crack|missing|moisture|corrosion|hollow)$/)?.[1];
+  const defectKey = location.pathname.match(/^\/capabilities\/(crack|spalling|missing|moisture|corrosion|hollow)$/)?.[1];
   const isCapabilityRoute = Boolean(defectKey) || location.pathname === "/trial";
   const isManagementRoute = location.pathname.startsWith("/projects") || location.pathname.startsWith("/accounts") || location.pathname.startsWith("/review");
   const canAccessAdmin = user?.role === "admin";
@@ -62,6 +63,11 @@ export function AppLayout() {
   useEffect(() => {
     if (new URLSearchParams(location.search).get("login") === "1") setAuthModalOpen(true);
   }, [location.search]);
+
+  useEffect(() => {
+    setCapabilityMenuOpen(false);
+    setManagementMenuOpen(false);
+  }, [location.pathname]);
 
   useEffect(() => {
     if (!accountMenuOpen) return;
@@ -94,6 +100,7 @@ export function AppLayout() {
   function handlePasswordChanged() {
     clearSession();
     queryClient.removeQueries({ queryKey: ["reports"] });
+    setAuthModalOpen(true);
     navigate("/", { replace: true });
   }
 

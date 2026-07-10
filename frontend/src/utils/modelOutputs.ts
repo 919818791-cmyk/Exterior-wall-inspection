@@ -2,7 +2,7 @@ import type { ModelOutputDetection, ModelOutputPhoto } from "@/types/reports";
 
 const DEFECT_LABELS: Record<string, string> = {
   crack: "裂缝",
-  missing: "面砖剥落",
+  missing: "剥落",
   spalling: "剥落",
   moisture: "潮湿",
   leakage: "潮湿",
@@ -27,8 +27,15 @@ export function formatModelOutputs(outputs: ModelOutputPhoto[] | null | undefine
     if (output.image_width || output.image_height) {
       lines.push(`图像尺寸: ${output.image_width ?? "-"} x ${output.image_height ?? "-"}`);
     }
-    if (output.model_version) lines.push(`模型版本: ${output.model_version}`);
-    if (output.executed_models?.length) lines.push(`执行模型: ${output.executed_models.join(", ")}`);
+    if (output.tile_width && output.tile_height) {
+      lines.push(`切片尺寸: ${output.tile_width} x ${output.tile_height}`);
+    }
+    if (output.tile_overlap_ratio !== null && output.tile_overlap_ratio !== undefined) {
+      lines.push(`切片重叠: ${Math.round(Number(output.tile_overlap_ratio) * 100)}%`);
+    }
+    if (output.deduplication_method === "nms") {
+      lines.push(`重复框处理: NMS（IoU ${output.nms_iou_threshold ?? "-"}）`);
+    }
     lines.push(`候选框数量: ${detections.length}`);
 
     if (!detections.length) {
