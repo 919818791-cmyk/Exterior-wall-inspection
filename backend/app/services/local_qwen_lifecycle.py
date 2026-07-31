@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import fcntl
 import json
 import logging
 import os
@@ -17,6 +16,11 @@ from urllib.parse import urlsplit
 import httpx
 
 from app.core.config import Settings, get_settings
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - local vLLM control is Linux-only
+    fcntl = None  # type: ignore[assignment]
 
 
 logger = logging.getLogger(__name__)
@@ -64,6 +68,8 @@ def _log_path(settings: Settings) -> Path:
 
 @contextmanager
 def _control_lock(settings: Settings) -> Iterator[None]:
+    if fcntl is None:
+        raise LocalQwenLifecycleError("本地模型自动启停仅支持 Linux。")
     lock_path = _runtime_dir(settings) / "local-qwen.lock"
     with lock_path.open("a+", encoding="utf-8") as lock_file:
         fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)

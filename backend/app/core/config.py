@@ -7,7 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=(".env", "../.env"),
+        env_file=(".env", "../.env", ".env.local", "../.env.local"),
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -66,8 +66,9 @@ class Settings(BaseSettings):
     trial_job_lock_seconds: int = Field(default=900, ge=60)
 
     photo_guard_enabled: bool = True
-    photo_guard_api_base_url: str = "http://127.0.0.1:9006/v1"
-    photo_guard_model: str = "qwen3-vl-2b-photo-guard"
+    photo_guard_provider: Literal["dashscope", "openai_compatible"] = "dashscope"
+    photo_guard_api_base_url: str = ""
+    photo_guard_model: str = ""
     photo_guard_api_key: str = ""
     photo_guard_request_timeout_seconds: float = Field(
         default=60,
@@ -135,6 +136,7 @@ class Settings(BaseSettings):
     auth_seed_demo_users: bool = True
 
     qweather_api_host: str = ""
+    qweather_api_key: str = ""
     qweather_developer_id: str = ""
     qweather_project_id: str = ""
     qweather_credential_id: str = ""
@@ -145,6 +147,24 @@ class Settings(BaseSettings):
     qweather_language: str = "zh"
     qweather_jwt_ttl_seconds: int = 900
     qweather_request_timeout_seconds: int = 10
+
+    @property
+    def effective_photo_guard_api_base_url(self) -> str:
+        if self.photo_guard_provider == "dashscope":
+            return self.photo_guard_api_base_url.strip() or self.qwen_api_base_url.strip()
+        return self.photo_guard_api_base_url.strip()
+
+    @property
+    def effective_photo_guard_model(self) -> str:
+        if self.photo_guard_provider == "dashscope":
+            return self.photo_guard_model.strip() or self.qwen3_vl_flash_model.strip()
+        return self.photo_guard_model.strip()
+
+    @property
+    def effective_photo_guard_api_key(self) -> str:
+        if self.photo_guard_provider == "dashscope":
+            return self.photo_guard_api_key.strip() or self.dashscope_api_key.strip()
+        return self.photo_guard_api_key.strip()
 
     @property
     def docs_enabled(self) -> bool:
@@ -181,11 +201,18 @@ class Settings(BaseSettings):
             problems.append("BACKEND_CORS_ORIGINS must not contain *")
         if self.photo_guard_enabled:
             if (
-                not self.photo_guard_api_base_url.strip()
-                or not self.photo_guard_model.strip()
+                not self.effective_photo_guard_api_base_url
+                or not self.effective_photo_guard_model
             ):
                 problems.append(
                     "PHOTO_GUARD_API_BASE_URL and PHOTO_GUARD_MODEL are required"
+                )
+            if (
+                self.photo_guard_provider == "dashscope"
+                and not self.effective_photo_guard_api_key
+            ):
+                problems.append(
+                    "DASHSCOPE_API_KEY or PHOTO_GUARD_API_KEY is required for the photo guard"
                 )
             if self.photo_guard_fail_open:
                 problems.append("PHOTO_GUARD_FAIL_OPEN must be false")

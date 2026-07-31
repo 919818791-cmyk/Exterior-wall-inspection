@@ -13,6 +13,7 @@ os.environ["LOGIN_RATE_LIMIT_PER_IDENTITY"] = "10000"
 os.environ["TRIAL_APPLICATION_LIMIT_PER_IDENTITY"] = "10000"
 os.environ["WEATHER_RATE_LIMIT_PER_USER"] = "10000"
 os.environ["PHOTO_GUARD_ENABLED"] = "false"
+os.environ["DASHSCOPE_API_KEY"] = "test-key"
 
 
 @pytest.fixture(autouse=True)

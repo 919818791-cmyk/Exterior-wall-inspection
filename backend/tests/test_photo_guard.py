@@ -73,7 +73,7 @@ def test_guard_rejects_source_pixel_amplification_before_loading() -> None:
         )
 
 
-def test_guard_uses_short_structured_vllm_request(monkeypatch) -> None:
+def test_guard_uses_dashscope_json_request(monkeypatch) -> None:
     captured: dict[str, Any] = {}
 
     class Response:
@@ -118,15 +118,63 @@ def test_guard_uses_short_structured_vllm_request(monkeypatch) -> None:
 
     payload = captured["payload"]
     assert result.allowed is True
-    assert payload["max_tokens"] == 24
+    assert "max_tokens" not in payload
     assert payload["temperature"] == 0
-    assert payload["response_format"]["json_schema"]["schema"] == (
-        photo_guard.PHOTO_GUARD_RESPONSE_SCHEMA
-    )
+    assert payload["response_format"] == {"type": "json_object"}
+    assert payload["enable_thinking"] is False
     image_url = payload["messages"][0]["content"][0]["image_url"]["url"]
     assert base64.b64decode(image_url.split(",", 1)[1]).startswith(b"\xff\xd8\xff")
     assert payload["messages"][0]["content"][1]["text"].startswith("自定义建筑照片")
+    assert "JSON" in payload["messages"][0]["content"][1]["text"]
     assert captured["endpoint"] == "http://127.0.0.1:19006/v1/chat/completions"
+
+
+def test_guard_reuses_dashscope_configuration(monkeypatch) -> None:
+    settings = _settings(
+        photo_guard_api_base_url="",
+        photo_guard_model="",
+        photo_guard_api_key="",
+        qwen_api_base_url="https://dashscope.example/compatible-mode/v1",
+        qwen3_vl_flash_model="qwen3-vl-flash",
+        dashscope_api_key="secret",
+    )
+
+    class Client:
+        def __init__(self, **kwargs: Any) -> None:
+            assert kwargs["headers"]["Authorization"] == "Bearer secret"
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def post(self, endpoint: str, *, json: dict[str, Any]):
+            assert endpoint == "https://dashscope.example/compatible-mode/v1/chat/completions"
+            assert json["model"] == "qwen3-vl-flash"
+            return type(
+                "Response",
+                (),
+                {
+                    "is_success": True,
+                    "status_code": 200,
+                    "json": lambda self: {
+                        "choices": [{"message": {"content": '{"category":"BUILDING"}'}}]
+                    },
+                },
+            )()
+
+    monkeypatch.setattr(photo_guard.httpx, "Client", Client)
+
+    result = photo_guard.classify_building_photo(
+        _png(640, 480),
+        filename="facade.png",
+        settings=settings,
+    )
+
+    assert result.allowed is True
+    assert result.model == "qwen3-vl-flash"
+    assert photo_guard.photo_guard_health(settings) == (True, "configured")
 
 
 def test_guard_rejects_non_building_without_saving(monkeypatch) -> None:

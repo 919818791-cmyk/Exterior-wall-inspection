@@ -23,19 +23,7 @@ PHOTO_GUARD_PROMPT = """观察整张图，严格按以下优先级分类：
 1. 先检查它是否是软件/网页截图、文档、徽标、图标或地图。只要可见登录框、按钮、输入框、导航栏、网页文字面板等界面元素，立即分类为 OTHER；即使界面背景是高楼照片也必须是 OTHER。
 2. 再检查是否为真实拍摄的楼房、外立面或建筑局部（外墙、墙砖、混凝土、裂缝、剥落、门窗、阳台、幕墙、屋檐）。是则 BUILDING。紫红/黑/黄伪彩热成像中可见墙面、窗户、墙砖结构，也算 BUILDING。
 3. 其余全部 OTHER，包括人物、动物、车辆、食物、风景、道路桥梁、室内。
-必须先执行规则1。不要因文字中出现建筑就选 BUILDING。只输出 category。"""
-
-PHOTO_GUARD_RESPONSE_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "category": {
-            "type": "string",
-            "enum": ["BUILDING", "OTHER"],
-        },
-    },
-    "required": ["category"],
-    "additionalProperties": False,
-}
+必须先执行规则1。不要因文字中出现建筑就选 BUILDING。只输出 JSON 对象，格式为 {"category":"BUILDING"} 或 {"category":"OTHER"}。"""
 
 RETRYABLE_STATUS_CODES = frozenset({408, 429, 500, 502, 503, 504})
 CATEGORY_REASONS = {
@@ -93,6 +81,14 @@ def photo_guard_health(settings: Settings | None = None) -> tuple[bool, str]:
     if not photo_guard_enabled(settings):
         return True, "disabled"
     try:
+        _validated_api_base_url(settings)
+        _validated_model(settings)
+        if _photo_guard_provider(settings) == "dashscope":
+            if not _effective_api_key(settings):
+                return False, "DASHSCOPE_API_KEY or PHOTO_GUARD_API_KEY is not configured"
+            # DashScope has no vLLM-style /health endpoint. Avoid spending a
+            # billed inference request on every application health check.
+            return True, "configured"
         endpoint = _photo_guard_health_endpoint(settings)
         with httpx.Client(timeout=0.75, trust_env=False) as client:
             response = client.get(endpoint)
@@ -196,7 +192,7 @@ def classify_building_photo(
         inference_height=prepared.inference_height,
         inference_bytes=len(prepared.content),
         latency_ms=latency_ms,
-        model=settings.photo_guard_model,
+        model=_effective_model(settings),
     )
 
 
@@ -301,7 +297,7 @@ def _request_classification(
     endpoint = _photo_guard_chat_endpoint(settings)
     encoded_image = base64.b64encode(image_bytes).decode("ascii")
     request_payload = {
-        "model": settings.photo_guard_model,
+        "model": _validated_model(settings),
         "messages": [
             {
                 "role": "user",
@@ -312,25 +308,19 @@ def _request_classification(
                             "url": f"data:image/jpeg;base64,{encoded_image}"
                         },
                     },
-                    {"type": "text", "text": prompt},
+                    {"type": "text", "text": _json_prompt(prompt)},
                 ],
             }
         ],
         "temperature": 0,
-        "max_tokens": 24,
         "seed": 0,
         "stream": False,
-        "response_format": {
-            "type": "json_schema",
-            "json_schema": {
-                "name": "building_photo_gate",
-                "strict": True,
-                "schema": PHOTO_GUARD_RESPONSE_SCHEMA,
-            },
-        },
+        "response_format": {"type": "json_object"},
     }
+    if _photo_guard_provider(settings) == "dashscope":
+        request_payload["enable_thinking"] = False
     headers = {"Content-Type": "application/json"}
-    api_key = settings.photo_guard_api_key.strip()
+    api_key = _effective_api_key(settings)
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
 
@@ -407,10 +397,55 @@ def _photo_guard_health_endpoint(settings: Settings) -> str:
 
 
 def _validated_api_base_url(settings: Settings) -> str:
-    base_url = settings.photo_guard_api_base_url.strip().rstrip("/")
+    base_url = _effective_api_base_url(settings).rstrip("/")
     parsed = urlsplit(base_url)
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
         raise PhotoGuardUnavailable("PHOTO_GUARD_API_BASE_URL 配置无效。")
-    if not settings.photo_guard_model.strip():
-        raise PhotoGuardUnavailable("PHOTO_GUARD_MODEL 未配置。")
     return base_url
+
+
+def _validated_model(settings: Settings) -> str:
+    model = _effective_model(settings)
+    if not model:
+        raise PhotoGuardUnavailable("PHOTO_GUARD_MODEL 未配置。")
+    return model
+
+
+def _photo_guard_provider(settings: Settings) -> str:
+    return str(getattr(settings, "photo_guard_provider", "openai_compatible"))
+
+
+def _effective_api_base_url(settings: Settings) -> str:
+    configured = str(getattr(settings, "photo_guard_api_base_url", "")).strip()
+    if configured or _photo_guard_provider(settings) != "dashscope":
+        return configured
+    return str(getattr(settings, "qwen_api_base_url", "")).strip()
+
+
+def _effective_model(settings: Settings) -> str:
+    configured = str(getattr(settings, "photo_guard_model", "")).strip()
+    if configured or _photo_guard_provider(settings) != "dashscope":
+        return configured
+    return str(getattr(settings, "qwen3_vl_flash_model", "qwen3-vl-flash")).strip()
+
+
+def _effective_api_key(settings: Settings) -> str:
+    configured = str(getattr(settings, "photo_guard_api_key", "")).strip()
+    if configured or _photo_guard_provider(settings) != "dashscope":
+        return configured
+    return str(getattr(settings, "dashscope_api_key", "")).strip()
+
+
+def photo_guard_api_base_url(settings: Settings | None = None) -> str:
+    return _effective_api_base_url(settings or get_settings())
+
+
+def photo_guard_model_name(settings: Settings | None = None) -> str:
+    return _effective_model(settings or get_settings())
+
+
+def _json_prompt(prompt: str) -> str:
+    text = prompt.strip()
+    if "json" not in text.lower():
+        text += "\n请以 JSON 格式输出，只能包含 category 字段。"
+    return text

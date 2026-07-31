@@ -118,6 +118,7 @@ def test_qweather_client_requests_now_endpoint_with_bearer_token(tmp_path) -> No
         return httpx.Response(200, json=_weather_now_payload())
 
     settings = Settings(
+        _env_file=None,
         qweather_api_host="example.qweatherapi.com",
         qweather_project_id="36E5G4T7X7",
         qweather_credential_id="K9GYAW4XH9",
@@ -131,6 +132,34 @@ def test_qweather_client_requests_now_endpoint_with_bearer_token(tmp_path) -> No
     assert weather.now.text == "多云"
     assert seen["url"] == "https://example.qweatherapi.com/v7/weather/now?location=116.41%2C39.92&lang=zh"
     assert seen["authorization"].startswith("Bearer ")
+
+
+def test_qweather_client_prefers_api_key_header() -> None:
+    seen: dict[str, str | None] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["api_key"] = request.headers.get("x-qw-api-key")
+        seen["authorization"] = request.headers.get("authorization")
+        return httpx.Response(200, json=_weather_now_payload())
+
+    settings = Settings(
+        _env_file=None,
+        qweather_api_host="example.qweatherapi.com",
+        qweather_api_key="weather-test-key",
+        qweather_project_id="project-for-records-only",
+    )
+    client = QWeatherClient(
+        settings=settings,
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    weather = client.get_weather_now(location="116.41,39.92")
+
+    assert weather.now.text == "多云"
+    assert seen == {
+        "api_key": "weather-test-key",
+        "authorization": None,
+    }
 
 
 def test_qweather_client_requests_daily_endpoint_with_bearer_token(tmp_path) -> None:
@@ -150,6 +179,7 @@ def test_qweather_client_requests_daily_endpoint_with_bearer_token(tmp_path) -> 
         return httpx.Response(200, json=_weather_daily_payload())
 
     settings = Settings(
+        _env_file=None,
         qweather_api_host="example.qweatherapi.com",
         qweather_project_id="36E5G4T7X7",
         qweather_credential_id="K9GYAW4XH9",
@@ -181,6 +211,7 @@ def test_qweather_client_requests_hourly_endpoint_with_bearer_token(tmp_path) ->
         return httpx.Response(200, json=_weather_hourly_payload())
 
     settings = Settings(
+        _env_file=None,
         qweather_api_host="example.qweatherapi.com",
         qweather_project_id="36E5G4T7X7",
         qweather_credential_id="K9GYAW4XH9",

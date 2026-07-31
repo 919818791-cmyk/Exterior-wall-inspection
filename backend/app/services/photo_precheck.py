@@ -16,6 +16,7 @@ from app.services.photo_guard import (
     PhotoGuardUnavailable,
     classify_building_photo,
     photo_guard_enabled,
+    photo_guard_model_name,
 )
 from app.services.trial_inference_provider import trial_prompts
 
@@ -86,7 +87,7 @@ def run_stored_photo_precheck(db: Session, photo: Any) -> Any:
             status_value=PhotoPrecheckStatus.REJECTED,
             category="INVALID_IMAGE",
             reason=f"无法读取为有效图片：{exc}",
-            model=settings.photo_guard_model,
+            model=photo_guard_model_name(settings),
             error=None,
         )
     except PhotoGuardUnavailable as exc:
@@ -103,7 +104,7 @@ def run_stored_photo_precheck(db: Session, photo: Any) -> Any:
             status_value=PhotoPrecheckStatus.ERROR,
             category="SERVICE_ERROR",
             reason=None,
-            model=settings.photo_guard_model,
+            model=photo_guard_model_name(settings),
             error="建筑照片预检服务暂时不可用，原图已保留；如需再次判断，请删除后重新上传。",
         )
     except Exception as exc:
@@ -119,7 +120,7 @@ def run_stored_photo_precheck(db: Session, photo: Any) -> Any:
             status_value=PhotoPrecheckStatus.ERROR,
             category="STORAGE_OR_SYSTEM_ERROR",
             reason=None,
-            model=settings.photo_guard_model,
+            model=photo_guard_model_name(settings),
             error="读取原图或执行预检时失败，原图已保留；如需再次判断，请删除后重新上传。",
         )
 

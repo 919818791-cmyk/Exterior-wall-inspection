@@ -48,7 +48,7 @@ MinIO 默认账号密码来自 `.env.example`：
 
 简易体验使用后端视觉检测服务，不加载本地 `.pt` 模型。默认每位用户 10 分钟内最多上传 30 张照片、发起 5 次检测；不限制每天成功上传或检测的照片总数，也不限制检测结果归档份数。默认每位用户按北京时间每天最多使用 800 次模型 API 请求；API 请求额度按图片切片数在推理前预占，失败时退回。单次任务最多 10 张 JPG、MPO 或 PNG 图片，单张最大 10MB，不设置每日上传总 MB 限额。6400 万像素解码安全上限内使用原始分辨率，按 `1280 x 960` 像素切片，相邻 TILE 保持 25% 重叠；单任务内部可配置 1–10 个并发视觉模型请求。系统不再以 1200 万像素作为缩小阈值。
 
-后端通过根目录 `.env` 中的以下配置调用 API：
+后端通过根目录 `.env.local`（优先）或 `.env` 中的以下配置调用 API：
 
 ```env
 DASHSCOPE_API_KEY=替换为实际百炼API-Key
@@ -76,34 +76,23 @@ QWEN_REQUEST_TIMEOUT_SECONDS=120
 QWEN_MAX_CONCURRENCY=5
 ```
 
-上传入口另有一套始终在线的 `Qwen3-VL-2B-Instruct-FP8` 图片预检服务。它只判断照片是否属于建筑全景、外立面或建筑局部，不执行缺陷检测。上传时先把原图写入 MinIO 并提交照片记录，再从 MinIO 读取原图、生成最长边 1280、最多 150 万像素、质量 82 的 JPEG 推理副本；原图本身不会降质或被模型覆盖。
+上传入口使用阿里云百炼 `qwen3-vl-flash` 执行图片预检。它只判断照片是否属于建筑全景、外立面或建筑局部，不执行缺陷检测。上传时先把原图写入 MinIO 并提交照片记录，再从 MinIO 读取原图、生成最长边 1280、最多 150 万像素、质量 82 的 JPEG 推理副本；原图本身不会降质或被模型覆盖。预检默认复用缺陷检测的 `DASHSCOPE_API_KEY`、`QWEN_API_BASE_URL` 和 `QWEN3_VL_FLASH_MODEL`，无需本地下载模型或占用 GPU。
 
-预检状态分为 `pending`、`running`、`passed`、`rejected` 和 `error`。不合格、模型超时或服务失败都不会自动删除原图，用户仍可预览或主动删除；如需再次判断，需删除后重新上传照片。开始缺陷检测时，待处理、处理中或失败状态会阻止任务提交，明确不合格照片会被排除，只有 `passed` 照片进入检测任务。默认浏览器上传并发为 6，vLLM 最大活动序列数为 8。
+预检状态分为 `pending`、`running`、`passed`、`rejected` 和 `error`。不合格、模型超时或服务失败都不会自动删除原图，用户仍可预览或主动删除；如需再次判断，需删除后重新上传照片。开始缺陷检测时，待处理、处理中或失败状态会阻止任务提交，明确不合格照片会被排除，只有 `passed` 照片进入检测任务。默认浏览器上传并发为 6，云端预检并发为 5。
 
 ```env
 PHOTO_GUARD_ENABLED=true
-PHOTO_GUARD_API_BASE_URL=http://127.0.0.1:9006/v1
-PHOTO_GUARD_MODEL=qwen3-vl-2b-photo-guard
-PHOTO_GUARD_REQUEST_CONCURRENCY=8
+PHOTO_GUARD_PROVIDER=dashscope
+# 以下三项留空时复用 DASHSCOPE_API_KEY、QWEN_API_BASE_URL 和 QWEN3_VL_FLASH_MODEL
+PHOTO_GUARD_API_BASE_URL=
+PHOTO_GUARD_MODEL=
+PHOTO_GUARD_API_KEY=
+PHOTO_GUARD_REQUEST_CONCURRENCY=5
 PHOTO_GUARD_MAX_INFERENCE_PIXELS=1500000
 PHOTO_GUARD_MAX_EDGE=1280
 PHOTO_GUARD_JPEG_QUALITY=82
 PHOTO_GUARD_FAIL_OPEN=false
-PHOTO_GUARD_MODEL_PATH=/opt/models/Qwen3-VL-2B-Instruct-FP8
-PHOTO_GUARD_CUDA_VISIBLE_DEVICES=0
-PHOTO_GUARD_GPU_MEMORY_UTILIZATION=0.16
-PHOTO_GUARD_MAX_NUM_SEQS=8
-PHOTO_GUARD_MAX_MODEL_LEN=4096
 ```
-
-以当前应用用户安装开机自启服务：
-
-```bash
-./deploy/install-photo-guard-service.sh
-systemctl --user status building-photo-guard.service
-```
-
-安装脚本会启用 systemd user linger，因此服务器重启后无需用户登录，模型也会自动启动。服务只监听 `127.0.0.1:9006`，日志通过 `journalctl --user -u building-photo-guard.service` 查看。2B 准入服务常驻 GPU 0；32B 双卡配置相应收紧到 75% 显存和 16K 上下文，以预留共存空间。
 
 `DASHSCOPE_API_KEY`、`ZHIPU_API_KEY`、API 地址和模型只能由后端环境变量读取：不要使用 `VITE_` 前缀，不要写入前端代码、日志或版本库。“阿里云Qwen3-VL-Plus”和“阿里云Qwen3-VL-Flash”共用同一个 `DASHSCOPE_API_KEY` 与 `QWEN_API_BASE_URL`，切换时只改变模型 ID；“本地 Qwen3-VL-32B”通过 `LOCAL_QWEN_API_BASE_URL` 连接 OpenAI 兼容服务，本地服务未开启鉴权时 `LOCAL_QWEN_API_KEY` 可以留空。管理员可在“管理中心 -> 推理设置”的任务调度模块统一维护并发数、每日模型请求额度和每账号检测次数；本地模型的实际请求并发还会受 `LOCAL_QWEN_MAX_CONCURRENCY` 限制，32B 模型建议从 `1` 开始，以免多个视觉编码请求同时占满显存。上传上限、限流窗口、请求超时与任务占位超时继续由后端环境配置维护。页面还可维护两套检测提示词。保存后对下一次新任务立即生效。被选服务配置缺失或不可用时，`/api/trial/generate` 会直接报错，不降级为模拟结果。
 

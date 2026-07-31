@@ -178,9 +178,11 @@ validate_production_env() {
   require_production_value VITE_AMAP_KEY
   require_production_value AMAP_SECURITY_JS_CODE
   require_production_value QWEATHER_API_HOST
-  require_production_value QWEATHER_PROJECT_ID
-  require_production_value QWEATHER_CREDENTIAL_ID
-  require_production_value QWEATHER_PRIVATE_KEY_PATH
+  if ! has_production_value QWEATHER_API_KEY; then
+    require_production_value QWEATHER_PROJECT_ID
+    require_production_value QWEATHER_CREDENTIAL_ID
+    require_production_value QWEATHER_PRIVATE_KEY_PATH
+  fi
 }
 
 cd "$ROOT_DIR"
@@ -276,6 +278,8 @@ SERVER_NAMES="$(detect_server_names)"
 AMAP_SECURITY_JS_CODE="$(env_value AMAP_SECURITY_JS_CODE)"
 NGINX_DNS_RESOLVER="$(awk '/^[[:space:]]*nameserver[[:space:]]+/{print $2; exit}' /etc/resolv.conf)"
 NGINX_DNS_RESOLVER="${NGINX_DNS_RESOLVER:-127.0.0.53}"
+MINIO_BUCKET="$(env_value MINIO_BUCKET)"
+MINIO_BUCKET="${MINIO_BUCKET:-building-exterior}"
 sudo rm -f "/etc/nginx/conf.d/building-exterior-rate-limits.conf"
 sudo install -o root -g root -m 640 /dev/null "/etc/nginx/sites-available/$NGINX_SITE_NAME"
 sudo tee "/etc/nginx/sites-available/$NGINX_SITE_NAME" >/dev/null <<EOF
@@ -304,6 +308,16 @@ server {
         proxy_send_timeout 900s;
         proxy_read_timeout 900s;
         send_timeout 900s;
+    }
+
+    # Browser-facing S3 signed URLs use this public host while MinIO itself
+    # remains bound to loopback. Preserve Host because it is part of SigV4.
+    location /$MINIO_BUCKET/ {
+        proxy_pass http://127.0.0.1:9002;
+        proxy_set_header Host \$http_host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_request_buffering off;
     }
 
     # Official AMap JS API security proxy. The security code remains server-side.

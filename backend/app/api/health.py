@@ -2,7 +2,11 @@ from fastapi import APIRouter
 
 from app.core.config import get_settings
 from app.schemas.health import HealthResponse, PhotoGuardHealth, WorkerContractHealth
-from app.services.photo_guard import photo_guard_health
+from app.services.photo_guard import (
+    photo_guard_api_base_url,
+    photo_guard_health,
+    photo_guard_model_name,
+)
 
 router = APIRouter()
 
@@ -23,8 +27,8 @@ def health_check() -> HealthResponse:
         photo_guard=PhotoGuardHealth(
             enabled=settings.photo_guard_enabled,
             ready=guard_ready,
-            model=settings.photo_guard_model,
-            endpoint=settings.photo_guard_api_base_url,
+            model=photo_guard_model_name(settings),
+            endpoint=photo_guard_api_base_url(settings),
             message=guard_message,
         ),
         worker_contract=WorkerContractHealth(
