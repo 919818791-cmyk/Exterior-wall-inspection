@@ -7,6 +7,7 @@ FRONTEND_DIR="$ROOT_DIR/frontend"
 SERVICE_NAME="building-exterior-backend"
 NGINX_SITE_NAME="building-exterior"
 APP_USER="${APP_USER:-$(id -un)}"
+PYTHON_BIN="${PYTHON_BIN:-python3}"
 NGINX_ONLY=false
 
 case "${1:-}" in
@@ -193,8 +194,16 @@ require_cmd ip
 
 if [ "$NGINX_ONLY" = false ]; then
   require_cmd docker
-  require_cmd python3
+  require_cmd "$PYTHON_BIN"
   require_cmd npm
+  if ! "$PYTHON_BIN" - <<'PY'
+import sys
+raise SystemExit(0 if sys.version_info >= (3, 11) else 1)
+PY
+  then
+    echo "$PYTHON_BIN must be Python 3.11 or newer." >&2
+    exit 1
+  fi
 fi
 
 if [ ! -f "$ROOT_DIR/.env" ]; then
@@ -234,7 +243,7 @@ if [ "$NGINX_ONLY" = false ]; then
 
   log "Installing backend dependencies"
   cd "$BACKEND_DIR"
-  python3 -m venv .venv
+  "$PYTHON_BIN" -m venv .venv
   # shellcheck disable=SC1091
   source "$BACKEND_DIR/.venv/bin/activate"
   pip install -r requirements.txt
