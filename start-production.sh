@@ -243,7 +243,17 @@ if [ "$NGINX_ONLY" = false ]; then
 
   log "Installing backend dependencies"
   cd "$BACKEND_DIR"
-  "$PYTHON_BIN" -m venv .venv
+  venv_args=()
+  if [ -x "$BACKEND_DIR/.venv/bin/python" ] && \
+    ! "$BACKEND_DIR/.venv/bin/python" - <<'PY'
+import sys
+raise SystemExit(0 if sys.version_info >= (3, 11) else 1)
+PY
+  then
+    log "Recreating backend virtual environment with $PYTHON_BIN"
+    venv_args+=(--clear)
+  fi
+  "$PYTHON_BIN" -m venv "${venv_args[@]}" .venv
   # shellcheck disable=SC1091
   source "$BACKEND_DIR/.venv/bin/activate"
   pip install -r requirements.txt
