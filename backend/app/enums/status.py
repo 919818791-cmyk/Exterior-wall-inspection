@@ -51,6 +51,7 @@ class DefectType(StrEnum):
     CRACK = "crack"
     SPALLING = "spalling"
     MOISTURE = "moisture"
+    HOLLOW = "hollow"
 
     @classmethod
     def _missing_(cls, value: object) -> "DefectType | None":
@@ -71,6 +72,14 @@ class PhotoStatus(StrEnum):
     DETECTING = "detecting"
     DETECTED = "detected"
     FAILED = "failed"
+
+
+class PhotoPrecheckStatus(StrEnum):
+    PENDING = "pending"
+    RUNNING = "running"
+    PASSED = "passed"
+    REJECTED = "rejected"
+    ERROR = "error"
 
 
 class UploadMode(StrEnum):

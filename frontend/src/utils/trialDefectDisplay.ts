@@ -24,6 +24,16 @@ const TRIAL_DEFECT_DISPLAY_BY_TYPE: Record<string, TrialDefectDisplay> = {
     label: "潮湿",
     descriptionClassName: "trial-report-description-moisture",
     boxClassName: "trial-defect-box-moisture"
+  },
+  corrosion: {
+    label: "锈蚀",
+    descriptionClassName: "trial-report-description-corrosion",
+    boxClassName: "trial-defect-box-corrosion"
+  },
+  hollow: {
+    label: "空鼓",
+    descriptionClassName: "trial-report-description-hollow",
+    boxClassName: "trial-defect-box-hollow"
   }
 };
 
@@ -38,7 +48,11 @@ const TRIAL_MODEL_TO_DEFECT_TYPE: Record<string, string> = {
   spalling: "spalling",
   "剥落": "spalling",
   moisture: "moisture",
-  "潮湿": "moisture"
+  "潮湿": "moisture",
+  corrosion: "corrosion",
+  "锈蚀": "corrosion",
+  hollow: "hollow",
+  "空鼓": "hollow"
 };
 
 function normalizeTrialDefectKey(value: string | null | undefined) {
@@ -67,13 +81,6 @@ export function trialDefectDescriptionFromType(defectType: string | null | undef
   };
 }
 
-export function trialDefectBoxLabel(display: TrialDefectDisplay, confidence?: number | string | null) {
-  const numericConfidence = Number(confidence);
-  const confidenceText = Number.isFinite(numericConfidence)
-    ? numericConfidence.toFixed(2)
-    : typeof confidence === "string" && confidence.trim()
-      ? confidence.trim()
-      : "";
-
-  return confidenceText ? `${display.label} ${confidenceText}` : display.label;
+export function trialDefectBoxLabel(display: TrialDefectDisplay) {
+  return display.label;
 }

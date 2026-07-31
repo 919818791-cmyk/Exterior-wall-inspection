@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import asyncio
+import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from io import BytesIO
+from time import perf_counter
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -10,24 +14,29 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from app.api.dependencies import AuthenticatedUser, ensure_project_access, require_roles
+from app.api.dependencies import AuthenticatedUser, ensure_project_access, get_current_user
 from app.api.projects import _get_project_or_404
 from app.core.config import get_settings
 from app.db.session import get_db
 from app.enums.status import (
     AiResultStatus,
     DetectionTaskStatus,
+    InspectionReportStatus,
+    PhotoPrecheckStatus,
     PhotoStatus,
+    PhotoType,
     ProjectStatus,
-    UserRole,
+    ReviewResultStatus,
 )
 from app.models.tables import (
     AiDetectionResult,
     DetectionConfig,
     DetectionTask,
     DetectionTaskPhoto,
+    InspectionReport,
     Photo,
     Project,
+    ReviewResult,
 )
 from app.schemas.phase5 import (
     AlgorithmFailedPayload,
@@ -35,17 +44,48 @@ from app.schemas.phase5 import (
     AlgorithmResultPayload,
     AlgorithmTaskLease,
     AlgorithmTaskPhoto,
+    DetectionStartRequest,
     DetectionTaskRead,
 )
-from app.services.object_storage import presigned_get_url
+from app.services.local_qwen_lifecycle import start_local_qwen
+from app.services.inference_scheduling import (
+    InferenceUsageReservation,
+    reserve_inference_usage,
+)
+from app.services.object_storage import get_object_bytes, presigned_get_url
+from app.services.photo_metadata import extract_photo_metadata
+from app.services.report_data import build_report_data
+from app.services.trial_inference_provider import (
+    active_trial_inference_runtime,
+    trial_prompts,
+    trial_scheduling_settings,
+)
+from app.services.trial_qwen_inference import (
+    DEFAULT_INFERENCE_MAX_IMAGE_PIXELS,
+    DEFAULT_MAX_IMAGE_PIXELS,
+    DEFAULT_MAX_TILES_PER_IMAGE,
+    DEFAULT_MAX_TILES_PER_REQUEST,
+    NMS_IOU_THRESHOLD,
+    TILE_HEIGHT,
+    TILE_OVERLAP_RATIO,
+    TILE_WIDTH,
+    TrialQwenImageInput,
+    estimate_trial_api_request_count,
+    infer_trial_images,
+)
+from app.services.usage_tracking import add_inference_usage_event
 
 router = APIRouter(tags=["detection-tasks"])
+logger = logging.getLogger(__name__)
 
 MIN_VISIBLE_CONFIDENCE = 0.6
 DEFECT_TYPE_NAMES = {
     "crack": "裂缝",
     "spalling": "剥落",
+    "moisture": "潮湿",
+    "hollow": "空鼓",
 }
+FORMAL_VISIBLE_DEFECT_TYPES = frozenset({"crack", "spalling"})
 
 
 @dataclass(frozen=True)
@@ -56,6 +96,11 @@ class WorkerCredentials:
 def _now_task_no() -> str:
     timestamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S%f")
     return f"DT-{timestamp}-{uuid4().hex[:6].upper()}"
+
+
+def _now_report_no() -> str:
+    timestamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S%f")
+    return f"RPT-{timestamp}-{uuid4().hex[:6].upper()}"
 
 
 def _task_read(task: DetectionTask) -> DetectionTaskRead:
@@ -134,6 +179,64 @@ def _defect_type_value(value: object) -> str:
     return value.value if hasattr(value, "value") else str(value)
 
 
+def _formal_allowed_defect_types(
+    photo: Photo,
+    selected_model_types: list[str] | set[str] | frozenset[str],
+) -> set[str]:
+    selected = set(selected_model_types)
+    if photo.photo_type == PhotoType.THERMAL.value:
+        return {"hollow"}.intersection(selected)
+    return set(FORMAL_VISIBLE_DEFECT_TYPES.intersection(selected))
+
+
+def _validate_formal_photo_model_compatibility(
+    photos: list[Photo],
+    selected_model_types: list[str],
+) -> None:
+    thermal_photo_count = sum(
+        1 for photo in photos if photo.photo_type == PhotoType.THERMAL.value
+    )
+    visible_photo_count = len(photos) - thermal_photo_count
+    selected = set(selected_model_types)
+    if thermal_photo_count and "hollow" not in selected:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="热成像图片只执行空鼓检测，请勾选空鼓或移除热成像图片。",
+        )
+    if visible_photo_count and not FORMAL_VISIBLE_DEFECT_TYPES.intersection(selected):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="可见光图片只执行裂缝或剥落检测，请至少勾选其中一项或移除可见光图片。",
+        )
+
+
+def _formal_compatible_inference(
+    photo: Photo,
+    inference: dict[str, Any],
+    selected_model_types: list[str],
+) -> dict[str, Any]:
+    allowed_defect_types = _formal_allowed_defect_types(
+        photo,
+        selected_model_types,
+    )
+    return {
+        **inference,
+        "requested_models": [
+            defect_type
+            for defect_type in ("crack", "spalling", "hollow")
+            if defect_type in allowed_defect_types
+        ],
+        "detections": [
+            detection
+            for detection in inference.get("detections") or []
+            if (
+                isinstance(detection, dict)
+                and str(detection.get("type") or "") in allowed_defect_types
+            )
+        ],
+    }
+
+
 def _raw_model_output_detection(detection: Any) -> dict[str, Any]:
     detection_data = detection.model_dump(mode="json")
     defect_type = _defect_type_value(detection.type)
@@ -148,6 +251,7 @@ def _raw_model_output_for_photo(
     photo_result: Any,
     photo: Photo | None,
     model_version: str,
+    allowed_defect_types: set[str],
 ) -> dict[str, Any]:
     model_output = photo_result.model_output if isinstance(photo_result.model_output, dict) else {}
     image = model_output.get("image") if isinstance(model_output.get("image"), dict) else {}
@@ -157,13 +261,142 @@ def _raw_model_output_for_photo(
         "image_width": image.get("width"),
         "image_height": image.get("height"),
         "model_version": model_output.get("model_version") or model_version,
-        "requested_models": model_output.get("requested_models") or [],
+        "requested_models": [
+            DEFECT_TYPE_NAMES.get(defect_type, defect_type)
+            for defect_type in ("crack", "spalling", "hollow")
+            if defect_type in allowed_defect_types
+        ],
         "executed_models": model_output.get("executed_models") or [],
+        "inference": model_output.get("inference") if isinstance(model_output.get("inference"), dict) else None,
+        "api_request_count": model_output.get("api_request_count"),
+        "token_usage": model_output.get("token_usage") if isinstance(model_output.get("token_usage"), dict) else None,
+        "tile_token_usages": model_output.get("tile_token_usages") or [],
         "detections": [
             _raw_model_output_detection(detection)
             for detection in photo_result.detections
+            if _defect_type_value(detection.type) in allowed_defect_types
         ],
     }
+
+
+async def _formal_image_input(photo: Photo) -> TrialQwenImageInput:
+    content = await asyncio.to_thread(
+        get_object_bytes,
+        photo.storage_bucket,
+        photo.storage_object_key,
+    )
+    metadata = extract_photo_metadata(BytesIO(content))
+    thermal = (
+        photo.photo_type == PhotoType.THERMAL.value
+        or metadata["thermal_imaging_available"]
+    )
+    if thermal:
+        photo.photo_type = PhotoType.THERMAL.value
+    return TrialQwenImageInput(
+        filename=photo.original_filename,
+        content=content,
+        content_type=photo.mime_type,
+        photo_id=photo.id,
+        thermal_imaging_available=thermal,
+    )
+
+
+def _formal_raw_model_output(
+    photo: Photo,
+    inference: dict[str, Any],
+) -> dict[str, Any]:
+    image = inference.get("image") if isinstance(inference.get("image"), dict) else {}
+    inference_config = (
+        inference.get("inference")
+        if isinstance(inference.get("inference"), dict)
+        else {}
+    )
+    detections: list[dict[str, Any]] = []
+    for index, detection in enumerate(inference.get("detections") or []):
+        if not isinstance(detection, dict):
+            continue
+        defect_type = str(detection.get("type") or "")
+        try:
+            confidence = float(detection.get("confidence"))
+        except (TypeError, ValueError):
+            confidence = None
+        detections.append(
+            {
+                "detection_id": detection.get("id") or f"formal-{index + 1}",
+                "type": defect_type,
+                "type_name": detection.get("type_name"),
+                "model": DEFECT_TYPE_NAMES.get(defect_type, defect_type),
+                "confidence": confidence,
+                "bbox": detection.get("bbox"),
+                "severity": detection.get("severity"),
+                "description": detection.get("description"),
+                "visible": (
+                    confidence is not None
+                    and confidence > MIN_VISIBLE_CONFIDENCE
+                ),
+            }
+        )
+    return {
+        "photo_id": str(photo.id),
+        "filename": photo.original_filename,
+        "image_width": image.get("width"),
+        "image_height": image.get("height"),
+        "upstream_provider": inference.get("provider"),
+        "upstream_model": inference.get("model_version"),
+        "model_version": inference.get("model_version"),
+        "requested_models": [
+            DEFECT_TYPE_NAMES.get(str(value), str(value))
+            for value in inference.get("requested_models") or []
+        ],
+        "executed_models": inference.get("executed_models") or [],
+        "tile_width": inference_config.get("tile_width", TILE_WIDTH),
+        "tile_height": inference_config.get("tile_height", TILE_HEIGHT),
+        "tile_overlap_ratio": inference_config.get(
+            "tile_overlap_ratio",
+            TILE_OVERLAP_RATIO,
+        ),
+        "tile_count": inference_config.get("tile_count"),
+        "api_request_count": inference_config.get("tile_count"),
+        "token_usage": inference.get("token_usage"),
+        "tile_token_usages": inference.get("tile_token_usages") or [],
+        "deduplication_method": "cross_tile_union+nms",
+        "cross_tile_merge_method": inference_config.get("cross_tile_merge_method"),
+        "pre_merge_detection_count": inference_config.get(
+            "pre_merge_detection_count"
+        ),
+        "post_merge_detection_count": inference_config.get(
+            "post_merge_detection_count"
+        ),
+        "nms_iou_threshold": inference_config.get(
+            "nms_iou_threshold",
+            NMS_IOU_THRESHOLD,
+        ),
+        "detections": detections,
+    }
+
+
+def _initial_review_result(
+    *,
+    ai_result: AiDetectionResult,
+    reviewer_id: UUID,
+    reviewed_at: datetime,
+) -> ReviewResult:
+    return ReviewResult(
+        project_id=ai_result.project_id,
+        detection_task_id=ai_result.detection_task_id,
+        photo_id=ai_result.photo_id,
+        ai_result_id=ai_result.id,
+        defect_type=ai_result.defect_type,
+        bbox_json=ai_result.bbox_json,
+        polygon_json=ai_result.polygon_json,
+        severity=ai_result.severity,
+        area=ai_result.area,
+        length=ai_result.length,
+        status=ReviewResultStatus.PENDING.value,
+        reviewer_id=reviewer_id,
+        review_note=None,
+        reviewed_at=reviewed_at,
+    )
 
 
 @router.post(
@@ -171,10 +404,11 @@ def _raw_model_output_for_photo(
     response_model=DetectionTaskRead,
     status_code=status.HTTP_201_CREATED,
 )
-def start_detection(
+async def start_detection(
     project_id: UUID,
+    payload: DetectionStartRequest | None = None,
     db: Session = Depends(get_db),
-    current_user: AuthenticatedUser = Depends(require_roles(UserRole.ADMIN)),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> DetectionTaskRead:
     project = _get_project_or_404(db, project_id)
     ensure_project_access(project, current_user)
@@ -184,40 +418,212 @@ def start_detection(
             detail="Only draft projects can start AI detection.",
         )
 
-    photos = list(
+    all_photos = list(
         db.scalars(
             select(Photo)
             .where(Photo.project_id == project.id, Photo.deleted_at.is_(None))
             .order_by(Photo.created_at.asc())
         )
     )
-    if not photos:
+    if not all_photos:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Upload at least one photo before starting AI detection.",
         )
 
-    detection_config = db.scalar(select(DetectionConfig).where(DetectionConfig.project_id == project.id))
-    if detection_config is None or not detection_config.model_types:
+    incomplete_photos = [
+        photo
+        for photo in all_photos
+        if (getattr(photo, "precheck_status", None) or PhotoPrecheckStatus.PENDING.value)
+        in {
+            PhotoPrecheckStatus.PENDING.value,
+            PhotoPrecheckStatus.RUNNING.value,
+            PhotoPrecheckStatus.ERROR.value,
+        }
+    ]
+    if incomplete_photos:
+        status_counts = {
+            value: sum(
+                1
+                for photo in incomplete_photos
+                if (getattr(photo, "precheck_status", None) or PhotoPrecheckStatus.PENDING.value)
+                == value
+            )
+            for value in (
+                PhotoPrecheckStatus.PENDING.value,
+                PhotoPrecheckStatus.RUNNING.value,
+                PhotoPrecheckStatus.ERROR.value,
+            )
+        }
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Select at least one detection model before starting AI detection.",
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "照片预检尚未全部完成："
+                f"待处理 {status_counts['pending']} 张、"
+                f"处理中 {status_counts['running']} 张、"
+                f"预检失败 {status_counts['error']} 张。"
+                "请等待正在处理的照片；预检失败照片请删除后重新上传。"
+            ),
         )
 
-    now = datetime.now(UTC)
-    task = DetectionTask(
-        project_id=project.id,
-        detection_config_id=detection_config.id,
-        task_no=_now_task_no(),
-        status=DetectionTaskStatus.PENDING.value,
-        priority=0,
-        photo_count=len(photos),
-        created_by=project.created_by,
+    qualified_photos = [
+        photo
+        for photo in all_photos
+        if getattr(photo, "precheck_status", None)
+        == PhotoPrecheckStatus.PASSED.value
+    ]
+    rejected_photo_count = sum(
+        1
+        for photo in all_photos
+        if getattr(photo, "precheck_status", None)
+        == PhotoPrecheckStatus.REJECTED.value
     )
-    db.add(task)
+    if not qualified_photos:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "项目没有通过预检的照片。"
+                f"已排除 {rejected_photo_count} 张不合格照片。"
+            ),
+        )
+    all_photos = qualified_photos
+
+    selected_model_types = [
+        _defect_type_value(value)
+        for value in (
+            payload.model_types
+            if payload is not None
+            else ["crack", "spalling", "hollow"]
+        )
+    ]
+    if not selected_model_types:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="请至少选择一种检测类型。",
+        )
+    _validate_formal_photo_model_compatibility(
+        qualified_photos,
+        selected_model_types,
+    )
+
+    runtime = active_trial_inference_runtime(db)
+    scheduling = trial_scheduling_settings(db)
+    prompts = trial_prompts(db)
+    visible_model_labels = [
+        DEFECT_TYPE_NAMES[value]
+        for value in selected_model_types
+        if value in FORMAL_VISIBLE_DEFECT_TYPES
+    ]
+    if not runtime.configured:
+        detail = (
+            f"{runtime.label} 尚未配置服务地址或模型名称。"
+            if runtime.provider == "local_qwen"
+            else f"{runtime.label} 尚未配置有效的 API Key。"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=detail,
+        )
+    if runtime.provider == "local_qwen":
+        local_status = start_local_qwen(get_settings())
+        if local_status.state != "running":
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=local_status.message,
+            )
+
+    now = datetime.now(UTC)
+    inference_snapshot = {
+        "source": "formal_project",
+        "model_types": selected_model_types,
+        "high_precision": True,
+        "provider": runtime.provider,
+        "provider_label": runtime.label,
+        "upstream_provider": runtime.upstream_provider,
+        "model": runtime.model,
+        "scheduling": {
+            "global_job_concurrency": scheduling.global_job_concurrency,
+            "request_concurrency": runtime.max_concurrency,
+            "daily_api_request_limit": scheduling.daily_api_request_limit,
+            "generate_limit_per_user": scheduling.generate_limit_per_user,
+            "request_timeout_seconds": runtime.timeout_seconds,
+        },
+        "tiling": {
+            "tile_width": TILE_WIDTH,
+            "tile_height": TILE_HEIGHT,
+            "tile_overlap_ratio": TILE_OVERLAP_RATIO,
+        },
+        "prompts": {
+            "visible": prompts.visible_prompt_for_models(visible_model_labels),
+            "thermal": prompts.thermal_prompt,
+        },
+        "qualified_photo_count": len(qualified_photos),
+        "rejected_photo_count": rejected_photo_count,
+    }
+    detection_config = db.scalar(
+        select(DetectionConfig).where(DetectionConfig.project_id == project.id)
+    )
+    if detection_config is None:
+        detection_config = DetectionConfig(
+            project_id=project.id,
+            model_types=selected_model_types,
+            high_precision=True,
+            config_json=inference_snapshot,
+            created_by=current_user.id,
+        )
+        db.add(detection_config)
+    else:
+        detection_config.model_types = selected_model_types
+        detection_config.high_precision = True
+        detection_config.config_json = inference_snapshot
     db.flush()
 
-    for photo in photos:
+    task = db.scalar(
+        select(DetectionTask).where(DetectionTask.project_id == project.id)
+    )
+    if task is not None:
+        if task.status != DetectionTaskStatus.FAILED.value:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="项目已经创建过检测任务。",
+            )
+        db.execute(
+            delete(ReviewResult).where(ReviewResult.detection_task_id == task.id)
+        )
+        db.execute(
+            delete(AiDetectionResult).where(
+                AiDetectionResult.detection_task_id == task.id
+            )
+        )
+        db.execute(
+            delete(DetectionTaskPhoto).where(
+                DetectionTaskPhoto.detection_task_id == task.id
+            )
+        )
+        task.retry_count += 1
+    else:
+        task = DetectionTask(
+            project_id=project.id,
+            task_no=_now_task_no(),
+            priority=0,
+            retry_count=0,
+            created_by=current_user.id,
+        )
+        db.add(task)
+    task.detection_config_id = detection_config.id
+    task.status = DetectionTaskStatus.RUNNING.value
+    task.photo_count = len(qualified_photos)
+    task.result_summary = {"detection_config": inference_snapshot}
+    task.started_at = now
+    task.finished_at = None
+    task.failed_reason = None
+    task.model_version = runtime.model
+    task.worker_id = None
+    task.locked_at = None
+    task.worker_heartbeat_at = None
+    task.lease_expires_at = None
+    db.flush()
+    for photo in qualified_photos:
         photo.status = PhotoStatus.DETECTING.value
         db.add(
             DetectionTaskPhoto(
@@ -233,6 +639,299 @@ def start_detection(
     project.updated_at = now
 
     db.commit()
+
+    task_started_at = perf_counter()
+    usage_reservation: InferenceUsageReservation | None = None
+    try:
+        task.status = DetectionTaskStatus.RUNNING.value
+        task.started_at = now
+        task.model_version = runtime.model
+        task.updated_at = now
+        db.commit()
+
+        image_pairs = [
+            (photo, await _formal_image_input(photo))
+            for photo in all_photos
+        ]
+        inference_pairs = [
+            (photo, image)
+            for photo, image in image_pairs
+            if (
+                image.thermal_imaging_available
+                and "hollow" in selected_model_types
+            )
+            or (
+                not image.thermal_imaging_available
+                and bool(FORMAL_VISIBLE_DEFECT_TYPES.intersection(selected_model_types))
+            )
+        ]
+        settings = get_settings()
+        estimated_api_requests = estimate_trial_api_request_count(
+            [image for _, image in inference_pairs],
+            max_image_pixels=getattr(
+                settings,
+                "trial_max_image_pixels",
+                DEFAULT_MAX_IMAGE_PIXELS,
+            ),
+            inference_max_image_pixels=getattr(
+                settings,
+                "trial_inference_max_image_pixels",
+                DEFAULT_INFERENCE_MAX_IMAGE_PIXELS,
+            ),
+            max_tiles_per_image=getattr(
+                settings,
+                "trial_max_tiles_per_image",
+                DEFAULT_MAX_TILES_PER_IMAGE,
+            ),
+            max_tiles_per_request=getattr(
+                settings,
+                "trial_max_tiles_per_request",
+                DEFAULT_MAX_TILES_PER_REQUEST,
+            ),
+        )
+        # The formal and TRIAL paths intentionally share the scheduler's
+        # semaphore and per-account counters configured in 推理设置.
+        usage_reservation = reserve_inference_usage(
+            current_user.id,
+            estimated_api_requests,
+            db=db,
+            generate_limit_detail="检测请求过于频繁，请稍后重试。",
+            settings=settings,
+        )
+        inferences = (
+            await infer_trial_images(
+                [image for _, image in inference_pairs],
+                api_key=runtime.api_key,
+                base_url=runtime.base_url,
+                model=runtime.model,
+                provider=runtime.upstream_provider,
+                visible_prompt=prompts.visible_prompt_for_models(
+                    visible_model_labels
+                ),
+                thermal_prompt=prompts.thermal_prompt,
+                visible_defect_types=[
+                    value
+                    for value in selected_model_types
+                    if value in FORMAL_VISIBLE_DEFECT_TYPES
+                ],
+                timeout_seconds=runtime.timeout_seconds,
+                max_concurrency=runtime.max_concurrency,
+                max_image_pixels=getattr(
+                    settings,
+                    "trial_max_image_pixels",
+                    DEFAULT_MAX_IMAGE_PIXELS,
+                ),
+                inference_max_image_pixels=getattr(
+                    settings,
+                    "trial_inference_max_image_pixels",
+                    DEFAULT_INFERENCE_MAX_IMAGE_PIXELS,
+                ),
+                max_tiles_per_image=getattr(
+                    settings,
+                    "trial_max_tiles_per_image",
+                    DEFAULT_MAX_TILES_PER_IMAGE,
+                ),
+                max_tiles_per_request=getattr(
+                    settings,
+                    "trial_max_tiles_per_request",
+                    DEFAULT_MAX_TILES_PER_REQUEST,
+                ),
+            )
+            if inference_pairs
+            else []
+        )
+        inference_by_photo_id = {
+            photo.id: inference
+            for (photo, _), inference in zip(
+                inference_pairs,
+                inferences,
+                strict=True,
+            )
+        }
+        duration_seconds = round(perf_counter() - task_started_at, 3)
+        finished_at = datetime.now(UTC)
+        actual_api_requests = sum(
+            int(
+                (
+                    inference.get("inference")
+                    if isinstance(inference.get("inference"), dict)
+                    else {}
+                ).get("api_request_count")
+                or (
+                    inference.get("inference")
+                    if isinstance(inference.get("inference"), dict)
+                    else {}
+                ).get("tile_count")
+                or 0
+            )
+            for inference in inferences
+        )
+
+        task_photo_rows = _task_photos(db, task.id)
+        raw_model_outputs: list[dict[str, Any]] = []
+        result_counts: dict[str, int] = {}
+        total_detections = 0
+        for _, photo in task_photo_rows:
+            inference = inference_by_photo_id.get(photo.id)
+            if inference is None:
+                continue
+            inference = _formal_compatible_inference(
+                photo,
+                inference,
+                selected_model_types,
+            )
+            image = (
+                inference.get("image")
+                if isinstance(inference.get("image"), dict)
+                else {}
+            )
+            if image.get("width"):
+                photo.image_width = int(image["width"])
+            if image.get("height"):
+                photo.image_height = int(image["height"])
+            raw_output = _formal_raw_model_output(photo, inference)
+            raw_output["task_duration_seconds"] = duration_seconds
+            raw_model_outputs.append(raw_output)
+            for index, detection in enumerate(inference.get("detections") or []):
+                if not isinstance(detection, dict):
+                    continue
+                defect_type = str(detection.get("type") or "")
+                if defect_type not in selected_model_types:
+                    continue
+                try:
+                    confidence = float(detection.get("confidence"))
+                except (TypeError, ValueError):
+                    continue
+                bbox = detection.get("bbox")
+                if (
+                    confidence <= MIN_VISIBLE_CONFIDENCE
+                    or not isinstance(bbox, dict)
+                ):
+                    continue
+                ai_result = AiDetectionResult(
+                    project_id=project.id,
+                    detection_task_id=task.id,
+                    photo_id=photo.id,
+                    defect_type=defect_type,
+                    confidence=Decimal(str(confidence)),
+                    bbox_json=bbox,
+                    polygon_json=None,
+                    mask_object_key=None,
+                    severity=detection.get("severity"),
+                    model_version=runtime.model,
+                    raw_result_json={
+                        "photo_id": str(photo.id),
+                        "provider": runtime.provider,
+                        "model": runtime.model,
+                        "detection": {
+                            **detection,
+                            "id": detection.get("id")
+                            or f"formal-{index + 1}",
+                        },
+                    },
+                    status=AiResultStatus.PENDING.value,
+                )
+                db.add(ai_result)
+                db.flush()
+                db.add(
+                    _initial_review_result(
+                        ai_result=ai_result,
+                        reviewer_id=current_user.id,
+                        reviewed_at=finished_at,
+                    )
+                )
+                result_counts[defect_type] = (
+                    result_counts.get(defect_type, 0) + 1
+                )
+                total_detections += 1
+
+        _set_task_photo_status(task_photo_rows, PhotoStatus.DETECTED)
+        task.status = DetectionTaskStatus.SUCCESS.value
+        task.finished_at = finished_at
+        task.failed_reason = None
+        task.result_summary = {
+            "total_detections": total_detections,
+            "photo_count": len(task_photo_rows),
+            "by_defect_type": result_counts,
+            "model_version": runtime.model,
+            "detection_config": inference_snapshot,
+            "raw_model_output_count": sum(
+                len(item.get("detections") or [])
+                for item in raw_model_outputs
+            ),
+            "raw_model_outputs": raw_model_outputs,
+        }
+        task.updated_at = finished_at
+        db.flush()
+
+        report = InspectionReport(
+            project_id=project.id,
+            detection_task_id=task.id,
+            report_no=_now_report_no(),
+            title=f"{project.name}外墙检测报告",
+            status=InspectionReportStatus.DRAFT.value,
+            report_data_json=build_report_data(db, project, task.id),
+            generated_by=current_user.id,
+            generated_at=finished_at,
+        )
+        db.add(report)
+        add_inference_usage_event(
+            db,
+            source_type="formal",
+            source_id=task.id,
+            actor_id=current_user.id,
+            report_data=task.result_summary,
+            occurred_at=finished_at,
+        )
+
+        project.status = ProjectStatus.PENDING_REVIEW.value
+        project.updated_at = finished_at
+        db.commit()
+    except (Exception, asyncio.CancelledError) as exc:
+        logger.exception(
+            "formal_project_inference_failed project_id=%s error_type=%s",
+            project.id,
+            type(exc).__name__,
+        )
+        if usage_reservation is not None:
+            usage_reservation.release(successful=False)
+            usage_reservation = None
+        db.rollback()
+        failed_at = datetime.now(UTC)
+        persisted_task = db.get(DetectionTask, task.id)
+        if persisted_task is not None:
+            _set_task_photo_status(
+                _task_photos(db, persisted_task.id),
+                PhotoStatus.FAILED,
+            )
+            persisted_task.status = DetectionTaskStatus.FAILED.value
+            persisted_task.failed_reason = str(exc)[:2000]
+            persisted_task.finished_at = failed_at
+            persisted_task.result_summary = {
+                "detection_config": inference_snapshot,
+                "failed_reason": str(exc),
+            }
+            persisted_task.updated_at = failed_at
+        persisted_project = db.get(Project, project.id)
+        if persisted_project is not None:
+            persisted_project.status = ProjectStatus.DRAFT.value
+            persisted_project.updated_at = failed_at
+        db.commit()
+        if isinstance(exc, asyncio.CancelledError):
+            raise
+        if isinstance(exc, HTTPException):
+            raise
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="视觉检测服务暂时不可用，请稍后重试。",
+        ) from exc
+
+    usage_reservation.release(
+        successful=True,
+        actual_api_request_count=actual_api_requests,
+    )
+    usage_reservation = None
+
     db.refresh(task)
     return _task_read(task)
 
@@ -292,8 +991,7 @@ def claim_next_task(
                 download_url=download_url,
                 storage_bucket=photo.storage_bucket,
                 storage_object_key=photo.storage_object_key,
-                building_id=photo.building_id,
-                facade_id=photo.facade_id,
+                photo_type=photo.photo_type,
             )
         )
 
@@ -381,22 +1079,42 @@ def submit_task_results(
 
     db.execute(delete(AiDetectionResult).where(AiDetectionResult.detection_task_id == task.id))
 
+    detection_config = (
+        db.get(DetectionConfig, task.detection_config_id)
+        if task.detection_config_id
+        else None
+    )
+    selected_model_types = (
+        set(detection_config.model_types)
+        if detection_config is not None
+        else set(DEFECT_TYPE_NAMES)
+    )
     raw_model_outputs = [
         _raw_model_output_for_photo(
             photo_result,
             photo_by_id.get(photo_result.photo_id),
             payload.model_version,
+            _formal_allowed_defect_types(
+                photo_by_id[photo_result.photo_id],
+                selected_model_types,
+            ),
         )
         for photo_result in payload.results
     ]
     result_counts: dict[str, int] = {}
     total_detections = 0
     for photo_result in payload.results:
+        allowed_defect_types = _formal_allowed_defect_types(
+            photo_by_id[photo_result.photo_id],
+            selected_model_types,
+        )
         for detection in photo_result.detections:
             if detection.confidence is None or detection.confidence < MIN_VISIBLE_CONFIDENCE:
                 continue
             detection_data = detection.model_dump(mode="json")
             defect_type = _defect_type_value(detection.type)
+            if defect_type not in allowed_defect_types:
+                continue
             result_counts[defect_type] = result_counts.get(defect_type, 0) + 1
             total_detections += 1
             db.add(
@@ -427,6 +1145,10 @@ def submit_task_results(
             )
 
     now = datetime.now(UTC)
+    if task.started_at is not None:
+        task_duration_seconds = max(0.0, (now - task.started_at).total_seconds())
+        for output in raw_model_outputs:
+            output["task_duration_seconds"] = round(task_duration_seconds, 3)
     _set_task_photo_status(task_photo_rows, PhotoStatus.DETECTED)
     task.status = DetectionTaskStatus.SUCCESS.value
     task.finished_at = payload.finished_at or now
@@ -443,6 +1165,14 @@ def submit_task_results(
     task.updated_at = now
     project.status = ProjectStatus.PENDING_REVIEW.value
     project.updated_at = now
+    add_inference_usage_event(
+        db,
+        source_type="formal",
+        source_id=task.id,
+        actor_id=task.created_by,
+        report_data=task.result_summary,
+        occurred_at=task.finished_at,
+    )
 
     db.commit()
     db.refresh(task)

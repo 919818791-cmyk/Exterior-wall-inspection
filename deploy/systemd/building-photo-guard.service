@@ -1,0 +1,19 @@
+[Unit]
+Description=Building Exterior Qwen3-VL 2B Photo Guard
+Documentation=https://modelscope.cn/models/Qwen/Qwen3-VL-2B-Instruct-FP8
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/Exterior-wall-inspection
+ExecStart=/opt/Exterior-wall-inspection/scripts/run-photo-guard-vllm.sh
+Restart=always
+RestartSec=5
+TimeoutStartSec=600
+TimeoutStopSec=45
+KillSignal=SIGTERM
+LimitNOFILE=65535
+
+[Install]
+WantedBy=default.target

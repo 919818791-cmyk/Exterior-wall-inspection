@@ -2,6 +2,7 @@ import { X } from "lucide-react";
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 
 import type { ModelOutputDetection } from "@/types/reports";
+import { trialDefectDisplayFromModel } from "@/utils/trialDefectDisplay";
 
 export const TRIAL_TILE_WIDTH = 1280;
 export const TRIAL_TILE_HEIGHT = 960;
@@ -101,7 +102,7 @@ export function TilePreviewDialog({ source, onClose }: TilePreviewDialogProps) {
                       {tileDetections.map(({ detection, style }, detectionIndex) => (
                         <span
                           key={detection.detection_id ?? detection.id ?? `${detection.type}-${detectionIndex}`}
-                          className={`trial-tile-defect-box is-${detection.type === "crack" || detection.model === "裂缝" ? "crack" : "spalling"}`}
+                          className={`trial-tile-defect-box is-${tileDetectionType(detection)}`}
                           style={style}
                         >
                           <span>{tileDetectionLabel(detection)}</span>
@@ -181,9 +182,19 @@ function tileDetection(
 
 function tileDetectionLabel(detection: ModelOutputDetection) {
   const name = detection.type_name
-    ?? (detection.type === "crack" || detection.model === "裂缝" ? "裂缝" : "剥落");
+    ?? trialDefectDisplayFromModel(detection.model ?? detection.type).label;
   const confidence = finiteNumber(detection.confidence);
   return confidence === null ? name : `${name} ${Math.round(confidence * 100)}%`;
+}
+
+function tileDetectionType(detection: ModelOutputDetection) {
+  const type = (detection.type ?? "").trim();
+  if (["crack", "spalling", "corrosion", "hollow"].includes(type)) return type;
+  const model = (detection.model ?? "").trim();
+  if (model === "裂缝") return "crack";
+  if (model === "锈蚀") return "corrosion";
+  if (model === "空鼓") return "hollow";
+  return "spalling";
 }
 
 function finiteNumber(value: number | string | null | undefined) {

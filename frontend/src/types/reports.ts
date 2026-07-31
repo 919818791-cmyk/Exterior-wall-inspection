@@ -12,6 +12,8 @@ export interface ReportListItem {
   client_name: string | null;
   address: string | null;
   total_defects: number;
+  photo_count: number;
+  first_photo_url: string | null;
   generated_at: string;
   pushed_at: string | null;
   updated_at: string;
@@ -22,8 +24,6 @@ export interface ReportProjectSnapshot {
   project_no?: string;
   name?: string;
   client_name?: string | null;
-  contact_name?: string | null;
-  contact_phone?: string | null;
   province?: string | null;
   city?: string | null;
   district?: string | null;
@@ -31,26 +31,6 @@ export interface ReportProjectSnapshot {
   created_at?: string | null;
   started_at?: string | null;
   completed_at?: string | null;
-}
-
-export interface ReportFacadeSnapshot {
-  id?: string;
-  name?: string;
-  area?: string | null;
-  floors_range?: string | null;
-  description?: string | null;
-}
-
-export interface ReportBuildingSnapshot {
-  id?: string;
-  name?: string;
-  building_no?: string | null;
-  floors?: number | null;
-  height?: string | null;
-  structure_type?: string | null;
-  usage_type?: string | null;
-  built_year?: number | null;
-  facades?: ReportFacadeSnapshot[];
 }
 
 export interface ReportPhotoSnapshot {
@@ -78,8 +58,6 @@ export interface ReportDefectSnapshot {
   photo_filename?: string | null;
   photo_preview_url?: string | null;
   photo_thumbnail_url?: string | null;
-  building_name?: string | null;
-  facade_name?: string | null;
   defect_type?: string;
   bbox_json?: {
     x?: number | string;
@@ -123,11 +101,39 @@ export interface ModelOutputDetection {
   visible?: boolean | null;
 }
 
+export interface ModelTokenDetails {
+  text_tokens?: number | null;
+  image_tokens?: number | null;
+  video_tokens?: number | null;
+  cached_tokens?: number | null;
+  reasoning_tokens?: number | null;
+}
+
+export interface ModelTokenUsage {
+  request_count?: number | null;
+  reported_request_count?: number | null;
+  prompt_tokens?: number | null;
+  completion_tokens?: number | null;
+  total_tokens?: number | null;
+  prompt_tokens_details?: ModelTokenDetails | null;
+  completion_tokens_details?: ModelTokenDetails | null;
+}
+
+export interface ModelTileTokenUsage {
+  tile_index?: number | null;
+  x?: number | null;
+  y?: number | null;
+  valid_width?: number | null;
+  valid_height?: number | null;
+  token_usage?: ModelTokenUsage | null;
+}
+
 export interface ModelOutputPhoto {
   photo_id?: string | null;
   filename?: string | null;
   image_width?: number | string | null;
   image_height?: number | string | null;
+  upstream_model?: string | null;
   model_version?: string | null;
   requested_models?: string[];
   executed_models?: string[];
@@ -135,7 +141,14 @@ export interface ModelOutputPhoto {
   tile_height?: number | string | null;
   tile_overlap_ratio?: number | string | null;
   tile_count?: number | string | null;
+  task_duration_seconds?: number | string | null;
+  token_usage?: ModelTokenUsage | null;
+  tile_token_usages?: ModelTileTokenUsage[];
   deduplication_method?: string | null;
+  cross_tile_merge_method?: string | null;
+  cross_tile_merge_ios_threshold?: number | string | null;
+  pre_merge_detection_count?: number | string | null;
+  post_merge_detection_count?: number | string | null;
   nms_iou_threshold?: number | string | null;
   detections?: ModelOutputDetection[];
 }
@@ -150,7 +163,6 @@ export interface ReportDetail {
   status: InspectionReportStatus;
   report_data_json: Record<string, unknown> | null;
   project: ReportProjectSnapshot;
-  buildings: ReportBuildingSnapshot[];
   detection_config: {
     model_types?: string[];
     high_precision?: boolean;
@@ -168,8 +180,6 @@ export interface ReportDetail {
     by_status?: Record<string, number>;
     photo_count?: number;
     thermal_available_photo_count?: number;
-    building_count?: number;
-    facade_count?: number;
   };
   defects: ReportDefectSnapshot[];
   photos: ReportPhotoSnapshot[];

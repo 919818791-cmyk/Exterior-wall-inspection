@@ -47,13 +47,11 @@ export function DetectionConfigSection({
   const queryClient = useQueryClient();
   const configQuery = useQuery(detectionConfigQueryOptions(project.id));
   const [modelTypes, setModelTypes] = useState<DefectType[]>([]);
-  const [highPrecision, setHighPrecision] = useState(false);
   const [localError, setLocalError] = useState("");
 
   useEffect(() => {
     if (!configQuery.data) return;
     setModelTypes(configQuery.data.model_types);
-    setHighPrecision(configQuery.data.high_precision);
   }, [configQuery.data]);
 
   const saveMutation = useMutation({
@@ -68,7 +66,7 @@ export function DetectionConfigSection({
     }
   });
 
-  const persistConfig = (nextModelTypes: DefectType[], nextHighPrecision: boolean) => {
+  const persistConfig = (nextModelTypes: DefectType[]) => {
     if (!isEditable || configQuery.isLoading) return;
     if (!nextModelTypes.length) {
       setLocalError("请至少选择一种检测模型。");
@@ -79,7 +77,6 @@ export function DetectionConfigSection({
     saveMutation.reset();
     saveMutation.mutate({
       model_types: nextModelTypes,
-      high_precision: nextHighPrecision,
       config_json: null
     });
   };
@@ -97,14 +94,7 @@ export function DetectionConfigSection({
     }
 
     setModelTypes(nextModelTypes);
-    persistConfig(nextModelTypes, highPrecision);
-  };
-
-  const changePrecision = (nextHighPrecision: boolean) => {
-    if (!isEditable || configQuery.isLoading || nextHighPrecision === highPrecision) return;
-
-    setHighPrecision(nextHighPrecision);
-    persistConfig(modelTypes, nextHighPrecision);
+    persistConfig(nextModelTypes);
   };
 
   return (
@@ -151,58 +141,10 @@ export function DetectionConfigSection({
             })}
           </div>
 
-          {localError || saveMutation.isError ? (
+          {localError || saveMutation.isError || configQuery.isError ? (
             <div className="ai-config-alert">
-              {localError || getErrorMessage(saveMutation.error)}
+              {localError || getErrorMessage(saveMutation.error ?? configQuery.error)}
             </div>
-          ) : null}
-        </section>
-
-        <section className="ai-config-panel ai-mode-panel" aria-labelledby="ai-mode-title">
-          <div className="ai-panel-heading">
-            <h3 id="ai-mode-title">检测模式</h3>
-          </div>
-
-          <div className="ai-mode-options" role="radiogroup" aria-label="检测模式">
-            <label className={`ai-mode-option ${!highPrecision ? "is-selected" : ""}`}>
-              <input
-                checked={!highPrecision}
-                className="ai-config-sr-input"
-                disabled={!isEditable || configQuery.isLoading}
-                name={`detection-mode-${project.id}`}
-                type="radio"
-                value="standard"
-                onChange={() => changePrecision(false)}
-              />
-              <span className="ai-mode-radio" aria-hidden="true" />
-              <span className="ai-mode-copy">
-                <strong>
-                  标准检测 <em>推荐</em>
-                </strong>
-                <span>平衡检测效果与处理效率</span>
-              </span>
-            </label>
-
-            <label className={`ai-mode-option ${highPrecision ? "is-selected" : ""}`}>
-              <input
-                checked={highPrecision}
-                className="ai-config-sr-input"
-                disabled={!isEditable || configQuery.isLoading}
-                name={`detection-mode-${project.id}`}
-                type="radio"
-                value="high"
-                onChange={() => changePrecision(true)}
-              />
-              <span className="ai-mode-radio" aria-hidden="true" />
-              <span className="ai-mode-copy">
-                <strong>高精度检测</strong>
-                <span>提升细小缺陷识别能力，处理时间更长</span>
-              </span>
-            </label>
-          </div>
-
-          {configQuery.isError ? (
-            <div className="ai-config-alert">{getErrorMessage(configQuery.error)}</div>
           ) : null}
         </section>
       </div>

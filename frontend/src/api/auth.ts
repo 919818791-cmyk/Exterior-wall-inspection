@@ -1,7 +1,13 @@
 import { apiRequest } from "@/api/client";
-import type { AuthUser, LoginResponse, TrialApplicationPayload, TrialApplicationResponse } from "@/types/auth";
+import type {
+  AuthUser,
+  CurrentUserUpdatePayload,
+  LoginResponse,
+  TrialApplicationPayload,
+  TrialApplicationResponse
+} from "@/types/auth";
 
-export function login(payload: { username: string; password: string }) {
+export function login(payload: { identity: string; password: string }) {
   return apiRequest<LoginResponse>("/auth/login", {
     method: "POST",
     body: JSON.stringify(payload)
@@ -12,9 +18,19 @@ export function getCurrentUser() {
   return apiRequest<AuthUser>("/auth/me");
 }
 
-export function createTrialApplication(payload: TrialApplicationPayload) {
+export function updateCurrentUser(payload: CurrentUserUpdatePayload) {
+  return apiRequest<AuthUser>("/auth/me", {
+    method: "PATCH",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function createTrialApplication(payload: TrialApplicationPayload, idempotencyKey?: string) {
+  const headers = new Headers();
+  if (idempotencyKey) headers.set("Idempotency-Key", idempotencyKey);
   return apiRequest<TrialApplicationResponse>("/auth/trial-application", {
     method: "POST",
+    headers,
     body: JSON.stringify(payload)
   });
 }

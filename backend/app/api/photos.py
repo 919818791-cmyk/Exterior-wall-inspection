@@ -8,20 +8,26 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, s
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.dependencies import AuthenticatedUser, ensure_project_access, get_current_user, require_roles
-from app.api.projects import (
-    _ensure_project_editable,
-    _get_building_or_404,
-    _get_facade_or_404,
-    _get_project_or_404,
+from app.api.dependencies import (
+    AuthenticatedUser,
+    ensure_project_access,
+    get_current_user,
 )
+from app.api.projects import _ensure_project_editable, _get_project_or_404
 from app.db.session import get_db
-from app.enums.status import PhotoStatus, PhotoType, UserRole
-from app.models.tables import Photo, Project, UploadBatch
-from app.schemas.phase4 import PhotoRead, UploadBatchCreateRequest, UploadBatchRead
+from app.enums.status import PhotoPrecheckStatus, PhotoStatus, PhotoType
+from app.models.tables import Photo, UploadBatch
+from app.schemas.phase4 import (
+    PhotoRead,
+    UploadBatchCreateRequest,
+    UploadBatchRead,
+)
 from app.services.object_storage import presigned_get_url, put_object, remove_object
+from app.services.photo_metadata import extract_photo_metadata
+from app.services.photo_precheck import run_stored_photo_precheck
+from app.services.usage_tracking import add_photo_upload_event
 
-router = APIRouter(tags=["photos"], dependencies=[Depends(require_roles(UserRole.ADMIN))])
+router = APIRouter(tags=["photos"])
 
 
 def _enum_value(value: object) -> str:
@@ -33,32 +39,12 @@ def _batch_no() -> str:
     return f"UP-{timestamp}-{uuid4().hex[:6].upper()}"
 
 
-def _validate_project_scope(
-    db: Session,
-    project: Project,
-    building_id: UUID | None,
-    facade_id: UUID | None,
-) -> None:
-    if building_id is not None:
-        building = _get_building_or_404(db, building_id)
-        if building.project_id != project.id:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Building does not belong to project.")
-    if facade_id is not None:
-        facade = _get_facade_or_404(db, facade_id)
-        if facade.project_id != project.id:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Facade does not belong to project.")
-        if building_id is not None and facade.building_id != building_id:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Facade does not belong to building.")
-
-
 def _photo_to_read(photo: Photo) -> PhotoRead:
     preview_url = presigned_get_url(photo.storage_bucket, photo.storage_object_key)
     thumbnail_url = presigned_get_url(photo.storage_bucket, photo.thumbnail_object_key) or preview_url
     return PhotoRead(
         id=photo.id,
         project_id=photo.project_id,
-        building_id=photo.building_id,
-        facade_id=photo.facade_id,
         upload_batch_id=photo.upload_batch_id,
         original_filename=photo.original_filename,
         file_ext=photo.file_ext,
@@ -71,6 +57,13 @@ def _photo_to_read(photo: Photo) -> PhotoRead:
         image_height=photo.image_height,
         photo_type=photo.photo_type,
         status=photo.status,
+        precheck_status=photo.precheck_status,
+        precheck_category=photo.precheck_category,
+        precheck_reason=photo.precheck_reason,
+        precheck_model=photo.precheck_model,
+        precheck_error=photo.precheck_error,
+        precheck_attempts=photo.precheck_attempts,
+        prechecked_at=photo.prechecked_at,
         preview_url=preview_url,
         thumbnail_url=thumbnail_url,
         created_at=photo.created_at,
@@ -105,12 +98,8 @@ def create_upload_batch(
     project = _get_project_or_404(db, project_id)
     ensure_project_access(project, current_user)
     _ensure_project_editable(project)
-    _validate_project_scope(db, project, payload.building_id, payload.facade_id)
-
     batch = UploadBatch(
         project_id=project.id,
-        building_id=payload.building_id,
-        facade_id=payload.facade_id,
         batch_no=_batch_no(),
         drone_type=payload.drone_type,
         upload_mode=_enum_value(payload.upload_mode),
@@ -129,8 +118,6 @@ def create_upload_batch(
 def upload_photo(
     project_id: UUID = Form(...),
     upload_batch_id: UUID = Form(...),
-    building_id: UUID | None = Form(default=None),
-    facade_id: UUID | None = Form(default=None),
     photo_type: PhotoType = Form(default=PhotoType.VISIBLE),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
@@ -144,10 +131,6 @@ def upload_photo(
     if batch is None or batch.project_id != project.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Upload batch not found.")
 
-    final_building_id = building_id or batch.building_id
-    final_facade_id = facade_id or batch.facade_id
-    _validate_project_scope(db, project, final_building_id, final_facade_id)
-
     file.file.seek(0, 2)
     file_size = file.file.tell()
     file.file.seek(0)
@@ -157,6 +140,7 @@ def upload_photo(
     suffix = Path(file.filename or "").suffix.lower()
     object_id = uuid4()
     object_key = f"projects/{project.id}/photos/{object_id}{suffix or '.bin'}"
+    metadata = extract_photo_metadata(file.file)
     bucket = put_object(
         object_key=object_key,
         data=file.file,
@@ -166,8 +150,6 @@ def upload_photo(
 
     photo = Photo(
         project_id=project.id,
-        building_id=final_building_id,
-        facade_id=final_facade_id,
         upload_batch_id=batch.id,
         original_filename=file.filename or f"{object_id}{suffix}",
         file_ext=suffix.lstrip(".") or None,
@@ -176,15 +158,32 @@ def upload_photo(
         storage_bucket=bucket,
         storage_object_key=object_key,
         thumbnail_object_key=None,
-        photo_type=_enum_value(photo_type),
+        image_width=None,
+        image_height=None,
+        photo_type=(
+            PhotoType.THERMAL.value
+            if metadata["thermal_imaging_available"]
+            else _enum_value(photo_type)
+        ),
         status=PhotoStatus.UPLOADED.value,
+        precheck_status=PhotoPrecheckStatus.PENDING.value,
+        precheck_attempts=0,
     )
     db.add(photo)
     db.flush()
+    add_photo_upload_event(
+        db,
+        source_type="formal",
+        photo_id=photo.id,
+        actor_id=current_user.id,
+        storage_bytes=file_size,
+        occurred_at=photo.created_at,
+    )
     batch.photo_count = _count_active_batch_photos(db, batch.id)
     project.updated_at = datetime.now(UTC)
     db.commit()
     db.refresh(photo)
+    run_stored_photo_precheck(db, photo)
     return _photo_to_read(photo)
 
 

@@ -12,7 +12,12 @@ def test_phase6_review_routes_are_registered() -> None:
     assert "/api/review/projects/{project_id}/results" in paths
     assert "/api/review/results/{result_id}" in paths
     assert "/api/review/results" in paths
-    assert "/api/review/projects/{project_id}/complete" in paths
+    assert "/api/review/projects/{project_id}/complete" not in paths
+    assert "/api/review/detections" in paths
+    assert "/api/review/detections/{task_id}" in paths
+    assert "/api/review/detections/{task_id}/annotations" in paths
+    assert "/api/review/detections/{task_id}/annotations/photos" in paths
+    assert "/api/review/detections/{task_id}/complete" in paths
 
 
 def test_review_result_create_payload_supports_manual_added_defect() -> None:

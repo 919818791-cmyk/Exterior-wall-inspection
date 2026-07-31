@@ -10,6 +10,14 @@ class WorkerContractHealth(BaseModel):
     lease_seconds: int
 
 
+class PhotoGuardHealth(BaseModel):
+    enabled: bool
+    ready: bool
+    model: str
+    endpoint: str
+    message: str
+
+
 class HealthResponse(BaseModel):
     status: Literal["ok", "degraded"]
     service: str
@@ -18,4 +26,5 @@ class HealthResponse(BaseModel):
     database_configured: bool
     minio_configured: bool
     redis_configured: bool
+    photo_guard: PhotoGuardHealth
     worker_contract: WorkerContractHealth

@@ -8,6 +8,7 @@ from uuid import UUID
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    CheckConstraint,
     Date,
     DateTime,
     ForeignKey,
@@ -28,6 +29,7 @@ from app.enums.status import (
     DefectType,
     DetectionTaskStatus,
     InspectionReportStatus,
+    PhotoPrecheckStatus,
     PhotoStatus,
     PhotoType,
     ProjectStatus,
@@ -57,6 +59,7 @@ class UserAccount(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     __table_args__ = (
         enum_check("role", UserRole, "role"),
         enum_check("status", UserStatus, "status"),
+        Index("uq_user_account_phone", "phone", unique=True),
         Index("idx_user_account_role", "role"),
         Index("idx_user_account_status", "status"),
     )
@@ -71,20 +74,36 @@ class UserAccount(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class SystemSetting(TimestampMixin, Base):
+    __tablename__ = "system_setting"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_by: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("user_account.id", ondelete="SET NULL"),
+    )
+
+
 class Project(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     __tablename__ = "project"
     __table_args__ = (
         enum_check("status", ProjectStatus, "status"),
+        Index(
+            "uq_project_created_by_client_draft_key",
+            "created_by",
+            "client_draft_key",
+            unique=True,
+        ),
         Index("idx_project_status", "status"),
         Index("idx_project_created_by", "created_by"),
         Index("idx_project_created_at", "created_at"),
     )
 
     project_no: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    client_draft_key: Mapped[str | None] = mapped_column(String(64))
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     client_name: Mapped[str | None] = mapped_column(String(128))
-    contact_name: Mapped[str | None] = mapped_column(String(64))
-    contact_phone: Mapped[str | None] = mapped_column(String(32))
     province: Mapped[str | None] = mapped_column(String(64))
     city: Mapped[str | None] = mapped_column(String(64))
     district: Mapped[str | None] = mapped_column(String(64))
@@ -109,56 +128,11 @@ class Project(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
-class Building(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
-    __tablename__ = "building"
-    __table_args__ = (Index("idx_building_project_id", "project_id"),)
-
-    project_id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("project.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    name: Mapped[str] = mapped_column(String(128), nullable=False)
-    building_no: Mapped[str | None] = mapped_column(String(64))
-    floors: Mapped[int | None] = mapped_column(Integer)
-    height: Mapped[Decimal | None] = mapped_column(Numeric(8, 2))
-    structure_type: Mapped[str | None] = mapped_column(String(64))
-    usage_type: Mapped[str | None] = mapped_column(String(64))
-    built_year: Mapped[int | None] = mapped_column(Integer)
-    remark: Mapped[str | None] = mapped_column(Text)
-    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-
-
-class Facade(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
-    __tablename__ = "facade"
-    __table_args__ = (
-        Index("idx_facade_project_id", "project_id"),
-        Index("idx_facade_building_id", "building_id"),
-    )
-
-    project_id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("project.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    building_id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("building.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    name: Mapped[str] = mapped_column(String(128), nullable=False)
-    area: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
-    floors_range: Mapped[str | None] = mapped_column(String(64))
-    description: Mapped[str | None] = mapped_column(Text)
-    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-
-
 class CollectionTimeRecommendation(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     __tablename__ = "collection_time_recommendation"
     __table_args__ = (
         enum_check("orientation", RecommendationOrientation, "orientation"),
         Index("idx_collection_time_recommendation_project_id", "project_id"),
-        Index("idx_collection_time_recommendation_facade_id", "facade_id"),
         Index("idx_collection_time_recommendation_target_date", "target_date"),
     )
 
@@ -166,14 +140,6 @@ class CollectionTimeRecommendation(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
         PG_UUID(as_uuid=True),
         ForeignKey("project.id", ondelete="CASCADE"),
         nullable=False,
-    )
-    building_id: Mapped[UUID | None] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("building.id", ondelete="SET NULL"),
-    )
-    facade_id: Mapped[UUID | None] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("facade.id", ondelete="SET NULL"),
     )
     target_date: Mapped[date] = mapped_column(Date, nullable=False)
     orientation: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -198,7 +164,12 @@ class DetectionConfig(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=False,
     )
     model_types: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
-    high_precision: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    high_precision: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        server_default="true",
+        nullable=False,
+    )
     config_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     created_by: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
@@ -212,7 +183,6 @@ class UploadBatch(UUIDPrimaryKeyMixin, Base):
     __table_args__ = (
         enum_check("upload_mode", UploadMode, "upload_mode"),
         Index("idx_upload_batch_project_id", "project_id"),
-        Index("idx_upload_batch_facade_id", "facade_id"),
         Index("idx_upload_batch_uploaded_by", "uploaded_by"),
     )
 
@@ -220,14 +190,6 @@ class UploadBatch(UUIDPrimaryKeyMixin, Base):
         PG_UUID(as_uuid=True),
         ForeignKey("project.id", ondelete="CASCADE"),
         nullable=False,
-    )
-    building_id: Mapped[UUID | None] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("building.id", ondelete="SET NULL"),
-    )
-    facade_id: Mapped[UUID | None] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("facade.id", ondelete="SET NULL"),
     )
     batch_no: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     drone_type: Mapped[str | None] = mapped_column(String(64))
@@ -251,24 +213,17 @@ class Photo(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     __table_args__ = (
         enum_check("photo_type", PhotoType, "photo_type"),
         enum_check("status", PhotoStatus, "status"),
+        enum_check("precheck_status", PhotoPrecheckStatus, "precheck_status"),
         Index("idx_photo_project_id", "project_id"),
-        Index("idx_photo_facade_id", "facade_id"),
         Index("idx_photo_upload_batch_id", "upload_batch_id"),
         Index("idx_photo_status", "status"),
+        Index("idx_photo_precheck_status", "precheck_status"),
     )
 
     project_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("project.id", ondelete="CASCADE"),
         nullable=False,
-    )
-    building_id: Mapped[UUID | None] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("building.id", ondelete="SET NULL"),
-    )
-    facade_id: Mapped[UUID | None] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("facade.id", ondelete="SET NULL"),
     )
     upload_batch_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
@@ -289,12 +244,20 @@ class Photo(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     longitude: Mapped[Decimal | None] = mapped_column(Numeric(10, 7))
     latitude: Mapped[Decimal | None] = mapped_column(Numeric(10, 7))
     status: Mapped[str] = status_column(PhotoStatus.UPLOADED)
+    precheck_status: Mapped[str] = status_column(PhotoPrecheckStatus.PENDING)
+    precheck_category: Mapped[str | None] = mapped_column(String(32))
+    precheck_reason: Mapped[str | None] = mapped_column(String(255))
+    precheck_model: Mapped[str | None] = mapped_column(String(128))
+    precheck_error: Mapped[str | None] = mapped_column(Text)
+    precheck_attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    prechecked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class DetectionTask(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "detection_task"
     __table_args__ = (
         enum_check("status", DetectionTaskStatus, "status"),
+        UniqueConstraint("project_id", name="uq_detection_task_project_id"),
         Index("idx_detection_task_project_id", "project_id"),
         Index("idx_detection_task_status", "status"),
         Index("idx_detection_task_created_at", "created_at"),
@@ -482,6 +445,7 @@ class InspectionReport(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "inspection_report"
     __table_args__ = (
         enum_check("status", InspectionReportStatus, "status"),
+        UniqueConstraint("project_id", name="uq_inspection_report_project_id"),
         Index("idx_report_project_id", "project_id"),
         Index("idx_report_status", "status"),
     )
@@ -510,7 +474,7 @@ class InspectionReport(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     pushed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
-class TrialDetectionResult(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+class TrialDetectionResult(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     __tablename__ = "trial_detection_result"
     __table_args__ = (
         enum_check("status", InspectionReportStatus, "status"),
@@ -534,12 +498,51 @@ class TrialDetectionResult(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
 
 
+class AnnotationPhotoEdit(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Administrator-only annotation copy; never used to build customer reports."""
+
+    __tablename__ = "annotation_photo_edit"
+    __table_args__ = (
+        CheckConstraint(
+            "(report_id IS NOT NULL AND trial_result_id IS NULL) OR "
+            "(report_id IS NULL AND trial_result_id IS NOT NULL)",
+            name="exactly_one_result",
+        ),
+        UniqueConstraint("report_id", "photo_key", name="uq_annotation_photo_edit_report_photo"),
+        UniqueConstraint(
+            "trial_result_id",
+            "photo_key",
+            name="uq_annotation_photo_edit_trial_result_photo",
+        ),
+        Index("idx_annotation_photo_edit_report_id", "report_id"),
+        Index("idx_annotation_photo_edit_trial_result_id", "trial_result_id"),
+    )
+
+    report_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("inspection_report.id", ondelete="CASCADE"),
+    )
+    trial_result_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("trial_detection_result.id", ondelete="CASCADE"),
+    )
+    photo_key: Mapped[str] = mapped_column(String(512), nullable=False)
+    annotations_json: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    edited_by: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("user_account.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+
+
 class QuickDetectionPhoto(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "quick_detection_photo"
     __table_args__ = (
         Index("idx_quick_detection_photo_uploaded_by", "uploaded_by"),
         Index("idx_quick_detection_photo_result_id", "generated_result_id"),
         Index("idx_quick_detection_photo_created_at", "created_at"),
+        enum_check("precheck_status", PhotoPrecheckStatus, "precheck_status"),
+        Index("idx_quick_detection_photo_precheck_status", "precheck_status"),
     )
 
     original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -549,6 +552,13 @@ class QuickDetectionPhoto(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     storage_object_key: Mapped[str] = mapped_column(String(512), nullable=False)
     metadata_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     thermal_imaging_available: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    precheck_status: Mapped[str] = status_column(PhotoPrecheckStatus.PENDING)
+    precheck_category: Mapped[str | None] = mapped_column(String(32))
+    precheck_reason: Mapped[str | None] = mapped_column(String(255))
+    precheck_model: Mapped[str | None] = mapped_column(String(128))
+    precheck_error: Mapped[str | None] = mapped_column(Text)
+    precheck_attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    prechecked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     uploaded_by: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("user_account.id", ondelete="RESTRICT"),
@@ -557,6 +567,45 @@ class QuickDetectionPhoto(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     generated_result_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("trial_detection_result.id", ondelete="SET NULL"),
+    )
+
+
+class UsageEvent(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
+    """Immutable resource-usage ledger independent of deletable business data."""
+
+    __tablename__ = "usage_event"
+    __table_args__ = (
+        CheckConstraint("photo_count >= 0", name="photo_count_non_negative"),
+        CheckConstraint("storage_bytes >= 0", name="storage_bytes_non_negative"),
+        CheckConstraint("api_request_count >= 0", name="api_request_count_non_negative"),
+        CheckConstraint("input_token_count >= 0", name="input_token_count_non_negative"),
+        CheckConstraint("output_token_count >= 0", name="output_token_count_non_negative"),
+        CheckConstraint("token_count >= 0", name="token_count_non_negative"),
+        CheckConstraint("trial_task_count >= 0", name="trial_task_count_non_negative"),
+        Index("idx_usage_event_occurred_at", "occurred_at"),
+        Index("idx_usage_event_event_type", "event_type"),
+        Index("idx_usage_event_source_type", "source_type"),
+        Index("idx_usage_event_actor_occurred_at", "actor_id", "occurred_at"),
+    )
+
+    event_key: Mapped[str] = mapped_column(String(160), nullable=False, unique=True)
+    event_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    source_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    actor_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("user_account.id", ondelete="SET NULL"),
+    )
+    photo_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    storage_bytes: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    api_request_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    input_token_count: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    output_token_count: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    token_count: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    trial_task_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        nullable=False,
     )
 
 

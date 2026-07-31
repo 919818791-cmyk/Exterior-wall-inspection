@@ -12,6 +12,8 @@ DEFECT_LABELS = {
     "missing": "剥落",
     "spalling": "剥落",
     "moisture": "潮湿",
+    "corrosion": "锈蚀",
+    "hollow": "空鼓",
 }
 
 STATUS_LABELS = {
@@ -135,8 +137,6 @@ def _summary_lines(summary: dict[str, Any]) -> list[str]:
     ) or "暂无"
     return [
         f"照片数量：{_text(summary.get('photo_count'))}",
-        f"建筑数量：{_text(summary.get('building_count'))}",
-        f"立面数量：{_text(summary.get('facade_count'))}",
         f"缺陷总数：{_text(summary.get('total_review_results'))}",
         f"缺陷类型统计：{defect_text}",
         f"审核状态统计：{status_text}",
@@ -146,7 +146,6 @@ def _summary_lines(summary: dict[str, Any]) -> list[str]:
 def build_report_docx(report_title: str, report_no: str, report_data: dict[str, Any] | None) -> bytes:
     data = report_data or {}
     project = data.get("project") or {}
-    buildings = data.get("buildings") or []
     detection_config = data.get("detection_config") or {}
     detection_task = data.get("detection_task") or {}
     summary = data.get("summary") or {}
@@ -160,7 +159,6 @@ def build_report_docx(report_title: str, report_no: str, report_data: dict[str, 
         (f"项目名称：{_text(project.get('name'))}", False),
         (f"项目编号：{_text(project.get('project_no'))}", False),
         (f"委托单位：{_text(project.get('client_name'))}", False),
-        (f"联系人：{_text(project.get('contact_name'))}", False),
         (
             "项目地址："
             f"{_text(project.get('province'))} {_text(project.get('city'))} "
@@ -168,34 +166,19 @@ def build_report_docx(report_title: str, report_no: str, report_data: dict[str, 
             False,
         ),
         ("", False),
-        ("二、建筑与立面信息", True),
-    ]
-
-    if buildings:
-        for building in buildings:
-            lines.append((f"建筑：{_text(building.get('name'))}，楼层：{_text(building.get('floors'))}，高度：{_text(building.get('height'))}", False))
-            for facade in building.get("facades") or []:
-                lines.append((f"  立面：{_text(facade.get('name'))}，楼层范围：{_text(facade.get('floors_range'))}，面积：{_text(facade.get('area'))}", False))
-    else:
-        lines.append(("暂无建筑与立面信息。", False))
-
-    lines.extend(
-        [
-            ("", False),
-            ("三、检测模型配置", True),
+        ("二、检测模型配置", True),
             (f"检测模型：{', '.join(detection_config.get('model_types') or []) or '-'}", False),
             (f"高精度检测：{'是' if detection_config.get('high_precision') else '否'}", False),
             (f"任务编号：{_text(detection_task.get('task_no'))}", False),
             (f"模型版本：{_text(detection_task.get('model_version'))}", False),
             ("", False),
-            ("四、缺陷统计", True),
-        ]
-    )
+            ("三、缺陷统计", True),
+    ]
     lines.extend((line, False) for line in _summary_lines(summary))
 
-    lines.extend([("", False), ("五、缺陷明细", True)])
+    lines.extend([("", False), ("四、缺陷明细", True)])
     if defects:
-        table_rows = [["序号", "图片", "缺陷类型", "位置", "说明"]]
+        table_rows = [["序号", "图片", "缺陷类型", "审核结果", "标注与说明"]]
         for index, defect in enumerate(defects, start=1):
             bbox = defect.get("bbox_json") or {}
             table_rows.append(
@@ -203,9 +186,8 @@ def build_report_docx(report_title: str, report_no: str, report_data: dict[str, 
                     str(index),
                     _text(defect.get("photo_filename")),
                     DEFECT_LABELS.get(defect.get("defect_type"), _text(defect.get("defect_type"))),
-                    f"{defect.get('building_name') or '-'} / {defect.get('facade_name') or '-'}",
+                    STATUS_LABELS.get(defect.get("status"), _text(defect.get("status"))),
                     (
-                        f"{STATUS_LABELS.get(defect.get('status'), _text(defect.get('status')))}；"
                         f"标注框 x={_text(bbox.get('x'))}, y={_text(bbox.get('y'))}, "
                         f"w={_text(bbox.get('width'))}, h={_text(bbox.get('height'))}；"
                         f"备注：{_text(defect.get('review_note'))}"
@@ -219,7 +201,7 @@ def build_report_docx(report_title: str, report_no: str, report_data: dict[str, 
     lines.extend(
         [
             ("", False),
-            ("六、审核结论", True),
+            ("五、审核结论", True),
             (_text(data.get("review_conclusion")), False),
         ]
     )

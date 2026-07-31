@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -46,8 +47,6 @@ class ReviewProjectListItem(ApiSchema):
 
 
 class ReviewProjectDetail(ReviewProjectListItem):
-    contact_name: str | None
-    contact_phone: str | None
     province: str | None
     city: str | None
     district: str | None
@@ -55,11 +54,35 @@ class ReviewProjectDetail(ReviewProjectListItem):
     completed_at: datetime | None
 
 
+class ReviewDetectionListItem(ApiSchema):
+    id: UUID
+    project_id: UUID
+    project_no: str
+    project_name: str
+    client_name: str | None
+    address: str | None
+    task_no: str
+    task_status: DetectionTaskStatus
+    review_status: Literal[
+        "detecting",
+        "pending_review",
+        "reviewed",
+        "completed",
+        "failed",
+    ]
+    report_id: UUID | None = None
+    report_status: InspectionReportStatus | None = None
+    model_types: list[DefectType] = Field(default_factory=list)
+    photo_count: int
+    ai_result_count: int
+    review_result_count: int
+    created_at: datetime
+    updated_at: datetime
+
+
 class ReviewPhotoRead(ApiSchema):
     id: UUID
     project_id: UUID
-    building_id: UUID | None
-    facade_id: UUID | None
     original_filename: str
     image_width: int | None
     image_height: int | None
@@ -118,6 +141,7 @@ class ReviewProjectResults(ApiSchema):
 
 class ReviewResultCreateRequest(ApiSchema):
     project_id: UUID | None = None
+    detection_task_id: UUID | None = None
     photo_id: UUID | None = None
     ai_result_id: UUID | None = None
     defect_type: DefectType

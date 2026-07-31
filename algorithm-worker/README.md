@@ -1,5 +1,10 @@
 # Algorithm Worker
 
+> **Legacy adapter as of 2026-07-27:** the YOLO/Worker solution remains
+> suspended. Formal project detection now calls the vision provider selected in
+> the platform inference settings directly. This component remains for API
+> contract tests and historical reference.
+
 This folder is intentionally separate from the FastAPI backend. The worker is an
 algorithm-side adapter: it pulls tasks from the backend API, downloads photos
 from the provided MinIO presigned URLs, and posts detection JSON.

@@ -8,7 +8,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-building_exterior}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-building_exterior_password}
     ports:
-      - "${POSTGRES_PORT:-5433}:5432"
+      - "${POSTGRES_BIND_HOST:-127.0.0.1}:${POSTGRES_PORT:-5433}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -26,8 +26,8 @@ services:
       MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-building_exterior_minio}
       MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-building_exterior_minio_secret}
     ports:
-      - "${MINIO_API_PORT:-9002}:9000"
-      - "${MINIO_CONSOLE_PORT:-9003}:9001"
+      - "${MINIO_BIND_HOST:-127.0.0.1}:${MINIO_API_PORT:-9002}:9000"
+      - "${MINIO_BIND_HOST:-127.0.0.1}:${MINIO_CONSOLE_PORT:-9003}:9001"
     volumes:
       - minio_data:/data
     healthcheck:
@@ -41,7 +41,7 @@ services:
     container_name: building-exterior-redis
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "${REDIS_BIND_HOST:-127.0.0.1}:${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
     command: redis-server --appendonly yes
@@ -74,7 +74,7 @@ services:
     volumes:
       - ${MODEL_DIR:-./models}:/models:ro
     ports:
-      - "${ALGORITHM_MODEL_PORT:-9004}:9002"
+      - "${ALGORITHM_MODEL_BIND_HOST:-127.0.0.1}:${ALGORITHM_MODEL_PORT:-9004}:9002"
     expose:
       - "9002"
     deploy:

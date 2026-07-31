@@ -5,7 +5,13 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.enums.status import DefectType, PhotoStatus, PhotoType, UploadMode
+from app.enums.status import (
+    DefectType,
+    PhotoPrecheckStatus,
+    PhotoStatus,
+    PhotoType,
+    UploadMode,
+)
 
 
 class ApiSchema(BaseModel):
@@ -13,8 +19,6 @@ class ApiSchema(BaseModel):
 
 
 class UploadBatchCreateRequest(ApiSchema):
-    building_id: UUID | None = None
-    facade_id: UUID | None = None
     drone_type: str | None = Field(default=None, max_length=64)
     upload_mode: UploadMode = UploadMode.VISIBLE
     remark: str | None = None
@@ -23,8 +27,6 @@ class UploadBatchCreateRequest(ApiSchema):
 class UploadBatchRead(ApiSchema):
     id: UUID
     project_id: UUID
-    building_id: UUID | None
-    facade_id: UUID | None
     batch_no: str
     drone_type: str | None
     upload_mode: UploadMode
@@ -37,8 +39,6 @@ class UploadBatchRead(ApiSchema):
 class PhotoRead(ApiSchema):
     id: UUID
     project_id: UUID
-    building_id: UUID | None
-    facade_id: UUID | None
     upload_batch_id: UUID
     original_filename: str
     file_ext: str | None
@@ -51,17 +51,22 @@ class PhotoRead(ApiSchema):
     image_height: int | None
     photo_type: PhotoType
     status: PhotoStatus
+    precheck_status: PhotoPrecheckStatus
+    precheck_category: str | None
+    precheck_reason: str | None
+    precheck_model: str | None
+    precheck_error: str | None
+    precheck_attempts: int
+    prechecked_at: datetime | None
     preview_url: str | None
     thumbnail_url: str | None
     created_at: datetime
     updated_at: datetime
-
-
 class DetectionConfigResponse(ApiSchema):
     id: UUID | None = None
     project_id: UUID
     model_types: list[DefectType] = Field(default_factory=list)
-    high_precision: bool = False
+    high_precision: bool = True
     config_json: dict | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
@@ -69,5 +74,4 @@ class DetectionConfigResponse(ApiSchema):
 
 class DetectionConfigUpdateRequest(ApiSchema):
     model_types: list[DefectType] = Field(min_length=1)
-    high_precision: bool = False
     config_json: dict | None = None

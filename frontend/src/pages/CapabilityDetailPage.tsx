@@ -1,11 +1,14 @@
-import { CalendarPlus, Sparkles, X } from "lucide-react";
-import type { CSSProperties } from "react";
-import { useEffect, useRef, useState } from "react";
-import { Link, Navigate, useParams } from "react-router-dom";
+import { ChevronLeft, ChevronRight, Sparkles, X } from "lucide-react";
+import gsap from "gsap";
+import type { CSSProperties, SVGProps } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Link, Navigate, useOutletContext, useParams } from "react-router-dom";
 
 import { ApiError } from "@/api/client";
 import { getWeatherDaily, getWeatherHourly, type QWeatherHourlyForecast } from "@/api/weather";
 import { ProjectLocationMap } from "@/components/project/ProjectLocationMap";
+import { usePublicHeroAnimation } from "@/hooks/usePublicHeroAnimation";
+import { useAuthStore } from "@/stores/useAuthStore";
 import {
   calculateTimeRecommendation,
   forecastDaysForDate,
@@ -17,27 +20,29 @@ const details = {
   crack: {
     title: "裂缝识别",
     lead: "系统对无人机采集的外墙影像进行分区分析，识别细微裂缝及连续裂缝区域，并将检测结果映射到对应立面位置。",
-    image: "/images/defects/crack.jpg"
+    images: ["/images/defects/crack2.jpg", "/images/defects/crack.jpg"]
   },
   spalling: {
     title: "剥落识别",
     lead: "系统从外墙纹理、颜色和边缘变化中定位面砖、饰面层及混凝土等材料的缺失、脱落和连续剥离区域，帮助工程师快速安排复核与修补。",
-    image: "/images/defects/spalling.png"
+    images: ["/images/defects/spalling.JPG", "/images/defects/spalling2.JPG"]
   },
   moisture: {
     title: "潮湿识别",
     lead: "系统分析外墙颜色、纹理与水迹形态，区分局部污染和疑似潮湿痕迹，帮助工程师快速锁定需要排查的节点。",
-    image: "/images/defects/leakage.jpg"
+    images: ["/images/defects/leakage.jpg"],
+    comingSoon: true
   },
   corrosion: {
     title: "锈蚀识别",
     lead: "系统对金属构件和周边立面进行颜色与纹理分析，定位锈蚀区域及锈水流挂痕迹，便于持续跟踪缺陷变化。",
-    image: "/images/defects/corrosion.jpg"
+    images: ["/images/defects/corrosion.jpg"],
+    comingSoon: true
   },
   hollow: {
     title: "空鼓识别",
     lead: "系统对立面红外影像进行温度分布分析，并结合构造边界与可见光影像排除明显干扰，输出需要优先复核的疑似空鼓区域。",
-    image: "/images/defects/hollow.JPG"
+    images: ["/images/defects/hollow.JPG"]
   }
 } as const;
 
@@ -47,16 +52,156 @@ const legacyDetailRoutes: Record<string, keyof typeof details> = {
   missing: "spalling"
 };
 
-function DefectDetail({ detail }: { detail: (typeof details)[keyof typeof details] }) {
+function DroneScanIcon(props: SVGProps<SVGSVGElement>) {
   return (
-    <section className="detail-hero defect-detail-hero" style={{ "--detail-hero-image": `url("${detail.image}")` } as CSSProperties}>
+    <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" viewBox="0 0 24 24" {...props}>
+      <circle cx="5" cy="5" r="2.75" />
+      <circle cx="19" cy="5" r="2.75" />
+      <circle cx="5" cy="19" r="2.75" />
+      <circle cx="19" cy="19" r="2.75" />
+      <path d="m7 7 2.25 2.25M17 7l-2.25 2.25M7 17l2.25-2.25M17 17l-2.25-2.25" />
+      <rect width="7" height="7" x="8.5" y="8.5" rx="2.25" />
+      <circle cx="12" cy="12" r="1.25" />
+    </svg>
+  );
+}
+
+function StaggeredLead({ children }: { children: string }) {
+  const lines = children.match(/[^，。！？]+[，。！？]?/g) ?? [children];
+
+  return (
+    <p className="staggered-lead">
+      {lines.map((line, index) => (
+        <span
+          key={line}
+          className="staggered-lead-line"
+          style={{ "--line-index": index } as CSSProperties}
+        >
+          {line}
+        </span>
+      ))}
+    </p>
+  );
+}
+
+function DefectDetail({ detail }: { detail: (typeof details)[keyof typeof details] }) {
+  const heroRef = useRef<HTMLElement>(null);
+  const slideRefs = useRef<Array<HTMLDivElement | null>>([]);
+  const previousImageIndexRef = useRef(0);
+  const slidesInitializedRef = useRef(false);
+  const [activeImageIndex, setActiveImageIndex] = useState(0);
+  usePublicHeroAnimation(heroRef, detail.title);
+
+  useLayoutEffect(() => {
+    const slides = slideRefs.current.filter((slide): slide is HTMLDivElement => Boolean(slide));
+    if (!slides.length) return undefined;
+
+    if (!slidesInitializedRef.current) {
+      gsap.set(slides, { autoAlpha: 0, scale: 1.035, zIndex: 0 });
+      gsap.set(slides[activeImageIndex], { autoAlpha: 1, scale: 1, zIndex: 1 });
+      slidesInitializedRef.current = true;
+      previousImageIndexRef.current = activeImageIndex;
+      return undefined;
+    }
+
+    const previousImageIndex = previousImageIndexRef.current;
+    if (previousImageIndex === activeImageIndex) return undefined;
+
+    const previousSlide = slides[previousImageIndex];
+    const nextSlide = slides[activeImageIndex];
+    if (!previousSlide || !nextSlide) return undefined;
+
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduceMotion) {
+      gsap.set(slides, { autoAlpha: 0, scale: 1, zIndex: 0 });
+      gsap.set(nextSlide, { autoAlpha: 1, zIndex: 1 });
+      previousImageIndexRef.current = activeImageIndex;
+      return undefined;
+    }
+
+    gsap.set(nextSlide, { autoAlpha: 0, scale: 1.035, zIndex: 2 });
+    gsap.set(previousSlide, { zIndex: 1 });
+    const timeline = gsap.timeline({
+      defaults: { duration: 1.35, ease: "power2.inOut" },
+      onComplete: () => gsap.set(previousSlide, { zIndex: 0 })
+    });
+    timeline
+      .to(previousSlide, { autoAlpha: 0, scale: 1.018 }, 0)
+      .to(nextSlide, { autoAlpha: 1, scale: 1 }, 0);
+
+    previousImageIndexRef.current = activeImageIndex;
+    return () => {
+      timeline.kill();
+    };
+  }, [activeImageIndex]);
+
+  useEffect(() => {
+    if (detail.images.length < 2 || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      return undefined;
+    }
+    const timer = window.setTimeout(() => {
+      setActiveImageIndex((currentIndex) => (currentIndex + 1) % detail.images.length);
+    }, 6500);
+    return () => window.clearTimeout(timer);
+  }, [activeImageIndex, detail.images.length]);
+
+  function showPreviousImage() {
+    setActiveImageIndex((currentIndex) => (currentIndex - 1 + detail.images.length) % detail.images.length);
+  }
+
+  function showNextImage() {
+    setActiveImageIndex((currentIndex) => (currentIndex + 1) % detail.images.length);
+  }
+
+  return (
+    <section ref={heroRef} className="detail-hero defect-detail-hero">
+      <div className="defect-hero-backdrop" aria-hidden="true">
+        {detail.images.map((image, index) => (
+          <div
+            key={image}
+            ref={(node) => {
+              slideRefs.current[index] = node;
+            }}
+            className="defect-hero-slide"
+          >
+            <img alt="" decoding="async" src={image} />
+          </div>
+        ))}
+        <div className="defect-hero-shade" />
+      </div>
       <div className="detail-hero-copy">
         <h1>{detail.title}</h1>
-        <p>{detail.lead}</p>
+        <StaggeredLead>{detail.lead}</StaggeredLead>
         <div className="hero-actions">
-          <Link className="button primary" to="/trial"><Sparkles aria-hidden="true" />立即检测</Link>
+          {"comingSoon" in detail && detail.comingSoon ? (
+            <button className="button capability-coming-soon-button" disabled type="button">敬请期待</button>
+          ) : (
+            <Link className="button primary" to="/trial"><Sparkles aria-hidden="true" />上传照片开始体验</Link>
+          )}
         </div>
       </div>
+      {detail.images.length > 1 ? (
+        <div className="defect-hero-controls" aria-label={`${detail.title}背景图切换`} role="group">
+          <button aria-label="上一张背景图" type="button" onClick={showPreviousImage}>
+            <ChevronLeft aria-hidden="true" />
+          </button>
+          <div className="defect-hero-dots">
+            {detail.images.map((image, index) => (
+              <button
+                key={image}
+                aria-current={index === activeImageIndex ? "true" : undefined}
+                aria-label={`切换到第 ${index + 1} 张背景图`}
+                className={index === activeImageIndex ? "is-active" : ""}
+                type="button"
+                onClick={() => setActiveImageIndex(index)}
+              />
+            ))}
+          </div>
+          <button aria-label="下一张背景图" type="button" onClick={showNextImage}>
+            <ChevronRight aria-hidden="true" />
+          </button>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -90,13 +235,6 @@ function RecommendationLoadingSkeleton() {
         <i className="recommendation-skeleton-block recommendation-skeleton-block--title" />
         <i className="recommendation-skeleton-block recommendation-skeleton-block--wide" />
       </div>
-      <div className="recommendation-meta recommendation-skeleton-meta" aria-hidden="true">
-        {Array.from({ length: 6 }, (_, index) => <div key={index}><i className="recommendation-skeleton-block recommendation-skeleton-block--short" /><i className="recommendation-skeleton-block recommendation-skeleton-block--medium" /></div>)}
-      </div>
-      <div className="recommendation-loading-rows" aria-hidden="true">
-        <div><i className="recommendation-skeleton-block recommendation-skeleton-block--short" /><i className="recommendation-skeleton-block recommendation-skeleton-block--medium" /></div>
-        <div><i className="recommendation-skeleton-block recommendation-skeleton-block--short" /><i className="recommendation-skeleton-block recommendation-skeleton-block--wide" /></div>
-      </div>
     </div>
   );
 }
@@ -108,19 +246,38 @@ function today() {
   return `${date.getFullYear()}-${month}-${day}`;
 }
 
-function TimeRecommendation() {
+function dateFromToday(offsetDays: number) {
+  const date = new Date();
+  date.setDate(date.getDate() + offsetDays);
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
+export function TimeRecommendation() {
+  const heroRef = useRef<HTMLElement>(null);
   const dialogRef = useRef<HTMLDialogElement>(null);
+  usePublicHeroAnimation(heroRef);
+
+  const authStatus = useAuthStore((state) => state.status);
+  const { requestAuthentication } = useOutletContext<{
+    requestAuthentication: (onAuthenticated?: () => void) => void;
+  }>();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isMapMounted, setIsMapMounted] = useState(false);
   const [date, setDate] = useState(today);
   const [orientation, setOrientation] = useState<Orientation>("东");
   const [address, setAddress] = useState("");
   const [position, setPosition] = useState<RecommendationPosition | null>(null);
+  const [isPositionConfirmed, setIsPositionConfirmed] = useState(false);
   const [recommendation, setRecommendation] = useState<TimeRecommendationResult | null>(null);
   const [recommendationError, setRecommendationError] = useState("");
   const [isQuerying, setIsQuerying] = useState(false);
-  const qweatherLocation = position ? `${position.longitude.toFixed(2)},${position.latitude.toFixed(2)}` : "";
-  const preciseLocation = position ? `${position.longitude.toFixed(6)},${position.latitude.toFixed(6)}` : "";
+  const earliestDate = today();
+  const latestDate = dateFromToday(29);
+  const showsTwoRecommendationWindows = Boolean(
+    recommendation?.recommendationLevel === "优选时段" && recommendation.usableWindow
+  );
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -139,6 +296,14 @@ function TimeRecommendation() {
   }, [isDialogOpen]);
 
   function openDialog() {
+    if (authStatus !== "authenticated") {
+      requestAuthentication(openRecommendationDialog);
+      return;
+    }
+    openRecommendationDialog();
+  }
+
+  function openRecommendationDialog() {
     setDate(today());
     setRecommendation(null);
     setRecommendationError("");
@@ -152,11 +317,29 @@ function TimeRecommendation() {
 
   function updatePosition(nextPosition: RecommendationPosition) {
     setPosition(nextPosition);
+    setIsPositionConfirmed(true);
     resetResult();
   }
 
-  async function queryRecommendation() {
-    if (!date || !position || isQuerying) return;
+  function requestDialogClose() {
+    if (isQuerying && !window.confirm("推荐仍在计算，确认关闭？请求会在后台继续完成，期间请勿重复查询。")) return;
+    dialogRef.current?.close();
+  }
+
+  function queryRecommendation() {
+    if (!date || !position || !isPositionConfirmed || isQuerying) return;
+    if (authStatus !== "authenticated") {
+      dialogRef.current?.close();
+      requestAuthentication(() => {
+        setIsDialogOpen(true);
+        void runRecommendationQuery(position);
+      });
+      return;
+    }
+    void runRecommendationQuery(position);
+  }
+
+  async function runRecommendationQuery(queryPosition: RecommendationPosition) {
     const dailyDays = forecastDaysForDate(date);
     if (!dailyDays) {
       setRecommendation(null);
@@ -169,12 +352,13 @@ function TimeRecommendation() {
     setRecommendation(null);
     setRecommendationError("");
     try {
-      const dailyForecast = await getWeatherDaily(qweatherLocation, dailyDays);
+      const queryLocation = `${queryPosition.longitude.toFixed(2)},${queryPosition.latitude.toFixed(2)}`;
+      const dailyForecast = await getWeatherDaily(queryLocation, dailyDays);
       let hourlyItems: QWeatherHourlyForecast[] = [];
       const warnings: string[] = [];
       if (hourlyHours) {
         try {
-          const hourlyForecast = await getWeatherHourly(qweatherLocation, hourlyHours);
+          const hourlyForecast = await getWeatherHourly(queryLocation, hourlyHours);
           hourlyItems = hourlyForecast.hourly;
         } catch (error) {
           warnings.push(`逐小时预报暂不可用，已使用逐日预报估算：${readableError(error)}`);
@@ -182,8 +366,8 @@ function TimeRecommendation() {
       }
       const nextRecommendation = calculateTimeRecommendation({
         date,
-        latitude: position.latitude,
-        longitude: position.longitude,
+        latitude: queryPosition.latitude,
+        longitude: queryPosition.longitude,
         orientationName: orientation,
         azimuth: orientationAzimuth[orientation],
         daily: dailyForecast.daily,
@@ -199,60 +383,62 @@ function TimeRecommendation() {
   }
 
   return <>
-    <section className="detail-hero recommendation-hero"><div className="detail-hero-copy"><h1>检测时段推荐</h1><p>综合计划时间、立面朝向与气象条件，提前筛选更稳定、更安全的无人机采集窗口。</p><div className="detail-actions"><button className="button primary" type="button" onClick={openDialog}><CalendarPlus aria-hidden="true" />查询推荐时段</button></div></div></section>
-    <section className="detail-section"><div className="detail-intro"><div><h2>让每次采集从合适的时间开始</h2><p className="detail-lead">系统结合计划时间、立面朝向和逐小时环境条件，对候选时段进行分级，减少强反光、温差不足与大风对采集质量的影响。</p></div><div className="detail-facts"><div><span>判断维度</span><strong>朝向、温度、风速风向、太阳辐照</strong></div><div><span>推荐结果</span><strong>优选时段、可用时段与风险提示</strong></div><div><span>适用任务</span><strong>可见光巡检、红外热成像、复飞补采</strong></div></div></div></section>
-    <dialog ref={dialogRef} aria-labelledby="time-recommendation-title" className={`project-dialog recommendation-dialog detection-time-dialog${isQuerying || recommendation ? " detection-time-dialog--results" : ""}`} onClick={(event) => { if (event.target === event.currentTarget) event.currentTarget.close(); }} onClose={() => setIsDialogOpen(false)}>
-      <div className="dialog-heading"><h2 id="time-recommendation-title">检测时段推荐</h2><button aria-label="关闭检测时段推荐" className="icon-button" type="button" onClick={() => dialogRef.current?.close()}><X aria-hidden="true" /></button></div>
+    <section ref={heroRef} className="detail-hero recommendation-hero"><div className="detail-hero-copy"><h1>检测时段推荐</h1><StaggeredLead>综合计划时间、立面朝向与气象条件，提前筛选更稳定、更安全的无人机采集窗口。</StaggeredLead><div className="detail-actions"><button className="button primary" type="button" onClick={openDialog}><DroneScanIcon aria-hidden="true" />查询推荐时段</button></div></div></section>
+    <dialog ref={dialogRef} aria-labelledby="time-recommendation-title" className={`project-dialog recommendation-dialog detection-time-dialog${recommendation ? ` detection-time-dialog--results${showsTwoRecommendationWindows ? " detection-time-dialog--two-windows" : ""}` : isQuerying ? " detection-time-dialog--loading" : ""}`} onCancel={(event) => { event.preventDefault(); requestDialogClose(); }} onClick={(event) => { if (event.target === event.currentTarget) requestDialogClose(); }} onClose={() => setIsDialogOpen(false)}>
+      <div className="dialog-heading"><div className="recommendation-dialog-title"><DroneScanIcon aria-hidden="true" className="recommendation-dialog-title-icon" /><h2 id="time-recommendation-title">检测时段推荐</h2></div><button aria-label="关闭检测时段推荐" className="icon-button" type="button" onClick={requestDialogClose}><X aria-hidden="true" /></button></div>
       <div className="recommendation-content">
         <div className="recommendation-form-grid recommendation-form-grid--without-project">
-          <label className="recommendation-date-field"><span>日期</span><input aria-label="选择日期" className="recommendation-date-input" type="date" value={date} onChange={(event) => { setDate(event.target.value); resetResult(); }} /></label>
+          <label className="recommendation-date-field"><span>日期</span><input aria-label="选择日期" className="recommendation-date-input" max={latestDate} min={earliestDate} type="date" value={date} onChange={(event) => { setDate(event.target.value); resetResult(); }} /></label>
           <label className="recommendation-date-field"><span>立面朝向</span><select aria-label="选择立面朝向" value={orientation} onChange={(event) => { setOrientation(event.target.value as Orientation); resetResult(); }}>{(Object.keys(orientationAzimuth) as Orientation[]).map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
         </div>
         {!isQuerying && !recommendation ? <div className="recommendation-location-section">
-          <label className="recommendation-date-field recommendation-address-field"><span>检测位置</span><input aria-label="输入检测位置" placeholder="输入地址后可搜索定位，也可直接点击地图" value={address} onChange={(event) => { setAddress(event.target.value); resetResult(); }} /></label>
+          <label className="recommendation-date-field recommendation-address-field"><span>检测位置</span><input aria-label="输入检测位置" placeholder="输入地址后请搜索定位，也可直接点击地图" value={address} onChange={(event) => { setAddress(event.target.value); setIsPositionConfirmed(false); resetResult(); }} /></label>
           {isMapMounted ? <ProjectLocationMap address={address} className="recommendation-location-map" initialPosition={position} onPositionChange={updatePosition} usageLabel="检测位置" /> : null}
+          {address.trim() && position && !isPositionConfirmed ? <p className="recommendation-location-warning" role="status">地址已修改，请点击“搜索定位”或在地图上重新选点，确认坐标后才能查询。</p> : null}
         </div> : null}
         {isQuerying ? <RecommendationLoadingSkeleton /> : null}
         {recommendationError ? <div className="recommendation-weather-input recommendation-weather-input--error"><span>计算失败</span><strong>{recommendationError}</strong></div> : null}
         {recommendation && position ? <div className="recommendation-results">
-          <div className="recommendation-primary">
-            <span>{recommendation.status}</span>
+          <div className={`recommendation-primary recommendation-primary--${recommendation.recommendationLevel === "优选时段" ? "preferred" : recommendation.recommendationLevel === "可用时段" ? "usable" : "unavailable"}`}>
+            {recommendation.recommendationLevel !== "不推荐" ? <span>{recommendation.recommendationLevel}</span> : null}
             <strong>{recommendation.primaryWindow?.label ?? "不推荐检测"}</strong>
-            <small>{date} · {recommendation.headline} · {recommendation.reason}</small>
+            <small>{recommendation.status} · {date} · {recommendation.headline} · {recommendation.reason}</small>
           </div>
-          <div className="recommendation-meta">
-            <div><span>正温差窗口</span><strong>{windowText(recommendation.positiveWindow)}</strong></div>
-            <div><span>负温差窗口</span><strong>{windowText(recommendation.negativeWindow)}</strong></div>
-            <div><span>最大正温差</span><strong>{formatSigned(recommendation.maxPositiveDeltaC)} ℃</strong></div>
-            <div><span>最小负温差</span><strong>{recommendation.minNegativeDeltaC.toFixed(2)} ℃</strong></div>
-            <div><span>墙面辐照峰值</span><strong>{recommendation.peakRadiationWm2.toFixed(0)} W/m²</strong></div>
-            <div><span>辐照峰值时刻</span><strong>{recommendation.peakRadiationTime}</strong></div>
-          </div>
-          <div className="recommendation-weather-input"><span>地图原始坐标</span><strong>{preciseLocation}</strong></div>
-          <div className="recommendation-weather-input"><span>天气条件</span><strong>{recommendation.weatherSummary}</strong></div>
-          {recommendation.modelWarnings.map((warning) => <div className="recommendation-weather-input recommendation-weather-input--warning" key={warning}><span>提示</span><strong>{warning}</strong></div>)}
+          {recommendation.recommendationLevel === "优选时段" && recommendation.usableWindow ? <div className="recommendation-primary recommendation-primary--usable">
+            <span>可用时段</span>
+            <strong>{recommendation.usableWindow.label}</strong>
+            <small>满足 |ΔT| ≥ 0.8 ℃且连续 ≥ 30 分钟</small>
+          </div> : null}
+          <section className="recommendation-calculation" aria-labelledby="recommendation-calculation-title">
+            <div className="recommendation-calculation-heading">
+              <div>
+                <span>结果说明</span>
+                <h3 id="recommendation-calculation-title">计算过程与判断逻辑</h3>
+              </div>
+              <small>{recommendation.calculation.criteria}</small>
+            </div>
+            <ol>
+              <li><span>1</span><div><strong>确定参与计算的时段</strong><p>{recommendation.calculation.evaluationRange}</p></div></li>
+              <li><span>2</span><div><strong>建立气温变化曲线</strong><p>{recommendation.calculation.temperatureModel}</p></div></li>
+              <li><span>3</span><div><strong>计算墙面太阳辐照</strong><p>{orientation}向立面（方位角 {orientationAzimuth[orientation]}°）；{recommendation.calculation.radiationModel}</p></div></li>
+              <li><span>4</span><div><strong>计算风速散热影响</strong><p>{recommendation.calculation.convectionModel}</p></div></li>
+              <li><span>5</span><div><strong>判断正温差窗口</strong><p>{recommendation.calculation.positiveJudgement}</p></div></li>
+              <li><span>6</span><div><strong>判断负温差窗口</strong><p>{recommendation.calculation.negativeJudgement}</p></div></li>
+            </ol>
+            <div className="recommendation-calculation-final"><span>最终判定</span><strong>{recommendation.calculation.finalJudgement}</strong></div>
+          </section>
         </div> : null}
       </div>
       {!isQuerying ? <div className={`dialog-actions${recommendation ? " dialog-actions--complete" : ""}`}>
           {recommendation
-            ? <button className="button primary" type="button" onClick={() => dialogRef.current?.close()}>完成</button>
+            ? <button className="button primary" type="button" onClick={requestDialogClose}>完成</button>
             : <>
-                <button className="button secondary" type="button" onClick={() => dialogRef.current?.close()}>取消</button>
-                <button className="button primary" disabled={!date || !position} type="button" onClick={() => void queryRecommendation()}>查询推荐</button>
+                <button className="button secondary" type="button" onClick={requestDialogClose}>取消</button>
+                <button className="button primary" disabled={!date || !position || !isPositionConfirmed} type="button" onClick={queryRecommendation}>查询推荐</button>
               </>}
         </div> : null}
     </dialog>
   </>;
-}
-
-function windowText(window: TimeRecommendationResult["positiveWindow"]) {
-  if (!window) return "未达到阈值";
-  const state = window.qualifies ? "有效" : "短窗口";
-  return `${window.label} · ${state} · ${formatSigned(window.extremum)} ℃`;
-}
-
-function formatSigned(value: number) {
-  return `${value >= 0 ? "+" : ""}${value.toFixed(2)}`;
 }
 
 function readableError(error: unknown) {
@@ -265,5 +451,5 @@ export function CapabilityDetailPage() {
   if (type === "time") return <TimeRecommendation />;
   if (type && type in legacyDetailRoutes) return <Navigate replace to={`/capabilities/${legacyDetailRoutes[type]}`} />;
   if (!type || !(type in details)) return <Navigate replace to="/" />;
-  return <DefectDetail detail={details[type as keyof typeof details]} />;
+  return <DefectDetail key={type} detail={details[type as keyof typeof details]} />;
 }

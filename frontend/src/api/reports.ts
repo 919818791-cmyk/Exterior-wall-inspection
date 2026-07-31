@@ -46,6 +46,19 @@ export function deleteReport(reportId: string) {
   });
 }
 
+export function restoreTrialReport(reportId: string) {
+  return apiRequest<ReportDetail>(`/reports/${reportId}/restore`, {
+    method: "POST"
+  });
+}
+
+export function updateTrialReportTitle(reportId: string, title: string) {
+  return apiRequest<ReportDetail>(`/reports/${reportId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ title })
+  });
+}
+
 export interface TrialReportPayload {
   report_name?: string;
   generated_at: string;
@@ -78,9 +91,20 @@ export interface TrialGeneratePayload {
   report_name?: string;
   models?: string[];
   photo_ids?: string[];
+  archived_report_id?: string;
 }
 
-export type TrialGeneratedResult = TrialReportPayload;
+export type TrialGeneratedResult = TrialReportPayload & {
+  archived_report_id?: string;
+  archived_report_title?: string;
+};
+
+export interface TrialRequestStatus {
+  request_id: string;
+  status: "processing" | "completed" | "failed";
+  result: TrialGeneratedResult | null;
+  error: string | null;
+}
 
 export type TrialUploadProgress = ApiUploadProgress;
 
@@ -91,13 +115,22 @@ export interface TrialUploadedPhoto {
   mime_type: string | null;
   metadata_json: Record<string, unknown>;
   thermal_imaging_available: boolean;
+  precheck_status: "pending" | "running" | "passed" | "rejected" | "error";
+  precheck_category: string | null;
+  precheck_reason: string | null;
+  precheck_model: string | null;
+  precheck_error: string | null;
+  precheck_attempts: number;
+  prechecked_at: string | null;
   created_at: string;
 }
 
 function downloadErrorMessage(body: unknown, status: number) {
-  return typeof body === "object" && body !== null && "message" in body
-    ? String((body as { message: unknown }).message)
-    : `API request failed with status ${status}`;
+  if (typeof body === "object" && body !== null) {
+    if ("message" in body) return String((body as { message: unknown }).message);
+    if ("detail" in body) return String((body as { detail: unknown }).detail);
+  }
+  return `API request failed with status ${status}`;
 }
 
 async function readErrorPayload(response: Response) {
@@ -129,15 +162,32 @@ export async function deleteTrialPhoto(photoId: string) {
   });
 }
 
-export async function generateTrialResult(payload: TrialGeneratePayload) {
+export async function generateTrialResult(payload: TrialGeneratePayload, requestId?: string) {
+  const headers = new Headers();
+  if (requestId) headers.set("Idempotency-Key", requestId);
   return apiRequest<TrialGeneratedResult>("/trial/generate", {
     method: "POST",
+    headers,
     body: JSON.stringify(payload)
   });
 }
 
+export function getTrialRequestStatus(requestId: string) {
+  return apiRequest<TrialRequestStatus>(`/trial/requests/${encodeURIComponent(requestId)}`);
+}
+
 export async function downloadReportDocx(reportId: string, includeGenerated = false) {
   const response = await apiFetch(`/reports/${reportId}/docx${generatedParam(includeGenerated)}`);
+  if (!response.ok) {
+    const body = await readErrorPayload(response);
+    const message = downloadErrorMessage(body, response.status);
+    throw new ApiError(message, response.status, body);
+  }
+  return response.blob();
+}
+
+export async function downloadTrialReportPdf(reportId: string) {
+  const response = await apiFetch(`/reports/${reportId}/pdf`);
   if (!response.ok) {
     const body = await readErrorPayload(response);
     const message = downloadErrorMessage(body, response.status);

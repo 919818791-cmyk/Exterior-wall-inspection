@@ -1,4 +1,4 @@
-import { Crosshair, MapPin, Search } from "lucide-react";
+import { Crosshair, LoaderCircle, MapPin, RotateCcw, Search } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 interface AMapPosition {
@@ -36,45 +36,50 @@ interface AMapNamespace {
 declare global {
   interface Window {
     AMap?: AMapNamespace;
-    _AMapSecurityConfig?: { securityJsCode: string };
+    _AMapSecurityConfig?: { serviceHost: string };
   }
 }
 
 const DEFAULT_POSITION = { longitude: 114.0579, latitude: 22.5431 };
-const DEFAULT_AMAP_KEY = "33d426f69fb683c1ee00fe669f6bea0d";
-const DEFAULT_AMAP_SECURITY_JS_CODE = "f1b53e0a76ea9bd92771b94c48152d51";
 const MARKER_CONTENT = '<span class="project-map-marker" aria-hidden="true"></span>';
+
+type MapStatus = "loading" | "ready" | "error" | "unconfigured";
 
 let amapLoader: Promise<AMapNamespace> | null = null;
 
-function cleanAmapCredential(value: string | undefined, fallback: string) {
+function cleanAmapCredential(value: string | undefined) {
   const credential = value?.trim();
-  if (!credential || credential.startsWith("your-")) return fallback;
-  return credential;
+  return !credential || credential.startsWith("your-") ? "" : credential;
 }
 
-const AMAP_KEY = cleanAmapCredential(import.meta.env.VITE_AMAP_KEY, DEFAULT_AMAP_KEY);
-const AMAP_SECURITY_JS_CODE = cleanAmapCredential(
-  import.meta.env.VITE_AMAP_SECURITY_JS_CODE,
-  DEFAULT_AMAP_SECURITY_JS_CODE
-);
+const AMAP_KEY = cleanAmapCredential(import.meta.env.VITE_AMAP_KEY);
+const AMAP_SERVICE_HOST = new URL(
+  cleanAmapCredential(import.meta.env.VITE_AMAP_SERVICE_HOST) || "/_AMapService",
+  window.location.origin
+).toString().replace(/\/$/, "");
 
-function loadAmap(key: string, securityJsCode: string) {
+function loadAmap(key: string, serviceHost: string) {
   if (window.AMap) return Promise.resolve(window.AMap);
   if (amapLoader) return amapLoader;
 
   window._AMapSecurityConfig = {
     ...window._AMapSecurityConfig,
-    securityJsCode
+    serviceHost
   };
 
+  let script: HTMLScriptElement | null = null;
   amapLoader = new Promise<AMapNamespace>((resolve, reject) => {
-    const script = document.createElement("script");
+    script = document.createElement("script");
     script.async = true;
     script.src = `https://webapi.amap.com/maps?v=2.0&key=${encodeURIComponent(key)}&plugin=AMap.Geocoder`;
     script.onload = () => window.AMap ? resolve(window.AMap) : reject(new Error("高德地图脚本加载失败。"));
     script.onerror = () => reject(new Error("高德地图脚本加载失败。"));
     document.head.append(script);
+  });
+
+  void amapLoader.catch(() => {
+    script?.remove();
+    amapLoader = null;
   });
 
   return amapLoader;
@@ -102,9 +107,13 @@ export function ProjectLocationMap({
   const markerRef = useRef<AMapMarker | null>(null);
   const lastLocateSignalRef = useRef(0);
   const initialMapPosition = initialPosition ?? DEFAULT_POSITION;
-  const [isReady, setIsReady] = useState(false);
+  const hasMapCredentials = Boolean(AMAP_KEY && AMAP_SERVICE_HOST);
+  const [mapStatus, setMapStatus] = useState<MapStatus>(hasMapCredentials ? "loading" : "unconfigured");
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [isLocating, setIsLocating] = useState(false);
-  const [statusText, setStatusText] = useState(`点击地图或拖动标记可选择${usageLabel}坐标`);
+  const [statusText, setStatusText] = useState(
+    hasMapCredentials ? "正在连接在线地图" : "地图服务暂未配置，请联系管理员"
+  );
   const [selectedPosition, setSelectedPosition] = useState(initialMapPosition);
 
   const setPosition = useCallback((
@@ -123,6 +132,12 @@ export function ProjectLocationMap({
     if (!marker || !map) return;
     map.setCenter([marker.getPosition().getLng(), marker.getPosition().getLat()]);
     map.setZoom(Math.max(map.getZoom(), 16));
+  };
+
+  const retryLoad = () => {
+    setStatusText("正在重新加载在线地图");
+    setMapStatus("loading");
+    setLoadAttempt((attempt) => attempt + 1);
   };
 
   const locateAddress = useCallback(() => {
@@ -150,10 +165,16 @@ export function ProjectLocationMap({
 
   useEffect(() => {
     const element = mapElementRef.current;
-    if (!element || !AMAP_KEY || !AMAP_SECURITY_JS_CODE) return;
+    if (!element) return;
+    if (!AMAP_KEY || !AMAP_SERVICE_HOST) {
+      setMapStatus("unconfigured");
+      setStatusText("地图服务暂未配置，请联系管理员");
+      return;
+    }
     let disposed = false;
+    setMapStatus("loading");
 
-    void loadAmap(AMAP_KEY, AMAP_SECURITY_JS_CODE)
+    void loadAmap(AMAP_KEY, AMAP_SERVICE_HOST)
       .then((AMap) => {
         if (disposed || !mapElementRef.current) return;
         const map = new AMap.Map(mapElementRef.current, {
@@ -191,10 +212,13 @@ export function ProjectLocationMap({
           initialPosition ? "已加载保存坐标" : isEditable ? `点击地图或拖动标记可选择${usageLabel}坐标` : `${usageLabel}位置标记`,
           false
         );
-        setIsReady(true);
+        setMapStatus("ready");
       })
       .catch(() => {
-        if (!disposed) setIsReady(false);
+        if (!disposed) {
+          setMapStatus("error");
+          setStatusText("地图暂时无法加载，可重新加载或继续填写地址");
+        }
       });
 
     return () => {
@@ -205,13 +229,13 @@ export function ProjectLocationMap({
     };
   // The script should only be initialized once for this mounted map view.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [loadAttempt]);
 
   useEffect(() => {
-    if (!isReady || !locateSignal || locateSignal === lastLocateSignalRef.current) return;
+    if (mapStatus !== "ready" || !locateSignal || locateSignal === lastLocateSignalRef.current) return;
     lastLocateSignalRef.current = locateSignal;
     locateAddress();
-  }, [isReady, locateAddress, locateSignal]);
+  }, [mapStatus, locateAddress, locateSignal]);
 
   useEffect(() => {
     if (!initialPosition) return;
@@ -235,8 +259,14 @@ export function ProjectLocationMap({
     setPosition(initialPosition, "已加载保存坐标", false);
   }, [initialPosition, setPosition]);
 
-  const unavailable = !AMAP_KEY || !AMAP_SECURITY_JS_CODE || !isReady;
+  const isReady = mapStatus === "ready";
   const canLocate = isEditable && isReady && Boolean(address.trim()) && !isLocating;
+
+  const stateContent = mapStatus === "loading"
+    ? { description: "正在连接高德地图服务", title: "地图加载中…" }
+    : mapStatus === "error"
+      ? { description: "可重新加载，也可以继续填写地址", title: "地图暂时无法加载" }
+      : { description: "请联系管理员完成地图服务配置", title: "地图服务暂未配置" };
 
   return (
     <aside className={`map-panel ${className}`.trim()}>
@@ -255,13 +285,21 @@ export function ProjectLocationMap({
           </button>
         </div>
       </div>
-      <div
-        aria-label={`${usageLabel}位置地图`}
-        className={unavailable ? "map-unavailable" : undefined}
-        id="project-map"
-        ref={mapElementRef}
-      />
-      {!isReady ? <span className="sr-only">{AMAP_KEY && AMAP_SECURITY_JS_CODE ? "正在加载在线地图" : "未配置高德地图密钥"}</span> : null}
+      <div aria-busy={mapStatus === "loading"} className="map-stage">
+        <div
+          aria-label={`${usageLabel}位置地图`}
+          className={!isReady ? "map-unavailable" : undefined}
+          id="project-map"
+          ref={mapElementRef}
+        />
+        {!isReady ? <div className={`map-state map-state--${mapStatus}`} role={mapStatus === "error" ? "alert" : "status"}>
+          {mapStatus === "loading"
+            ? <LoaderCircle aria-hidden="true" />
+            : <MapPin aria-hidden="true" />}
+          <div><strong>{stateContent.title}</strong><span>{stateContent.description}</span></div>
+          {mapStatus === "error" ? <button type="button" onClick={retryLoad}><RotateCcw aria-hidden="true" />重新加载</button> : null}
+        </div> : null}
+      </div>
       <div className="map-credit">
         <MapPin aria-hidden="true" />
         <span>{statusText}</span>

@@ -1,61 +1,497 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Check, Plus, Save, Trash2 } from "lucide-react";
-import { type FormEvent, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
+import { Send, X } from "lucide-react";
+import {
+  type FormEvent,
+  useEffect,
+  useRef,
+  useState
+} from "react";
+import { useNavigate } from "react-router-dom";
 
-import { createProject } from "@/api/projects";
-import { ProjectLocationMap } from "@/components/project/ProjectLocationMap";
-import type { ProjectCreatePayload } from "@/types/projects";
+import {
+  createProjectDraft,
+  createUploadBatch,
+  deletePhoto,
+  updateProject,
+  uploadPhoto
+} from "@/api/projects";
+import { ProjectPhotoUploader } from "@/components/project/ProjectPhotoUploader";
+import { ProjectWorkbenchShell } from "@/components/project/ProjectWorkbenchShell";
+import type { ProjectCreatePayload, ProjectDetail } from "@/types/projects";
 import { createClientId } from "@/utils/id";
 
-interface FacadeDraft { localId: string; name: string; area: string; floors_range: string; description: string }
-interface BuildingDraft { localId: string; name: string; floors: string; height: string; facades: FacadeDraft[] }
-interface ProjectDraft { name: string; address: string; contact_name: string; contact_phone: string; longitude: string; latitude: string; buildings: BuildingDraft[] }
-const facade = (): FacadeDraft => ({ localId: createClientId("facade"), name: "", area: "", floors_range: "", description: "" });
-const building = (): BuildingDraft => ({ localId: createClientId("building"), name: "", floors: "", height: "", facades: [facade()] });
-const initialProject: ProjectDraft = { name: "", address: "", contact_name: "", contact_phone: "", longitude: "", latitude: "", buildings: [building()] };
+const ACCEPTED_PHOTO_TYPES = new Set(["image/jpeg", "image/png"]);
+
+interface PendingPhoto {
+  localId: string;
+  file: File;
+  previewUrl: string;
+  remoteId?: string;
+  status: "pending" | "uploading" | "saved" | "failed";
+}
+
+interface ProjectDraft {
+  name: string;
+  address: string;
+  longitude: string;
+  latitude: string;
+  photos: PendingPhoto[];
+}
+
+type SaveStatus = "idle" | "saving" | "saved" | "error";
+
+const PROJECT_AUTO_SAVE_DELAY_MS = 600;
+
+function createInitialProject(): ProjectDraft {
+  return {
+    name: "",
+    address: "",
+    longitude: "",
+    latitude: "",
+    photos: []
+  };
+}
+
 const cleanText = (value: string) => value.trim() || null;
-const cleanNumber = (value: string) => value.trim() ? Number(value.trim()) : null;
 const cleanDecimal = (value: string) => value.trim() || null;
 
 function toPayload(form: ProjectDraft): { payload: ProjectCreatePayload | null; error: string } {
-  if (!form.name.trim()) return { payload: null, error: "请填写项目名称。" };
-  if (!form.buildings.length) return { payload: null, error: "请至少添加一栋建筑。" };
-  for (const [buildingIndex, item] of form.buildings.entries()) {
-    if (!item.name.trim()) return { payload: null, error: `请填写第 ${buildingIndex + 1} 栋建筑名称。` };
-    if (!item.facades.length) return { payload: null, error: `请为“${item.name.trim()}”至少添加一个检测立面。` };
-    for (const [facadeIndex, side] of item.facades.entries()) if (!side.name.trim()) return { payload: null, error: `请填写“${item.name.trim()}”第 ${facadeIndex + 1} 个立面名称。` };
-  }
-  return { error: "", payload: { name: form.name.trim(), address: cleanText(form.address), contact_name: cleanText(form.contact_name), contact_phone: cleanText(form.contact_phone), longitude: cleanDecimal(form.longitude), latitude: cleanDecimal(form.latitude), buildings: form.buildings.map((item, index) => ({ name: item.name.trim(), floors: cleanNumber(item.floors), height: cleanDecimal(item.height), sort_order: index, facades: item.facades.map((side, sideIndex) => ({ name: side.name.trim(), area: cleanDecimal(side.area), floors_range: cleanText(side.floors_range), description: cleanText(side.description), sort_order: sideIndex })) })) } };
+  return {
+    error: "",
+    payload: {
+      name: cleanText(form.name),
+      address: cleanText(form.address),
+      longitude: cleanDecimal(form.longitude),
+      latitude: cleanDecimal(form.latitude)
+    }
+  };
+}
+
+function validatePhoto(file: File) {
+  if (!ACCEPTED_PHOTO_TYPES.has(file.type)) return "图片格式不支持。";
+  if (!file.size) return "图片内容为空。";
+  return "";
+}
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "保存失败，请稍后重试。";
 }
 
 export function NewProjectPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [form, setForm] = useState<ProjectDraft>(initialProject);
+  const clientDraftKeyRef = useRef(createClientId("draft").slice(0, 64));
+  const previewUrlsRef = useRef(new Set<string>());
+  const [form, setForm] = useState<ProjectDraft>(() => createInitialProject());
+  const formRef = useRef(form);
+  const savedProjectRef = useRef<ProjectDetail | null>(null);
+  const autoSaveTimerRef = useRef<number | null>(null);
+  const syncRunningRef = useRef(false);
+  const syncQueuedRef = useRef(false);
+  const syncPromiseRef = useRef<Promise<ProjectDetail | null> | null>(null);
+  const formRevisionRef = useRef(0);
   const [formError, setFormError] = useState("");
-  const createMutation = useMutation({ mutationFn: createProject, onSuccess: async (project) => { await queryClient.invalidateQueries({ queryKey: ["projects"] }); navigate(`/projects/${project.id}`); } });
-  const field = (name: keyof Omit<ProjectDraft, "buildings">, value: string) => { setForm((current) => ({ ...current, [name]: value })); setFormError(""); };
-  const updateProjectPosition = (position: { longitude: number; latitude: number }) => { setForm((current) => ({ ...current, longitude: position.longitude.toFixed(7), latitude: position.latitude.toFixed(7) })); setFormError(""); };
-  const updateBuilding = (id: string, name: keyof Omit<BuildingDraft, "localId" | "facades">, value: string) => { setForm((current) => ({ ...current, buildings: current.buildings.map((item) => item.localId === id ? { ...item, [name]: value } : item) })); setFormError(""); };
-  const updateFacade = (buildingId: string, facadeId: string, name: keyof Omit<FacadeDraft, "localId">, value: string) => { setForm((current) => ({ ...current, buildings: current.buildings.map((item) => item.localId !== buildingId ? item : { ...item, facades: item.facades.map((side) => side.localId === facadeId ? { ...side, [name]: value } : side) }) })); setFormError(""); };
-  const addBuilding = () => setForm((current) => ({ ...current, buildings: [...current.buildings, building()] }));
-  const removeBuilding = (id: string) => setForm((current) => ({ ...current, buildings: current.buildings.filter((item) => item.localId !== id) }));
-  const addFacade = (id: string) => setForm((current) => ({ ...current, buildings: current.buildings.map((item) => item.localId === id ? { ...item, facades: [...item.facades, facade()] } : item) }));
-  const removeFacade = (buildingId: string, facadeId: string) => setForm((current) => ({ ...current, buildings: current.buildings.map((item) => item.localId !== buildingId ? item : { ...item, facades: item.facades.filter((side) => side.localId !== facadeId) }) }));
-  function handleSubmit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const result = toPayload(form); if (!result.payload) { setFormError(result.error); return; } setFormError(""); createMutation.mutate(result.payload); }
+  const [photoError, setPhotoError] = useState("");
+  const [saveError, setSaveError] = useState("");
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
+  const [saveMessage, setSaveMessage] = useState("");
+  const [startDetectionPending, setStartDetectionPending] = useState(false);
 
-  return <form className="create-workspace" onSubmit={handleSubmit}>
-    <section className="create-section"><div className="create-section-heading"><span className="section-index">01</span><div><h2>项目基础信息</h2></div></div><div className="basic-layout"><div className="project-fields">
-      <Label label="项目名称" required className="full-field"><input value={form.name} placeholder="请输入项目名称" onChange={(event) => field("name", event.target.value)} /></Label>
-      <Label label="联系人"><input value={form.contact_name} placeholder="请输入联系人" onChange={(event) => field("contact_name", event.target.value)} /></Label>
-      <Label label="联系电话"><input value={form.contact_phone} placeholder="请输入联系电话" onChange={(event) => field("contact_phone", event.target.value)} /></Label>
-      <Label label="项目位置" className="full-field"><input value={form.address} placeholder="请输入详细地址" onChange={(event) => field("address", event.target.value)} /></Label>
-    </div><ProjectLocationMap address={form.address} className="project-location-map" onPositionChange={updateProjectPosition} /></div></section>
-    <section className="create-section"><div className="create-section-heading buildings-heading"><span className="section-index">02</span><div><h2>建筑与检测立面</h2></div><button className="add-building-button" type="button" onClick={addBuilding}><Plus aria-hidden="true" />添加建筑</button></div><div className="building-list">{form.buildings.map((item, buildingIndex) => <article key={item.localId} className="building-card"><div className="building-card-header"><div className="building-toggle"><span className="building-number">建筑 {buildingIndex + 1}</span><span className="building-heading-copy"><strong>{item.name || "未命名建筑"}</strong><small>维护建筑基础信息与检测立面</small></span></div><button aria-label="删除建筑" className="remove-building-button" disabled={form.buildings.length <= 1} type="button" onClick={() => removeBuilding(item.localId)}><Trash2 aria-hidden="true" />删除</button></div><div className="building-card-body"><div className="building-fields"><Label label="建筑名称" required><input value={item.name} placeholder="例如：A栋" onChange={(event) => updateBuilding(item.localId, "name", event.target.value)} /></Label><Label label="楼层数"><input value={item.floors} inputMode="numeric" placeholder="例如：28" onChange={(event) => updateBuilding(item.localId, "floors", event.target.value)} /></Label><Label label="建筑高度"><div className="unit-control"><input value={item.height} inputMode="decimal" placeholder="例如：96" onChange={(event) => updateBuilding(item.localId, "height", event.target.value)} /><em>m</em></div></Label></div><div className="facade-editor"><div className="facade-editor-heading"><div><h3>检测立面信息</h3></div><button className="add-facade-button" type="button" onClick={() => addFacade(item.localId)}><Plus aria-hidden="true" />添加立面</button></div><div className="facade-table-head"><span>序号</span><span>立面名称</span><span>操作</span></div><div className="facade-list">{item.facades.map((side, sideIndex) => <div key={side.localId} className="facade-row"><span className="facade-index">{String(sideIndex + 1).padStart(2, "0")}</span><label><span className="sr-only">立面名称</span><input value={side.name} placeholder="例如：东立面" onChange={(event) => updateFacade(item.localId, side.localId, "name", event.target.value)} /></label><button aria-label="删除立面" className="remove-facade-button" disabled={item.facades.length <= 1} type="button" onClick={() => removeFacade(item.localId, side.localId)}><Trash2 aria-hidden="true" /></button></div>)}</div></div></div></article>)}</div></section>
-    {(formError || createMutation.isError) ? <p className="create-form-error">{formError || "保存失败，请稍后重试。"}</p> : null}
-    <div className="create-action-bar"><div className="create-summary"><Check aria-hidden="true" />已配置 {form.buildings.length} 栋建筑、{form.buildings.reduce((total, item) => total + item.facades.length, 0)} 个检测立面</div><div><Link className="button secondary" to="/projects"><ArrowLeft aria-hidden="true" />返回列表</Link><button className="button primary" disabled={createMutation.isPending} type="submit"><Save aria-hidden="true" />{createMutation.isPending ? "正在保存" : "保存并进入详情"}</button></div></div>
-  </form>;
+  useEffect(() => () => {
+    if (autoSaveTimerRef.current !== null) {
+      window.clearTimeout(autoSaveTimerRef.current);
+    }
+    previewUrlsRef.current.forEach((previewUrl) => URL.revokeObjectURL(previewUrl));
+    previewUrlsRef.current.clear();
+  }, []);
+
+  const replaceForm = (nextForm: ProjectDraft) => {
+    formRef.current = nextForm;
+    setForm(nextForm);
+  };
+
+  const updatePhoto = (
+    localId: string,
+    update: Partial<Pick<PendingPhoto, "remoteId" | "status">>
+  ) => {
+    replaceForm({
+      ...formRef.current,
+      photos: formRef.current.photos.map((photo) => (
+        photo.localId === localId ? { ...photo, ...update } : photo
+      ))
+    });
+  };
+
+  const syncDraftOnce = async () => {
+    const revisionAtStart = formRevisionRef.current;
+    const result = toPayload(formRef.current);
+    if (!result.payload) {
+      setFormError(result.error);
+      throw new Error(result.error);
+    }
+
+    setSaveStatus("saving");
+    setSaveMessage(savedProjectRef.current ? "正在自动保存…" : "正在创建项目…");
+    setSaveError("");
+
+    let project = savedProjectRef.current;
+    if (project) {
+      project = await updateProject(project.id, {
+        name: result.payload.name,
+        address: result.payload.address,
+        longitude: result.payload.longitude,
+        latitude: result.payload.latitude
+      });
+    } else {
+      project = await createProjectDraft({
+        ...result.payload,
+        client_draft_key: clientDraftKeyRef.current
+      });
+    }
+    savedProjectRef.current = project;
+
+    const photosToUpload = formRef.current.photos.filter(
+      (photo) => !photo.remoteId && photo.status !== "uploading"
+    );
+    if (photosToUpload.length) {
+      setSaveMessage("正在上传照片…");
+      photosToUpload.forEach((photo) => updatePhoto(photo.localId, { status: "uploading" }));
+      let batch;
+      try {
+        batch = await createUploadBatch(project.id, {
+          drone_type: "大疆型号",
+          remark: null,
+          upload_mode: "dji"
+        });
+      } catch (error) {
+        photosToUpload.forEach((photo) => updatePhoto(photo.localId, { status: "failed" }));
+        throw error;
+      }
+      let failedUploadCount = 0;
+
+      for (const photo of photosToUpload) {
+        try {
+          const photoPayload = new FormData();
+          photoPayload.append("project_id", project.id);
+          photoPayload.append("upload_batch_id", batch.id);
+          photoPayload.append("photo_type", "dji");
+          photoPayload.append("file", photo.file);
+          const uploadedPhoto = await uploadPhoto(photoPayload);
+          updatePhoto(photo.localId, {
+            remoteId: uploadedPhoto.id,
+            status: "saved"
+          });
+        } catch {
+          failedUploadCount += 1;
+          updatePhoto(photo.localId, { status: "failed" });
+        }
+      }
+
+      if (failedUploadCount) {
+        throw new Error(`${failedUploadCount} 张照片上传失败，请稍后重试。`);
+      }
+    }
+
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["projects"], exact: true }),
+      queryClient.invalidateQueries({ queryKey: ["projects", project.id], exact: true }),
+      queryClient.invalidateQueries({
+        queryKey: ["projects", project.id, "photos"],
+        exact: true
+      })
+    ]);
+
+    if (formRevisionRef.current === revisionAtStart) {
+      setSaveStatus("saved");
+      setSaveMessage("已保存");
+    }
+    return project;
+  };
+
+  const runDraftSync = async (): Promise<ProjectDetail | null> => {
+    if (syncRunningRef.current) {
+      syncQueuedRef.current = true;
+      return syncPromiseRef.current;
+    }
+
+    syncRunningRef.current = true;
+    const syncPromise = (async () => {
+      do {
+        syncQueuedRef.current = false;
+        await syncDraftOnce();
+      } while (syncQueuedRef.current);
+      return savedProjectRef.current;
+    })();
+    syncPromiseRef.current = syncPromise;
+
+    try {
+      return await syncPromise;
+    } catch (error) {
+      setSaveStatus("error");
+      setSaveMessage("保存失败");
+      setSaveError(getErrorMessage(error));
+      throw error;
+    } finally {
+      syncRunningRef.current = false;
+      syncPromiseRef.current = null;
+    }
+  };
+
+  const scheduleDraftSync = () => {
+    if (autoSaveTimerRef.current !== null) {
+      window.clearTimeout(autoSaveTimerRef.current);
+    }
+    setSaveStatus("saving");
+    setSaveMessage("正在自动保存…");
+    autoSaveTimerRef.current = window.setTimeout(() => {
+      autoSaveTimerRef.current = null;
+      void runDraftSync().catch(() => undefined);
+    }, PROJECT_AUTO_SAVE_DELAY_MS);
+  };
+
+  const field = (name: keyof Omit<ProjectDraft, "photos">, value: string) => {
+    replaceForm({ ...formRef.current, [name]: value });
+    formRevisionRef.current += 1;
+    setFormError("");
+    setSaveError("");
+    if (savedProjectRef.current || syncRunningRef.current) {
+      scheduleDraftSync();
+    } else {
+      setSaveStatus("idle");
+      setSaveMessage("");
+    }
+  };
+
+  const applyFiles = (files: File[]) => {
+    if (!files.length || startDetectionPending) return;
+
+    const rejectionMessages: string[] = [];
+    const validFiles = files.filter((file) => {
+      const message = validatePhoto(file);
+      if (!message) return true;
+      rejectionMessages.push(`${file.name}：${message}`);
+      return false;
+    });
+    if (!validFiles.length) {
+      setPhotoError(rejectionMessages[0] ?? "未选择可上传的图片。");
+      return;
+    }
+
+    const pendingPhotos = validFiles.map((file): PendingPhoto => {
+      const previewUrl = URL.createObjectURL(file);
+      previewUrlsRef.current.add(previewUrl);
+      return {
+        localId: createClientId("project-photo"),
+        file,
+        previewUrl,
+        status: "pending"
+      };
+    });
+    const nextForm: ProjectDraft = {
+      ...formRef.current,
+      photos: [...formRef.current.photos, ...pendingPhotos]
+    };
+    replaceForm(nextForm);
+    formRevisionRef.current += 1;
+
+    setPhotoError(rejectionMessages[0] ?? "");
+    setSaveError("");
+    if (autoSaveTimerRef.current !== null) {
+      window.clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = null;
+    }
+    void runDraftSync().catch(() => undefined);
+  };
+
+  const removePendingPhoto = async (photoId: string) => {
+    const removedPhoto = formRef.current.photos.find((photo) => photo.localId === photoId);
+    if (!removedPhoto || saveStatus === "saving" || startDetectionPending) return;
+
+    setSaveStatus("saving");
+    setSaveMessage("正在自动保存…");
+    setSaveError("");
+    try {
+      if (removedPhoto.remoteId) {
+        await deletePhoto(removedPhoto.remoteId);
+      }
+      URL.revokeObjectURL(removedPhoto.previewUrl);
+      previewUrlsRef.current.delete(removedPhoto.previewUrl);
+      replaceForm({
+        ...formRef.current,
+        photos: formRef.current.photos.filter((photo) => photo.localId !== photoId)
+      });
+      formRevisionRef.current += 1;
+      if (savedProjectRef.current) {
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ["projects"], exact: true }),
+          queryClient.invalidateQueries({
+            queryKey: ["projects", savedProjectRef.current.id, "photos"],
+            exact: true
+          })
+        ]);
+        setSaveStatus("saved");
+        setSaveMessage("已保存");
+      } else {
+        setSaveStatus("idle");
+        setSaveMessage("");
+      }
+    } catch (error) {
+      setSaveStatus("error");
+      setSaveMessage("保存失败");
+      setSaveError(getErrorMessage(error));
+    }
+    setPhotoError("");
+  };
+
+  const flushDraftSync = () => {
+    if (!savedProjectRef.current) return;
+    if (saveStatus !== "saving" && saveStatus !== "error") return;
+    if (autoSaveTimerRef.current !== null) {
+      window.clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = null;
+    }
+    void runDraftSync().catch(() => undefined);
+  };
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+  }
+
+  const startDetection = async () => {
+    if (!formRef.current.photos.length) {
+      setFormError("请至少上传一张照片后再开始 AI 检测。");
+      return;
+    }
+    if (autoSaveTimerRef.current !== null) {
+      window.clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = null;
+    }
+
+    setFormError("");
+    setStartDetectionPending(true);
+    try {
+      const project = await runDraftSync();
+      const uploadedPhotoCount = formRef.current.photos.filter((photo) => photo.remoteId).length;
+      if (!project || !uploadedPhotoCount) {
+        throw new Error("照片尚未保存完成，请稍后重试。");
+      }
+      navigate(`/projects/${project.id}`, {
+        state: { openDetectionModal: true }
+      });
+    } catch (error) {
+      setFormError(getErrorMessage(error));
+    } finally {
+      setStartDetectionPending(false);
+    }
+  };
+
+  const isSaving = saveStatus === "saving";
+
+  return (
+    <ProjectWorkbenchShell actionLabel="返回" title="新增检测项目">
+      <form className="create-workspace" onSubmit={handleSubmit}>
+        <section className="project-editor-panel" aria-label="新建项目">
+          <div className="project-editor-block project-fields project-editor-basic-fields">
+            <Label label="项目名称">
+              <input
+                value={form.name}
+                placeholder="请输入项目名称"
+                onBlur={flushDraftSync}
+                onChange={(event) => field("name", event.target.value)}
+              />
+            </Label>
+            <Label label="项目位置">
+              <input
+                value={form.address}
+                placeholder="请输入详细地址"
+                onBlur={flushDraftSync}
+                onChange={(event) => field("address", event.target.value)}
+              />
+            </Label>
+          </div>
+
+          <div className="project-editor-block project-editor-photo-block">
+            <section className="project-photo-workspace" aria-labelledby="new-project-photo-title">
+              <header className="project-photo-workspace-heading">
+                <h2 id="new-project-photo-title">检测照片</h2>
+                <span>{form.photos.length} 张</span>
+              </header>
+              <ProjectPhotoUploader
+                addDisabled={startDetectionPending}
+                disabled={startDetectionPending}
+                hasPhotos={Boolean(form.photos.length)}
+                onFilesSelected={applyFiles}
+              >
+                {form.photos.map((photo) => (
+                  <figure className={`project-photo-thumb is-${photo.status}`} key={photo.localId}>
+                    <div className="project-photo-thumb-image">
+                      <img alt={photo.file.name} src={photo.previewUrl} />
+                      <button
+                        aria-label={`移除 ${photo.file.name}`}
+                        className="new-project-photo-remove"
+                        disabled={isSaving || startDetectionPending}
+                        title="移除"
+                        type="button"
+                        onClick={() => void removePendingPhoto(photo.localId)}
+                      >
+                        <X aria-hidden="true" />
+                      </button>
+                    </div>
+                    <figcaption>{photo.file.name}</figcaption>
+                  </figure>
+                ))}
+              </ProjectPhotoUploader>
+              {photoError ? <p className="project-photo-error">{photoError}</p> : null}
+            </section>
+          </div>
+
+          {(formError || saveError) ? (
+            <p className="create-form-error">{formError || saveError}</p>
+          ) : null}
+          <div className="create-action-bar new-project-action-bar">
+            <div>
+              {saveMessage ? (
+                <span
+                  className={`new-project-save-status is-${saveStatus}`}
+                  role="status"
+                >
+                  {saveMessage}
+                </span>
+              ) : null}
+              <button
+                className="button primary start-ai-detection-button"
+                disabled={startDetectionPending}
+                type="button"
+                onClick={() => void startDetection()}
+              >
+                <Send aria-hidden="true" />
+                {startDetectionPending
+                  ? "正在准备…"
+                  : "开始AI检测"}
+              </button>
+            </div>
+          </div>
+        </section>
+      </form>
+    </ProjectWorkbenchShell>
+  );
 }
 
-function Label({ label, required, className = "", children }: { label: string; required?: boolean; className?: string; children: React.ReactNode }) { return <label className={`form-field ${className}`}><span>{label}{required ? <b>*</b> : null}</span>{children}</label>; }
+function Label({
+  label,
+  required,
+  className = "",
+  children
+}: {
+  label: string;
+  required?: boolean;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className={`form-field ${className}`}>
+      <span>{label}：{required ? <b>*</b> : null}</span>
+      {children}
+    </label>
+  );
+}

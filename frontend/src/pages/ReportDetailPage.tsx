@@ -4,36 +4,46 @@ import {
   ArrowLeft,
   CheckCircle2,
   Download,
+  FileCheck2,
   FileImage,
   FileText,
+  Minus,
+  Plus,
+  RotateCcw,
   Send,
   ZoomIn
 } from "lucide-react";
-import type { CSSProperties, ReactNode } from "react";
-import { useMemo, useState } from "react";
+import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Link as RouterLink, useParams, useSearchParams } from "react-router-dom";
 
-import { downloadReportDocx, pushReport, reportQueryOptions } from "@/api/reports";
+import { downloadReportDocx, downloadTrialReportPdf, pushReport, reportQueryOptions } from "@/api/reports";
 import { ModelOutputDialog } from "@/components/ModelOutputDialog";
 import { TilePreviewDialog, type TilePreviewSource } from "@/components/TilePreviewDialog";
 import { StatusPill } from "@/components/StatusPill";
 import type {
   ModelOutputPhoto,
-  ReportBuildingSnapshot,
   ReportDefectSnapshot,
   ReportDetail
 } from "@/types/reports";
 import { useAuthStore } from "@/stores/useAuthStore";
 import { formatDateTime } from "@/utils/projectDisplay";
 import { saveBlobAsFile } from "@/utils/download";
-import { formatModelOutputs, hasModelOutputs } from "@/utils/modelOutputs";
+import {
+  formatModelOutputs,
+  formatTileTokenUsages,
+  hasModelOutputs,
+  hasTileTokenUsages
+} from "@/utils/modelOutputs";
 import { trialDefectBoxLabel, trialDefectDescriptionFromType, trialDefectDisplayFromType } from "@/utils/trialDefectDisplay";
 
 const DEFECT_LABELS: Record<string, string> = {
   crack: "裂缝",
   missing: "剥落",
   spalling: "剥落",
-  moisture: "潮湿"
+  moisture: "潮湿",
+  corrosion: "锈蚀",
+  hollow: "空鼓"
 };
 
 const REVIEW_STATUS_LABELS: Record<string, string> = {
@@ -58,6 +68,10 @@ const REPORT_STATUS_TONES = {
   revoked: "danger"
 } as const;
 
+function confirmReportExport() {
+  return window.confirm("请妥善保管导出文件。确认继续导出？");
+}
+
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "操作失败，请稍后重试。";
 }
@@ -68,6 +82,7 @@ export function ReportDetailPage() {
   const queryClient = useQueryClient();
   const user = useAuthStore((state) => state.user);
   const canManageReports = user?.role === "reviewer" || user?.role === "admin";
+  const canShowTile = user?.role === "admin";
   const includeGenerated = canManageReports && searchParams.get("mode") === "review";
   const reportQuery = useQuery(reportQueryOptions(id, includeGenerated, user));
   const report = reportQuery.data;
@@ -105,7 +120,13 @@ export function ReportDetailPage() {
     () => formatModelOutputs(report?.raw_model_outputs),
     [report?.raw_model_outputs]
   );
-  const canShowModelOutputs = hasModelOutputs(report?.raw_model_outputs);
+  const tileTokenText = useMemo(
+    () => hasTileTokenUsages(report?.raw_model_outputs)
+      ? formatTileTokenUsages(report?.raw_model_outputs)
+      : null,
+    [report?.raw_model_outputs]
+  );
+  const canShowModelOutputs = user?.role === "admin" && hasModelOutputs(report?.raw_model_outputs);
 
   if (reportQuery.isLoading) {
     return (
@@ -125,14 +146,22 @@ export function ReportDetailPage() {
             <p className="text-sm font-bold text-red-700">
               {getErrorMessage(reportQuery.error)}
             </p>
-            <Button
-              as={RouterLink}
-              className="w-fit rounded-lg border border-slate-300 bg-white font-bold text-slate-700 shadow-none"
-              to="/reports"
-              variant="flat"
-            >
-              返回结果列表
-            </Button>
+            <div className="flex flex-wrap gap-3">
+              <Button
+                className="w-fit rounded-lg bg-primary font-bold text-white shadow-none"
+                onPress={() => void reportQuery.refetch()}
+              >
+                重新加载
+              </Button>
+              <Button
+                as={RouterLink}
+                className="report-back-button w-fit rounded-lg border border-slate-300 bg-white font-bold text-slate-700 shadow-none"
+                to="/reports"
+                variant="flat"
+              >
+                返回列表
+              </Button>
+            </div>
           </CardBody>
         </Card>
       </div>
@@ -141,7 +170,10 @@ export function ReportDetailPage() {
 
   if (isTrialResult) {
     return (
-      <TrialResultDetail report={report} />
+      <TrialResultDetail
+        report={report}
+        canShowTile={canShowTile}
+      />
     );
   }
 
@@ -164,19 +196,21 @@ export function ReportDetailPage() {
         <div className="flex flex-wrap gap-3">
           <Button
             as={RouterLink}
-            className="rounded-lg border border-slate-300 bg-white font-bold text-slate-700 shadow-none"
+            className="report-back-button rounded-lg border border-slate-300 bg-white font-bold text-slate-700 shadow-none"
             startContent={<ArrowLeft className="h-4 w-4" aria-hidden="true" />}
             to={includeGenerated ? "/review" : "/reports"}
             variant="flat"
           >
-            {includeGenerated ? "返回工作台" : "返回结果列表"}
+            {includeGenerated ? "返回工作台" : "返回列表"}
           </Button>
           <Button
             className="rounded-lg border border-slate-300 bg-white font-bold text-slate-700 shadow-none"
             isLoading={downloadMutation.isPending}
             startContent={<Download className="h-4 w-4" aria-hidden="true" />}
             variant="flat"
-            onPress={() => downloadMutation.mutate()}
+            onPress={() => {
+              if (confirmReportExport()) downloadMutation.mutate();
+            }}
           >
             下载 DOCX
           </Button>
@@ -197,6 +231,10 @@ export function ReportDetailPage() {
           ) : null}
         </div>
       </section>
+      <p className="report-export-privacy-note" role="note">
+        报告可能包含项目位置和检测照片；导出后请限制接收范围并安全保管。
+        <RouterLink to="/privacy">查看隐私政策</RouterLink>
+      </p>
 
       {message ? (
         <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700">
@@ -210,11 +248,16 @@ export function ReportDetailPage() {
         </div>
       ) : null}
 
-      <section className="grid gap-4 lg:grid-cols-4">
+      {downloadMutation.isError ? (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
+          DOCX 下载失败：{getErrorMessage(downloadMutation.error)}
+          <button className="ml-2 underline" type="button" onClick={() => downloadMutation.mutate()}>重试</button>
+        </div>
+      ) : null}
+
+      <section className="grid gap-4 md:grid-cols-2">
         <MetricBlock label="缺陷总数" value={String(summary.total_review_results ?? defects.length)} />
         <MetricBlock label="照片数量" value={String(summary.photo_count ?? report.photos.length)} />
-        <MetricBlock label="建筑数量" value={String(summary.building_count ?? report.buildings.length)} />
-        <MetricBlock label="立面数量" value={String(summary.facade_count ?? countFacades(report.buildings))} />
       </section>
 
       <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
@@ -232,8 +275,6 @@ export function ReportDetailPage() {
                 <InfoItem label="项目名称" value={report.project.name} />
                 <InfoItem label="项目编号" value={report.project.project_no || report.report_no} />
                 <InfoItem label="委托单位" value={report.project.client_name} />
-                <InfoItem label="联系人" value={report.project.contact_name} />
-                <InfoItem label="联系电话" value={report.project.contact_phone} />
                 <InfoItem
                   label="项目地址"
                   value={[
@@ -275,7 +316,6 @@ export function ReportDetailPage() {
                       <tr>
                         <th className="border-b border-slate-200 px-5 py-3">图片</th>
                         <th className="border-b border-slate-200 px-5 py-3">缺陷</th>
-                        <th className="border-b border-slate-200 px-5 py-3">位置</th>
                         <th className="border-b border-slate-200 px-5 py-3">标注框</th>
                         <th className="border-b border-slate-200 px-5 py-3">严重度</th>
                         <th className="border-b border-slate-200 px-5 py-3">置信度</th>
@@ -346,26 +386,13 @@ export function ReportDetailPage() {
             </CardBody>
           </Card>
 
-          <Card className="rounded-lg border border-slate-200 shadow-none">
-            <CardBody className="gap-4 p-5">
-              <h2 className="text-lg font-black text-ink">建筑与立面</h2>
-              {report.buildings.length ? (
-                <div className="grid gap-3">
-                  {report.buildings.map((building, index) => (
-                    <BuildingBlock key={building.id || index} building={building} />
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm font-semibold text-slate-500">暂无建筑信息。</p>
-              )}
-            </CardBody>
-          </Card>
         </aside>
       </section>
     </div>
-    {isModelOutputOpen ? (
+    {canShowModelOutputs && isModelOutputOpen ? (
       <ModelOutputDialog
         text={modelOutputText}
+        tileTokenText={tileTokenText}
         onClose={() => setIsModelOutputOpen(false)}
       />
     ) : null}
@@ -373,123 +400,126 @@ export function ReportDetailPage() {
   );
 }
 
-function TrialResultDetail({ report }: { report: ReportDetail }) {
+function TrialResultDetail({
+  report,
+  canShowTile
+}: {
+  report: ReportDetail;
+  canShowTile: boolean;
+}) {
   const [annotatedPreview, setAnnotatedPreview] = useState<TrialReportAnnotatedPreview | null>(null);
-  const [photoPreview, setPhotoPreview] = useState<TrialReportPhotoPreview | null>(null);
-  const [isModelOutputOpen, setIsModelOutputOpen] = useState(false);
+  const [previewScale, setPreviewScale] = useState(1);
+  const [previewOffset, setPreviewOffset] = useState({ x: 0, y: 0 });
+  const previewViewportRef = useRef<HTMLDivElement | null>(null);
+  const previewDrag = useRef<{ pointerId: number; x: number; y: number; originX: number; originY: number } | null>(null);
+  const previewDragMoved = useRef(false);
   const [tilePreview, setTilePreview] = useState<TilePreviewSource | null>(null);
+  const pdfMutation = useMutation({
+    mutationFn: () => downloadTrialReportPdf(report.id),
+    onSuccess: (blob) => {
+      saveBlobAsFile(blob, `${report.report_no}-${report.title}.pdf`);
+    }
+  });
   const resultRows = useMemo(() => buildTrialResultRows(report), [report]);
-  const modelOutputText = useMemo(
-    () => formatModelOutputs(report.raw_model_outputs),
-    [report.raw_model_outputs]
-  );
-  const canShowModelOutputs = hasModelOutputs(report.raw_model_outputs);
+  function clampPreviewOffset(offset: { x: number; y: number }, scale: number) {
+    const viewport = previewViewportRef.current;
+    if (!viewport || scale <= 1) return { x: 0, y: 0 };
+    const maxX = (viewport.clientWidth * (scale - 1)) / 2;
+    const maxY = (viewport.clientHeight * (scale - 1)) / 2;
+    return {
+      x: Math.max(-maxX, Math.min(maxX, offset.x)),
+      y: Math.max(-maxY, Math.min(maxY, offset.y))
+    };
+  }
+
+  function updatePreviewScale(nextScale: number) {
+    const scale = Math.min(4, Math.max(1, nextScale));
+    setPreviewScale(scale);
+    setPreviewOffset((current) => clampPreviewOffset(current, scale));
+  }
+
+  function resetPreviewView() {
+    setPreviewScale(1);
+    setPreviewOffset({ x: 0, y: 0 });
+  }
+
+  function closeAnnotatedPreview() {
+    setAnnotatedPreview(null);
+    resetPreviewView();
+  }
+
+  function handleAnnotatedPreviewBackdropClick(event: ReactMouseEvent<HTMLDivElement>) {
+    if (previewDragMoved.current) return;
+    const target = event.target;
+    if (
+      target instanceof Element
+      && target.closest(".trial-photo-preview-toolbar, .trial-photo-preview-annotated, figcaption")
+    ) return;
+    closeAnnotatedPreview();
+  }
 
   return (
     <div className="trial-result-detail-page">
       <div className="trial-result-toolbar">
         <div className="trial-result-title-block">
-          <h1>{report.title || "简易AI检测结果"}</h1>
-          <p>生成时间：{formatDateTime(report.generated_at)}</p>
+          <div className="trial-result-name-row management-page-title">
+            <FileCheck2 aria-hidden="true" className="management-page-title-icon" />
+            <h1>{report.title || report.project.project_no || report.report_no}</h1>
+          </div>
+          <p className="trial-result-generated-at">
+            <span>生成于</span>
+            <time dateTime={report.generated_at}>{formatDateTime(report.generated_at)}</time>
+          </p>
         </div>
-        <RouterLink className="button secondary" to="/reports">
-          <ArrowLeft aria-hidden="true" />返回结果列表
-        </RouterLink>
+        <div className="flex flex-wrap gap-3">
+          <button
+            aria-busy={pdfMutation.isPending}
+            className="button secondary report-back-button report-export-button"
+            disabled={pdfMutation.isPending}
+            type="button"
+            onClick={() => {
+              if (confirmReportExport()) pdfMutation.mutate();
+            }}
+          >
+            <Download aria-hidden="true" />
+            {pdfMutation.isPending ? "正在导出" : "导出 PDF"}
+          </button>
+          <RouterLink className="button secondary report-back-button" to="/reports">
+            <ArrowLeft aria-hidden="true" />返回列表
+          </RouterLink>
+        </div>
       </div>
+      {pdfMutation.isError ? (
+        <p className="project-list-error">PDF 导出失败：{getErrorMessage(pdfMutation.error)}<button className="inline-retry-button" type="button" onClick={() => pdfMutation.mutate()}>重试</button></p>
+      ) : null}
       <div className="trial-experience-shell trial-experience-content-shell trial-result-detail-shell">
         <section className="trial-experience-grid">
-          <div className="trial-upload-panel">
-            <div className="trial-panel-heading">
-              <div>
-                <h2>检测照片</h2>
-              </div>
-            </div>
-            {report.photos.length ? (
-              <div className="trial-photo-grid trial-result-photo-grid">
-                {report.photos.map((photo, index) => {
-                  const filename = photo.original_filename || "未命名照片";
-                  const canPreview = Boolean(photo.preview_url);
-
-                  return (
-                    <figure
-                      key={photo.id || `${photo.original_filename}-${index}`}
-                      className={`trial-photo-thumb ${canPreview ? "is-previewable" : ""}`}
-                    >
-                      <div
-                        className="trial-photo-thumb-image"
-                        title={canPreview ? "点击放大查看" : undefined}
-                        onClick={() => {
-                          if (photo.preview_url) {
-                            setPhotoPreview({ filename, imageUrl: photo.preview_url });
-                            setAnnotatedPreview(null);
-                          }
-                        }}
-                      >
-                        {photo.preview_url ? (
-                          <img alt={filename} src={photo.preview_url} />
-                        ) : (
-                          <div className="trial-result-photo-placeholder"><FileImage aria-hidden="true" /></div>
-                        )}
-                        {photo.thermal_imaging_available ? (
-                          <span className="trial-thermal-available-tag">热成像可用</span>
-                        ) : null}
-                        {canPreview ? (
-                          <div className="trial-photo-thumb-actions">
-                            <button
-                              type="button"
-                              aria-label="放大查看检测照片"
-                              title="放大查看"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                if (photo.preview_url) {
-                                  setPhotoPreview({ filename, imageUrl: photo.preview_url });
-                                  setAnnotatedPreview(null);
-                                }
-                              }}
-                            >
-                              <ZoomIn aria-hidden="true" />
-                            </button>
-                          </div>
-                        ) : null}
-                      </div>
-                      <figcaption>{filename}</figcaption>
-                    </figure>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="trial-result-photo-empty">
-                <FileImage aria-hidden="true" />
-                <strong>暂无检测结果</strong>
-              </div>
-            )}
-          </div>
-
           <aside className="trial-report-panel">
             <div className="trial-report-result">
               <div className="trial-report-head">
                 <div className="trial-report-title-row">
                   <h2>检测结果明细</h2>
-                  {canShowModelOutputs ? (
-                    <button
-                      className="model-output-link"
-                      type="button"
-                      onClick={() => setIsModelOutputOpen(true)}
-                    >
-                      模型原始输出
-                    </button>
-                  ) : null}
+                  <small className="trial-result-review-note">AI检测不能替代现场复核</small>
                 </div>
               </div>
               {resultRows.length ? (
                 <div className="trial-report-table-wrap">
-                  <table className="trial-report-table">
+                  <table
+                    className={`trial-report-table${canShowTile ? "" : " trial-report-table--without-tile"}`}
+                  >
+                    {!canShowTile ? (
+                      <colgroup>
+                        <col className="trial-sequence-col" />
+                        <col className="trial-photo-col" />
+                        <col className="trial-description-col" />
+                      </colgroup>
+                    ) : null}
                     <thead>
                       <tr>
-                        <th>序号</th>
-                        <th>含标注的照片</th>
-                        <th>检测说明</th>
-                        <th>tile</th>
+                        <th className="trial-sequence-column">序号</th>
+                        <th className="trial-photo-column">含标注的照片</th>
+                        <th className="trial-report-description">检测说明</th>
+                        {canShowTile ? <th className="trial-tile-column">tile</th> : null}
                       </tr>
                     </thead>
                     <tbody>
@@ -498,9 +528,10 @@ function TrialResultDetail({ report }: { report: ReportDetail }) {
                           key={row.key}
                           row={row}
                           index={index}
+                          canShowTile={canShowTile}
                           onPreview={(preview) => {
+                            resetPreviewView();
                             setAnnotatedPreview(preview);
-                            setPhotoPreview(null);
                           }}
                           onTilePreview={setTilePreview}
                         />
@@ -519,21 +550,77 @@ function TrialResultDetail({ report }: { report: ReportDetail }) {
           </aside>
         </section>
       </div>
-      {annotatedPreview || photoPreview ? (
+      {annotatedPreview ? (
         <div
           className="trial-photo-preview-modal"
           role="dialog"
           aria-modal="true"
-          aria-label={annotatedPreview ? "含标注的照片预览" : "检测照片预览"}
-          onClick={() => {
-            setAnnotatedPreview(null);
-            setPhotoPreview(null);
-          }}
+          aria-label="含标注的照片预览"
+          onClick={handleAnnotatedPreviewBackdropClick}
         >
-          <figure onClick={(event) => event.stopPropagation()}>
-            {annotatedPreview ? (
-              <div className="trial-annotated-photo trial-photo-preview-annotated">
-                <img alt={`${annotatedPreview.filename} 检测标注预览`} src={annotatedPreview.imageUrl} />
+          <figure>
+            <div className="trial-photo-preview-toolbar" aria-label="照片缩放控制">
+              <button type="button" aria-label="缩小照片" title="缩小" disabled={previewScale <= 1} onClick={() => updatePreviewScale(previewScale - 0.25)}>
+                <Minus aria-hidden="true" />
+              </button>
+              <output aria-label="当前缩放比例">{Math.round(previewScale * 100)}%</output>
+              <button type="button" aria-label="放大照片" title="放大" disabled={previewScale >= 4} onClick={() => updatePreviewScale(previewScale + 0.25)}>
+                <Plus aria-hidden="true" />
+              </button>
+              <button type="button" aria-label="恢复照片原始大小" title="恢复原始大小" onClick={resetPreviewView}>
+                <RotateCcw aria-hidden="true" />
+              </button>
+            </div>
+            <div
+              ref={previewViewportRef}
+              className={`trial-photo-preview-viewport ${previewScale > 1 ? "is-draggable" : ""}`}
+              onWheel={(event) => {
+                event.preventDefault();
+                updatePreviewScale(previewScale + (event.deltaY < 0 ? 0.25 : -0.25));
+              }}
+              onPointerDown={(event) => {
+                if (previewScale <= 1 || (event.pointerType === "mouse" && event.button !== 0)) return;
+                event.preventDefault();
+                previewDragMoved.current = false;
+                event.currentTarget.setPointerCapture(event.pointerId);
+                previewDrag.current = {
+                  pointerId: event.pointerId,
+                  x: event.clientX,
+                  y: event.clientY,
+                  originX: previewOffset.x,
+                  originY: previewOffset.y
+                };
+              }}
+              onPointerMove={(event) => {
+                if (!previewDrag.current || previewDrag.current.pointerId !== event.pointerId) return;
+                if (
+                  Math.abs(event.clientX - previewDrag.current.x)
+                  + Math.abs(event.clientY - previewDrag.current.y) >= 3
+                ) previewDragMoved.current = true;
+                setPreviewOffset(clampPreviewOffset({
+                  x: previewDrag.current.originX + event.clientX - previewDrag.current.x,
+                  y: previewDrag.current.originY + event.clientY - previewDrag.current.y
+                }, previewScale));
+              }}
+              onPointerUp={(event) => {
+                if (previewDrag.current?.pointerId !== event.pointerId) return;
+                previewDrag.current = null;
+                if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+                  event.currentTarget.releasePointerCapture(event.pointerId);
+                }
+                window.setTimeout(() => { previewDragMoved.current = false; }, 0);
+              }}
+              onPointerCancel={() => {
+                previewDrag.current = null;
+                window.setTimeout(() => { previewDragMoved.current = false; }, 0);
+              }}
+              onLostPointerCapture={() => { previewDrag.current = null; }}
+            >
+              <div
+                className="trial-annotated-photo trial-photo-preview-annotated"
+                style={{ transform: `translate3d(${previewOffset.x}px, ${previewOffset.y}px, 0) scale(${previewScale})` }}
+              >
+                <img draggable={false} alt={`${annotatedPreview.filename} 检测标注预览`} src={annotatedPreview.imageUrl} />
                 {annotatedPreview.defects.map((defect, defectIndex) => (
                   <TrialReportDefectBox
                     key={defect.id || `${defect.defect_type}-${defectIndex}`}
@@ -541,20 +628,12 @@ function TrialResultDetail({ report }: { report: ReportDetail }) {
                   />
                 ))}
               </div>
-            ) : photoPreview ? (
-              <img alt={`${photoPreview.filename} 预览`} src={photoPreview.imageUrl} />
-            ) : null}
-            <figcaption>{annotatedPreview?.filename ?? photoPreview?.filename}</figcaption>
+            </div>
+            <figcaption>{annotatedPreview.filename}</figcaption>
           </figure>
         </div>
       ) : null}
-      {isModelOutputOpen ? (
-        <ModelOutputDialog
-          text={modelOutputText}
-          onClose={() => setIsModelOutputOpen(false)}
-        />
-      ) : null}
-      {tilePreview ? (
+      {canShowTile && tilePreview ? (
         <TilePreviewDialog source={tilePreview} onClose={() => setTilePreview(null)} />
       ) : null}
     </div>
@@ -565,11 +644,6 @@ interface TrialReportAnnotatedPreview {
   filename: string;
   imageUrl: string;
   defects: ReportDefectSnapshot[];
-}
-
-interface TrialReportPhotoPreview {
-  filename: string;
-  imageUrl: string;
 }
 
 interface TrialResultPhotoRow {
@@ -588,11 +662,13 @@ interface TrialResultPhotoRow {
 function TrialResultRow({
   row,
   index,
+  canShowTile,
   onPreview,
   onTilePreview
 }: {
   row: TrialResultPhotoRow;
   index: number;
+  canShowTile: boolean;
   onPreview: (preview: TrialReportAnnotatedPreview) => void;
   onTilePreview: (source: TilePreviewSource) => void;
 }) {
@@ -606,12 +682,12 @@ function TrialResultRow({
 
   return (
     <tr>
-      <td>
+      <td className="trial-sequence-column">
         <span className="trial-report-index">
           {String(index + 1).padStart(2, "0")}
         </span>
       </td>
-      <td>
+      <td className="trial-photo-column">
         <figure className="trial-annotated-photo-frame">
           <div
             className={`trial-annotated-photo ${row.imageUrl ? "" : "trial-annotated-photo-placeholder"} ${canPreview ? "is-clickable" : ""}`}
@@ -660,25 +736,27 @@ function TrialResultRow({
           <p><span>未检出明显缺陷</span></p>
         )}
       </td>
-      <td className="trial-tile-column">
-        <button
-          className="trial-tile-view-button"
-          disabled={!row.imageUrl}
-          type="button"
-          onClick={() => onTilePreview({
-            filename: row.filename,
-            imageUrl: row.imageUrl,
-            imageWidth: row.imageWidth,
-            imageHeight: row.imageHeight,
-            tileWidth: row.tileWidth,
-            tileHeight: row.tileHeight,
-            tileOverlapRatio: row.tileOverlapRatio,
-            detections: row.detections
-          })}
-        >
-          查看tile
-        </button>
-      </td>
+      {canShowTile ? (
+        <td className="trial-tile-column">
+          <button
+            className="trial-tile-view-button"
+            disabled={!row.imageUrl}
+            type="button"
+            onClick={() => onTilePreview({
+              filename: row.filename,
+              imageUrl: row.imageUrl,
+              imageWidth: row.imageWidth,
+              imageHeight: row.imageHeight,
+              tileWidth: row.tileWidth,
+              tileHeight: row.tileHeight,
+              tileOverlapRatio: row.tileOverlapRatio,
+              detections: row.detections
+            })}
+          >
+            查看tile
+          </button>
+        </td>
+      ) : null}
     </tr>
   );
 }
@@ -694,7 +772,7 @@ function TrialReportDefectBox({ defect }: { defect: ReportDefectSnapshot }) {
       style={boxStyle}
     >
       <span className="trial-defect-label">
-        {trialDefectBoxLabel(defectDisplay, defect.confidence)}
+        {trialDefectBoxLabel(defectDisplay)}
       </span>
     </span>
   );
@@ -870,9 +948,6 @@ function DefectRow({ defect }: { defect: ReportDefectSnapshot }) {
           {REVIEW_STATUS_LABELS[defect.status || ""] ?? defect.status ?? "-"}
         </p>
       </td>
-      <td className="border-b border-slate-100 px-5 py-4 font-semibold text-slate-600">
-        {(defect.building_name || "-") + " / " + (defect.facade_name || "-")}
-      </td>
       <td className="border-b border-slate-100 px-5 py-4 font-mono text-xs font-semibold text-slate-600">
         x {bbox.x ?? "-"} · y {bbox.y ?? "-"} · w {bbox.width ?? "-"} · h {bbox.height ?? "-"}
       </td>
@@ -886,29 +961,6 @@ function DefectRow({ defect }: { defect: ReportDefectSnapshot }) {
         {defect.review_note || "-"}
       </td>
     </tr>
-  );
-}
-
-function BuildingBlock({ building }: { building: ReportBuildingSnapshot }) {
-  return (
-    <div className="rounded-lg border border-slate-200 p-3">
-      <p className="font-black text-ink">{building.name || "未命名建筑"}</p>
-      <p className="mt-1 text-xs font-semibold text-slate-500">
-        楼层 {building.floors ?? "-"} · 高度 {building.height ?? "-"}
-      </p>
-      {building.facades?.length ? (
-        <div className="mt-3 grid gap-2">
-          {building.facades.map((facade, index) => (
-            <div
-              key={facade.id || index}
-              className="rounded-md bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600"
-            >
-              {facade.name || "未命名立面"} · {facade.floors_range || "-"} · {facade.area || "-"}
-            </div>
-          ))}
-        </div>
-      ) : null}
-    </div>
   );
 }
 
@@ -955,10 +1007,6 @@ function MetricBlock({ label, value }: { label: string; value: string }) {
       <strong className="mt-2 block text-2xl font-black text-ink">{value}</strong>
     </div>
   );
-}
-
-function countFacades(buildings: ReportBuildingSnapshot[]) {
-  return buildings.reduce((sum, building) => sum + (building.facades?.length ?? 0), 0);
 }
 
 function confidenceText(value: string | null | undefined) {

@@ -1,45 +1,101 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Eye, Search, Trash2 } from "lucide-react";
+import { CheckCircle2, Eye, Sparkles, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
-import { deleteReport, reportsQueryOptions } from "@/api/reports";
+import { deleteReport, reportsQueryOptions, restoreTrialReport } from "@/api/reports";
+import { ResultFolderThumbnail } from "@/components/ResultFolderThumbnail";
 import { useAuthStore } from "@/stores/useAuthStore";
 import type { ReportListItem } from "@/types/reports";
 import { formatDateTime } from "@/utils/projectDisplay";
 
-const reportStatus = { draft: ["草稿", "neutral"], generated: ["已生成", "detecting"], pushed: ["已推送", "ready"], revoked: ["已撤回", "neutral"] } as const;
+interface RecentlyDeletedReport {
+  report: ReportListItem;
+  originalIndex: number;
+}
 
 export function ReportListPage() {
   const user = useAuthStore((state) => state.user);
   const reportsQuery = useQuery(reportsQueryOptions(user));
   const queryClient = useQueryClient();
-  const [keyword, setKeyword] = useState("");
-  const reports = useMemo(() => (reportsQuery.data ?? []).filter((report) => `${report.title} ${report.report_no}`.toLowerCase().includes(keyword.trim().toLowerCase())), [keyword, reportsQuery.data]);
+  const [recentlyDeletedReport, setRecentlyDeletedReport] = useState<RecentlyDeletedReport | null>(null);
+  const reportRows = useMemo(() => {
+    const rows = (reportsQuery.data ?? []).map((report) => ({
+      isDeleted: recentlyDeletedReport?.report.id === report.id,
+      report
+    }));
+    if (recentlyDeletedReport && !rows.some(({ report }) => report.id === recentlyDeletedReport.report.id)) {
+      rows.splice(Math.max(0, Math.min(recentlyDeletedReport.originalIndex, rows.length)), 0, {
+        isDeleted: true,
+        report: recentlyDeletedReport.report
+      });
+    }
+    return rows;
+  }, [recentlyDeletedReport, reportsQuery.data]);
   const deleteMutation = useMutation({
-    mutationFn: deleteReport,
+    mutationFn: (report: ReportListItem) => deleteReport(report.id),
+    onSuccess: async (_result, deleted) => {
+      setRecentlyDeletedReport(deleted.source_type === "trial"
+        ? {
+            report: deleted,
+            originalIndex: reportsQuery.data?.findIndex((report) => report.id === deleted.id) ?? 0
+          }
+        : null);
+      await queryClient.invalidateQueries({ queryKey: ["reports"] });
+    }
+  });
+  const restoreMutation = useMutation({
+    mutationFn: restoreTrialReport,
     onSuccess: async () => {
+      setRecentlyDeletedReport(null);
       await queryClient.invalidateQueries({ queryKey: ["reports"] });
     }
   });
 
   function removeReport(report: ReportListItem) {
-    const confirmed = window.confirm(`确认删除检测结果“${report.title}”？删除后将从检测结果列表移除。`);
-    if (confirmed) deleteMutation.mutate(report.id);
+    const confirmed = window.confirm(
+      report.source_type === "trial"
+        ? `确认从列表移除简易检测结果“${report.title}”？移除后可立即撤销。`
+        : `确认永久删除正式检测报告“${report.title}”？关联的报告文件也会被删除，此操作不可撤销。`
+    );
+    if (confirmed) {
+      restoreMutation.reset();
+      deleteMutation.mutate(report);
+    }
   }
 
   return <div className="report-list-page"><div className="project-workspace">
-    <section className="project-hero"><div><h1>检测结果</h1><p>统一查看正式项目结果和简易 AI 检测归档，在线预览生成过程与识别结果。</p></div></section>
-    <section className="project-toolbar report-toolbar" aria-label="结果检索"><label className="search-control"><span className="sr-only">搜索结果名称或编号</span><Search aria-hidden="true" /><input placeholder="搜索结果名称或编号" value={keyword} onChange={(event) => setKeyword(event.target.value)} /></label></section>
-    {reportsQuery.isError ? <p className="project-list-error">检测结果加载失败，请稍后重试。</p> : null}
-    {deleteMutation.isError ? <p className="project-list-error">检测结果删除失败，请稍后重试。</p> : null}
-    <section className="project-list-panel" aria-label="检测结果列表"><div className="project-table-wrap">
-      {reportsQuery.isLoading ? <div className="project-empty"><strong>正在加载结果…</strong></div> : reports.length ? <table className="project-table"><thead><tr><th>结果名称</th><th>识别数量</th><th>结果状态</th><th>生成时间</th><th>操作</th></tr></thead><tbody>{reports.map((report) => <ReportRow key={report.id} report={report} isDeleting={deleteMutation.isPending} onDelete={removeReport} />)}</tbody></table> : <div className="project-empty"><strong>没有匹配的结果</strong><span>正式检测结果和简易检测归档会在这里统一排列</span></div>}
-    </div><div className="project-pagination"><span>共 <strong>{reports.length}</strong> 条</span><div><button aria-label="上一页" disabled type="button">‹</button><button aria-current="page" className="current-page" type="button">1</button><button aria-label="下一页" disabled type="button">›</button><span className="page-size">10 条/页</span></div></div></section>
+    <section className="project-hero">
+      <div className="management-page-title">
+        <Sparkles aria-hidden="true" className="management-page-title-icon" />
+        <h1>试用记录</h1>
+      </div>
+    </section>
+    <div className="project-workbench-content-panel">
+      {reportsQuery.isError ? <p className="project-list-error">检测结果加载失败。<button className="inline-retry-button" type="button" onClick={() => void reportsQuery.refetch()}>重新加载</button></p> : null}
+      {deleteMutation.isError ? <p className="project-list-error">检测结果删除失败：{deleteMutation.error instanceof Error ? deleteMutation.error.message : "请稍后重试。"}</p> : null}
+      <section className="project-list-panel" aria-label="试用记录列表"><div className="project-table-wrap project-workbench-table-wrap">
+        {reportsQuery.isLoading ? <div className="project-empty"><strong>正在加载结果…</strong></div> : reportRows.length ? <table className="project-table report-list-table project-workbench-table"><tbody>{reportRows.map(({ report, isDeleted }) => isDeleted
+          ? <DeletedReportRow key={report.id} report={report} restoreError={restoreMutation.error} isRestoring={restoreMutation.isPending} onRestore={() => restoreMutation.mutate(report.id)} />
+          : <ReportRow key={report.id} report={report} canDelete={report.source_type === "trial" || user?.role === "reviewer" || user?.role === "admin"} isDeleting={deleteMutation.isPending} onDelete={removeReport} />
+        )}</tbody></table> : <ReportEmptyState />}
+      </div></section>
+    </div>
   </div></div>;
 }
 
-function ReportRow({ report, isDeleting, onDelete }: { report: ReportListItem; isDeleting: boolean; onDelete: (report: ReportListItem) => void }) {
-  const [label, tone] = reportStatus[report.status];
-  return <tr><td data-label="结果名称"><strong>{report.title}</strong><small>{report.report_no}</small></td><td data-label="识别数量">{report.total_defects} 项</td><td data-label="结果状态"><span className={`status-tag ${tone}`}>{label}</span></td><td data-label="生成时间">{formatDateTime(report.generated_at)}</td><td data-label="操作"><div className="table-actions"><Link className="table-action" to={`/reports/${report.id}`}><Eye aria-hidden="true" />查看结果</Link><button className="table-action danger-table-action" disabled={isDeleting} type="button" onClick={() => onDelete(report)}><Trash2 aria-hidden="true" />删除</button></div></td></tr>;
+function ReportEmptyState() {
+  return <div className="project-empty project-workbench-empty project-workbench-welcome-empty">
+    <strong className="project-welcome-copy">欢迎使用外墙智能检测功能</strong>
+    <span className="project-welcome-supporting-copy">当前没有试用记录，来免费体验一下吧</span>
+    <Link className="button primary project-empty-create-button" to="/trial"><Sparkles aria-hidden="true" />免费试用</Link>
+  </div>;
+}
+
+function DeletedReportRow({ report, restoreError, isRestoring, onRestore }: { report: ReportListItem; restoreError: Error | null; isRestoring: boolean; onRestore: () => void }) {
+  return <tr className="report-list-row report-delete-row"><td className="report-delete-cell" colSpan={4}><div className="report-delete-feedback" role="status"><span className="report-delete-summary"><CheckCircle2 aria-hidden="true" /><strong>删除成功</strong><span>“{report.title}”已从列表移除</span></span><span className="report-delete-actions">{restoreError ? <span className="report-delete-error">撤销失败，请重试</span> : null}<button className="button secondary report-back-button report-delete-undo-button" disabled={isRestoring} type="button" onClick={onRestore}>{isRestoring ? "恢复中…" : "撤销删除"}</button></span></div></td></tr>;
+}
+
+function ReportRow({ report, canDelete, isDeleting, onDelete }: { report: ReportListItem; canDelete: boolean; isDeleting: boolean; onDelete: (report: ReportListItem) => void }) {
+  return <tr className="report-list-row"><td className="result-folder-column"><ResultFolderThumbnail firstPhotoUrl={report.first_photo_url} title={report.title} /></td><td className="report-name-column list-primary-column" data-label="结果名称"><span className="result-name-content"><strong>{report.title}</strong><small className="result-generated-time">{formatDateTime(report.generated_at)}</small></span><Link className="report-mobile-row-link" aria-label={`查看检测结果：${report.title}`} to={`/reports/${report.id}`} /></td><td className="report-count-column" data-label="照片数量">{report.photo_count} 张</td><td className="report-action-column list-action-column" data-label="操作"><div className="table-actions"><Link className="table-action table-action-result" to={`/reports/${report.id}`}><Eye aria-hidden="true" />查看结果</Link>{canDelete ? <button className="table-action danger-table-action" disabled={isDeleting} type="button" onClick={() => onDelete(report)}><Trash2 aria-hidden="true" />删除</button> : null}</div></td></tr>;
 }

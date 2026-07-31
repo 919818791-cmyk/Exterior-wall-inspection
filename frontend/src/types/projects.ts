@@ -5,89 +5,35 @@ export type ProjectStatus =
   | "reviewed"
   | "completed";
 
-export type DefectType = "crack" | "spalling" | "moisture";
+export type DefectType = "crack" | "spalling" | "moisture" | "hollow";
 export type PhotoType = "visible" | "thermal" | "dji" | "other";
 export type UploadMode = "dji" | "visible" | "thermal" | "mixed";
 export type PhotoStatus = "uploaded" | "detecting" | "detected" | "failed";
+export type PhotoPrecheckStatus = "pending" | "running" | "passed" | "rejected" | "error";
 export type DetectionTaskStatus = "pending" | "running" | "success" | "failed" | "canceled";
 
-export interface FacadePayload {
-  name: string;
-  area?: string | null;
-  floors_range?: string | null;
-  description?: string | null;
-  sort_order?: number | null;
-}
-
-export interface BuildingPayload {
-  name: string;
-  building_no?: string | null;
-  floors?: number | null;
-  height?: string | null;
-  structure_type?: string | null;
-  usage_type?: string | null;
-  built_year?: number | null;
-  remark?: string | null;
-  sort_order?: number | null;
-  facades?: FacadePayload[];
-}
-
 export interface ProjectCreatePayload {
-  name: string;
+  name?: string | null;
   client_name?: string | null;
-  contact_name?: string | null;
-  contact_phone?: string | null;
   province?: string | null;
   city?: string | null;
   district?: string | null;
   address?: string | null;
   longitude?: string | number | null;
   latitude?: string | number | null;
-  buildings?: BuildingPayload[];
 }
 
-export type ProjectUpdatePayload = Partial<Omit<ProjectCreatePayload, "buildings">>;
-export type BuildingUpdatePayload = Partial<Omit<BuildingPayload, "facades">>;
-export type FacadeUpdatePayload = Partial<FacadePayload>;
-
-export interface Facade {
-  id: string;
-  project_id: string;
-  building_id: string;
-  name: string;
-  area: string | null;
-  floors_range: string | null;
-  description: string | null;
-  sort_order: number;
-  created_at: string;
-  updated_at: string;
+export interface ProjectDraftCreatePayload extends ProjectCreatePayload {
+  client_draft_key: string;
 }
 
-export interface Building {
-  id: string;
-  project_id: string;
-  name: string;
-  building_no: string | null;
-  floors: number | null;
-  height: string | null;
-  structure_type: string | null;
-  usage_type: string | null;
-  built_year: number | null;
-  remark: string | null;
-  sort_order: number;
-  facade_count: number;
-  facades: Facade[];
-  created_at: string;
-  updated_at: string;
-}
+export type ProjectUpdatePayload = Partial<ProjectCreatePayload>;
 
 export interface ProjectListItem {
   id: string;
   project_no: string;
   name: string;
   client_name: string | null;
-  contact_name: string | null;
-  contact_phone: string | null;
   province: string | null;
   city: string | null;
   district: string | null;
@@ -95,8 +41,8 @@ export interface ProjectListItem {
   longitude: string | null;
   latitude: string | null;
   status: ProjectStatus;
-  building_count: number;
   photo_count: number;
+  first_photo_url: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -107,12 +53,9 @@ export interface ProjectDetail extends ProjectListItem {
   current_task_status: DetectionTaskStatus | null;
   started_at: string | null;
   completed_at: string | null;
-  buildings: Building[];
 }
 
 export interface UploadBatchPayload {
-  building_id?: string | null;
-  facade_id?: string | null;
   drone_type?: string | null;
   upload_mode: UploadMode;
   remark?: string | null;
@@ -121,8 +64,6 @@ export interface UploadBatchPayload {
 export interface UploadBatch {
   id: string;
   project_id: string;
-  building_id: string | null;
-  facade_id: string | null;
   batch_no: string;
   drone_type: string | null;
   upload_mode: UploadMode;
@@ -135,8 +76,6 @@ export interface UploadBatch {
 export interface Photo {
   id: string;
   project_id: string;
-  building_id: string | null;
-  facade_id: string | null;
   upload_batch_id: string;
   original_filename: string;
   file_ext: string | null;
@@ -149,6 +88,13 @@ export interface Photo {
   image_height: number | null;
   photo_type: PhotoType;
   status: PhotoStatus;
+  precheck_status: PhotoPrecheckStatus;
+  precheck_category: string | null;
+  precheck_reason: string | null;
+  precheck_model: string | null;
+  precheck_error: string | null;
+  precheck_attempts: number;
+  prechecked_at: string | null;
   preview_url: string | null;
   thumbnail_url: string | null;
   created_at: string;
@@ -167,7 +113,6 @@ export interface DetectionConfig {
 
 export interface DetectionConfigPayload {
   model_types: DefectType[];
-  high_precision: boolean;
   config_json?: Record<string, unknown> | null;
 }
 
@@ -190,4 +135,8 @@ export interface DetectionTask {
   result_summary: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface StartDetectionPayload {
+  model_types: Array<"crack" | "spalling" | "hollow">;
 }

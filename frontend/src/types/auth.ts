@@ -5,12 +5,12 @@ export interface AuthUser {
   id: string;
   username: string;
   real_name: string | null;
+  phone: string | null;
   role: UserRole;
   organization: string | null;
 }
 
 export interface AccountUser extends AuthUser {
-  phone: string | null;
   status: UserStatus;
   last_login_at: string | null;
   created_at: string;
@@ -36,16 +36,20 @@ export interface LoginResponse {
   user: AuthUser;
 }
 
+export interface CurrentUserUpdatePayload {
+  real_name: string | null;
+  phone: string | null;
+  organization: string | null;
+}
+
 export interface TrialApplicationPayload {
   username: string;
   password: string;
-  real_name: string;
   phone: string;
-  organization: string;
 }
 
 export interface TrialApplicationResponse {
   ok: boolean;
   username: string;
-  status: "disabled";
+  status: "active";
 }

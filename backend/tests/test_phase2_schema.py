@@ -3,6 +3,7 @@ from app.enums.status import (
     DefectType,
     DetectionTaskStatus,
     InspectionReportStatus,
+    PhotoPrecheckStatus,
     ProjectStatus,
     RecommendationOrientation,
     ReviewResultStatus,
@@ -14,8 +15,6 @@ def test_phase2_tables_are_registered() -> None:
     expected_tables = {
         "user_account",
         "project",
-        "building",
-        "facade",
         "collection_time_recommendation",
         "detection_config",
         "upload_batch",
@@ -64,15 +63,60 @@ def test_phase2_required_status_values_are_centralized() -> None:
         "crack",
         "spalling",
         "moisture",
+        "hollow",
     }
     assert DefectType("missing") is DefectType.SPALLING
+    assert {item.value for item in PhotoPrecheckStatus} == {
+        "pending",
+        "running",
+        "passed",
+        "rejected",
+        "error",
+    }
 
 
-def test_facade_orientation_moved_to_recommendation_input() -> None:
-    facade = Base.metadata.tables["facade"]
+def test_photo_precheck_state_is_persisted_for_formal_and_trial_photos() -> None:
+    required_columns = {
+        "precheck_status",
+        "precheck_category",
+        "precheck_reason",
+        "precheck_model",
+        "precheck_error",
+        "precheck_attempts",
+        "prechecked_at",
+    }
+
+    assert required_columns.issubset(Base.metadata.tables["photo"].c.keys())
+    assert required_columns.issubset(
+        Base.metadata.tables["quick_detection_photo"].c.keys()
+    )
+
+
+def test_project_photos_have_no_building_or_facade_dimension() -> None:
     recommendation = Base.metadata.tables["collection_time_recommendation"]
+    upload_batch = Base.metadata.tables["upload_batch"]
+    photo = Base.metadata.tables["photo"]
+    detection_task = Base.metadata.tables["detection_task"]
+    inspection_report = Base.metadata.tables["inspection_report"]
 
-    assert "orientation" not in facade.c
+    assert "building" not in Base.metadata.tables
+    assert "facade" not in Base.metadata.tables
+    assert "facade_id" not in recommendation.c
+    assert "facade_id" not in upload_batch.c
+    assert "facade_id" not in photo.c
+    assert "building_id" not in recommendation.c
+    assert "building_id" not in upload_batch.c
+    assert "building_id" not in photo.c
+    assert "building_id" not in detection_task.c
+    assert "run_id" not in detection_task.c
+    assert any(
+        constraint.name == "uq_detection_task_project_id"
+        for constraint in detection_task.constraints
+    )
+    assert any(
+        constraint.name == "uq_inspection_report_project_id"
+        for constraint in inspection_report.constraints
+    )
     assert "orientation" in recommendation.c
     assert not recommendation.c.orientation.nullable
     assert {item.value for item in RecommendationOrientation} == {
@@ -96,6 +140,17 @@ def test_project_persists_coordinates() -> None:
     assert project.c.longitude.type.scale == 7
     assert project.c.latitude.type.precision == 10
     assert project.c.latitude.type.scale == 7
+
+
+def test_project_supports_idempotent_draft_creation() -> None:
+    project = Base.metadata.tables["project"]
+
+    assert "client_draft_key" in project.c
+    assert project.c.client_draft_key.nullable
+    assert any(
+        index.name == "uq_project_created_by_client_draft_key" and index.unique
+        for index in project.indexes
+    )
 
 
 def test_user_account_does_not_persist_email() -> None:

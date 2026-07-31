@@ -1,11 +1,10 @@
 from app.models.tables import (
     AiDetectionResult,
-    Building,
+    AnnotationPhotoEdit,
     CollectionTimeRecommendation,
     DetectionConfig,
     DetectionTask,
     DetectionTaskPhoto,
-    Facade,
     InspectionReport,
     Photo,
     Project,
@@ -13,18 +12,19 @@ from app.models.tables import (
     ReportPushLog,
     ReviewOperationLog,
     ReviewResult,
+    SystemSetting,
     UploadBatch,
+    UsageEvent,
     UserAccount,
 )
 
 __all__ = [
     "AiDetectionResult",
-    "Building",
+    "AnnotationPhotoEdit",
     "CollectionTimeRecommendation",
     "DetectionConfig",
     "DetectionTask",
     "DetectionTaskPhoto",
-    "Facade",
     "InspectionReport",
     "Photo",
     "Project",
@@ -32,6 +32,8 @@ __all__ = [
     "ReportPushLog",
     "ReviewOperationLog",
     "ReviewResult",
+    "SystemSetting",
     "UploadBatch",
+    "UsageEvent",
     "UserAccount",
 ]

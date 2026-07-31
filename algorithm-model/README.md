@@ -1,5 +1,7 @@
 # Algorithm Model Container
 
+> **Paused as of 2026-07-14:** the local YOLO model solution is currently suspended. This container, its weights, and the instructions below are retained for historical reference and are not part of the current deployment or acceptance scope.
+
 This container is the production-side PyTorch / CUDA / Ultralytics runtime
 boundary. It intentionally does not hold backend worker credentials and should
 only be reachable from the Docker internal network.

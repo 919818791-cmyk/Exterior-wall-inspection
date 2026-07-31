@@ -33,6 +33,8 @@ __pycache__/
 *.tmp
 *.tsbuildinfo
 *.pem
+.admin-bootstrap-password
+/.runtime/
 
 postgres_data/
 minio_data/

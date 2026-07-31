@@ -8,6 +8,12 @@ import type {
 
 export type ReviewResultStatus = "pending" | "confirmed" | "modified" | "deleted" | "added";
 export type InspectionReportStatus = "draft" | "generated" | "pushed" | "revoked";
+export type ReviewDetectionStatus =
+  | "detecting"
+  | "pending_review"
+  | "reviewed"
+  | "completed"
+  | "failed";
 
 export interface ReviewBBox {
   x: number;
@@ -33,8 +39,6 @@ export interface ReviewProjectListItem {
 }
 
 export interface ReviewProjectDetail extends ReviewProjectListItem {
-  contact_name: string | null;
-  contact_phone: string | null;
   province: string | null;
   city: string | null;
   district: string | null;
@@ -42,11 +46,29 @@ export interface ReviewProjectDetail extends ReviewProjectListItem {
   completed_at: string | null;
 }
 
+export interface ReviewDetectionListItem {
+  id: string;
+  project_id: string;
+  project_no: string;
+  project_name: string;
+  client_name: string | null;
+  address: string | null;
+  task_no: string;
+  task_status: DetectionTaskStatus;
+  review_status: ReviewDetectionStatus;
+  report_id: string | null;
+  report_status: InspectionReportStatus | null;
+  model_types: DefectType[];
+  photo_count: number;
+  ai_result_count: number;
+  review_result_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ReviewPhoto {
   id: string;
   project_id: string;
-  building_id: string | null;
-  facade_id: string | null;
   original_filename: string;
   image_width: number | null;
   image_height: number | null;
@@ -105,6 +127,7 @@ export interface ReviewProjectResults {
 
 export interface ReviewResultCreatePayload {
   project_id?: string | null;
+  detection_task_id?: string | null;
   photo_id?: string | null;
   ai_result_id?: string | null;
   defect_type: DefectType;

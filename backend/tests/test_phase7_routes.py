@@ -1,18 +1,37 @@
 from asyncio import run
+from datetime import UTC, datetime
 from io import BytesIO
 from json import dumps
 from types import SimpleNamespace
+from unittest.mock import patch
 from uuid import UUID
 from zipfile import ZipFile
 
+import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
+from pytest import raises
 
+from app.api import reports
 from app.api.dependencies import AuthenticatedUser, get_current_user
-from app.api.reports import create_trial_result, list_reports
+from app.api.reports import (
+    _append_trial_detection_result,
+    _enforce_trial_upload_limit,
+    _project_reviewed_result_visible,
+    _reserve_trial_usage,
+    create_trial_result,
+    list_reports,
+)
 from app.db.session import get_db
-from app.enums.status import UserRole
+from app.enums.status import InspectionReportStatus, UserRole
 from app.main import app
-from app.models.tables import QuickDetectionPhoto
+from app.models.tables import (
+    InspectionReport,
+    Project,
+    QuickDetectionPhoto,
+    TrialDetectionResult,
+    UsageEvent,
+)
 from app.schemas.phase7 import ReportListItem, TrialGeneratedResult, TrialReportRequest
 from app.services.docx_report import build_report_docx
 from app.services.photo_metadata import extract_photo_metadata_from_bytes
@@ -56,9 +75,52 @@ class UploadedPhotoScalars:
 class UploadedPhotoDb:
     def __init__(self, photos: list[QuickDetectionPhoto]) -> None:
         self.photos = photos
+        self.result_numbers: list[str] = []
+        self.execute_count = 0
+        self.usage_events: list[UsageEvent] = []
+        self.trial_results: list[TrialDetectionResult] = []
 
     def scalars(self, statement: object) -> UploadedPhotoScalars:
+        if "trial_detection_result.result_no" in str(statement):
+            return UploadedPhotoScalars(self.result_numbers)
         return UploadedPhotoScalars(self.photos)
+
+    def execute(self, _: object) -> None:
+        self.execute_count += 1
+
+    def add(self, item: object) -> None:
+        if isinstance(item, QuickDetectionPhoto):
+            now = datetime.now(UTC)
+            item.created_at = now
+            item.updated_at = now
+            self.photos.append(item)
+        elif isinstance(item, UsageEvent):
+            self.usage_events.append(item)
+        elif isinstance(item, TrialDetectionResult):
+            self.trial_results.append(item)
+
+    def flush(self) -> None:
+        for result in self.trial_results:
+            result.created_at = result.generated_at
+            result.updated_at = result.generated_at
+
+    def commit(self) -> None:
+        self.flush()
+
+    def rollback(self) -> None:
+        return None
+
+    def refresh(self, _: object) -> None:
+        return None
+
+
+class AppendingTrialDb(UploadedPhotoDb):
+    def __init__(self, photos: list[QuickDetectionPhoto], result: TrialDetectionResult) -> None:
+        super().__init__(photos)
+        self.result = result
+
+    def scalar(self, _: object) -> TrialDetectionResult:
+        return self.result
 
 
 class JsonTrialRequest:
@@ -95,6 +157,33 @@ class ArchivingTrialDb(UploadedPhotoDb):
         self.added_result.updated_at = self.added_result.generated_at
 
     def refresh(self, result: object) -> None:
+        return None
+
+
+class RenamingTrialDb:
+    def __init__(self, result: TrialDetectionResult) -> None:
+        self.result = result
+
+    def scalar(self, _: object) -> TrialDetectionResult:
+        return self.result
+
+    def commit(self) -> None:
+        self.result.updated_at = datetime.now(UTC)
+
+    def refresh(self, _: object) -> None:
+        return None
+
+
+class ProjectResultVisibilityDb:
+    def __init__(self, project: object, report: object | None = None) -> None:
+        self.project = project
+        self.report = report
+
+    def get(self, model: type, _: object) -> object | None:
+        if model is Project:
+            return self.project
+        if model is InspectionReport:
+            return self.report
         return None
 
 
@@ -145,18 +234,53 @@ def _admin() -> AuthenticatedUser:
 
 
 def _post_trial_generate(files: list[tuple[str, tuple[str, bytes, str]]]):
+    stored_photos: list[QuickDetectionPhoto] = []
+    content_by_key: dict[str, bytes] = {}
+    for index, (_, (filename, content, content_type)) in enumerate(files, start=1):
+        photo_id = UUID(int=10_000 + index)
+        photo = _uploaded_photo(photo_id, filename=filename)
+        photo.file_size = len(content)
+        photo.mime_type = content_type
+        stored_photos.append(photo)
+        content_by_key[photo.storage_object_key] = content
+
     app.dependency_overrides[get_current_user] = _trial_customer
+    app.dependency_overrides[get_db] = lambda: UploadedPhotoDb(stored_photos)
+    try:
+        with patch.object(
+            reports,
+            "get_object_bytes",
+            side_effect=lambda _bucket, object_key: content_by_key[object_key],
+        ):
+            return client.post(
+                "/api/trial/generate",
+                json={
+                    "report_name": "东立面体验结果",
+                    "models": ["裂缝", "剥落"],
+                    "photo_ids": [str(photo.id) for photo in stored_photos],
+                },
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+
+def _post_trial_photo(filename: str, content: bytes, content_type: str):
+    app.dependency_overrides[get_current_user] = _trial_customer
+    app.dependency_overrides[get_db] = lambda: UploadedPhotoDb([])
     try:
         return client.post(
-            "/api/trial/generate",
-            data={"payload": '{"report_name":"东立面体验结果","models":["裂缝","剥落"]}'},
-            files=files,
+            "/api/trial/photos",
+            files={"file": (filename, content, content_type)},
         )
     finally:
         app.dependency_overrides.clear()
 
 
-def _mock_trial_inference(monkeypatch, payload: dict | None = None) -> None:
+def _mock_trial_inference(
+    monkeypatch,
+    payload: dict | None = None,
+    captured_kwargs: dict | None = None,
+) -> None:
     inference_payload = payload or {
         "image": {"width": 1000, "height": 500},
         "detections": [
@@ -180,15 +304,28 @@ def _mock_trial_inference(monkeypatch, payload: dict | None = None) -> None:
     )
 
     async def fake_infer_trial_images(images, **kwargs):
+        if captured_kwargs is not None:
+            captured_kwargs.update(kwargs)
         return [inference_payload for _ in images]
 
     monkeypatch.setattr(
         "app.api.reports.infer_trial_images",
         fake_infer_trial_images,
     )
+    inference = inference_payload.get("inference") if isinstance(inference_payload.get("inference"), dict) else {}
+    per_image_requests = int(inference.get("api_request_count") or inference.get("tile_count") or 1)
+    monkeypatch.setattr(
+        "app.api.reports.estimate_trial_api_request_count",
+        lambda images, **kwargs: len(images) * per_image_requests,
+    )
 
 
-def _uploaded_photo(photo_id: UUID, *, filename: str = "quick-001.jpg") -> QuickDetectionPhoto:
+def _uploaded_photo(
+    photo_id: UUID,
+    *,
+    filename: str = "quick-001.jpg",
+    thermal_imaging_available: bool = False,
+) -> QuickDetectionPhoto:
     return QuickDetectionPhoto(
         id=photo_id,
         original_filename=filename,
@@ -196,8 +333,14 @@ def _uploaded_photo(photo_id: UUID, *, filename: str = "quick-001.jpg") -> Quick
         mime_type="image/jpeg",
         storage_bucket="building-exterior",
         storage_object_key=f"quick-detection/{photo_id}.jpg",
-        metadata_json={"thermal_imaging_available": False},
-        thermal_imaging_available=False,
+        metadata_json={"thermal_imaging_available": thermal_imaging_available},
+        thermal_imaging_available=thermal_imaging_available,
+        precheck_status="passed",
+        precheck_category="BUILDING",
+        precheck_reason="建筑照片",
+        precheck_model="guard-test",
+        precheck_attempts=1,
+        prechecked_at=datetime.now(UTC),
         uploaded_by=_trial_customer().id,
     )
 
@@ -212,15 +355,230 @@ def test_phase7_report_routes_are_registered() -> None:
     }
 
     assert "/api/reports" in paths
+    assert "/api/projects/{project_id}/reviewed-result" in paths
     assert "/api/reports/{report_id}" in paths
     assert "/api/reports/{report_id}/push" in paths
     assert "/api/reports/{report_id}/docx" in paths
     assert "/api/trial/photos" in paths
     assert "/api/trial/photos/{photo_id}" in paths
+    assert "/api/trial/photos/{photo_id}/precheck" not in paths
     assert "/api/trial/generate" in paths
     assert "/api/trial/results" in paths
     assert "/api/trial/report/docx" not in paths
     assert "DELETE" in report_detail_methods
+    assert "PATCH" in report_detail_methods
+
+
+@pytest.mark.parametrize(
+    ("project_status", "visible"),
+    [
+        ("draft", False),
+        ("detecting", False),
+        ("pending_review", False),
+        ("reviewed", True),
+        ("completed", True),
+    ],
+)
+def test_project_results_become_visible_only_after_review(
+    project_status: str,
+    visible: bool,
+) -> None:
+    project = SimpleNamespace(status=project_status)
+
+    assert _project_reviewed_result_visible(project) is visible
+
+
+@pytest.mark.parametrize(
+    ("project_status", "expected_status"),
+    [
+        ("pending_review", 404),
+        ("reviewed", 200),
+    ],
+)
+def test_project_reviewed_results_endpoint_enforces_review_boundary(
+    project_status: str,
+    expected_status: int,
+) -> None:
+    project_id = UUID("00000000-0000-0000-0000-000000000701")
+    report_id = UUID("00000000-0000-0000-0000-000000000702")
+    generated_at = datetime.now(UTC)
+    report = InspectionReport(
+        id=report_id,
+        project_id=project_id,
+        detection_task_id=None,
+        report_no="RPT-SINGLE-RESULT",
+        title="单项目检测报告",
+        status=InspectionReportStatus.GENERATED.value,
+        report_data_json={
+            "project": {"id": str(project_id), "name": "单项目"},
+            "summary": {"photo_count": 0, "total_review_results": 0},
+            "photos": [],
+            "defects": [],
+        },
+        generated_by=_trial_customer().id,
+        generated_at=generated_at,
+    )
+    report.created_at = generated_at
+    report.updated_at = generated_at
+    project = SimpleNamespace(
+        id=project_id,
+        created_by=_trial_customer().id,
+        current_task_id=None,
+        current_report_id=report_id,
+        deleted_at=None,
+        status=project_status,
+    )
+    app.dependency_overrides[get_current_user] = _trial_customer
+    app.dependency_overrides[get_db] = lambda: ProjectResultVisibilityDb(project, report)
+    try:
+        response = client.get(f"/api/projects/{project_id}/reviewed-result")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == expected_status
+    if expected_status == 200:
+        assert response.json()["id"] == str(report_id)
+
+
+def test_trial_photo_precheck_rejection_keeps_stored_original(monkeypatch) -> None:
+    file = SimpleNamespace(
+        file=BytesIO(TRIAL_JPEG_BYTES),
+        filename="cat.jpg",
+        content_type="image/jpeg",
+    )
+    stored = False
+
+    def put(**kwargs) -> str:
+        nonlocal stored
+        stored = True
+        return "test-bucket"
+
+    def reject_after_storage(db, photo) -> None:
+        assert stored is True
+        photo.precheck_status = "rejected"
+        photo.precheck_category = "OTHER"
+        photo.precheck_reason = "图片主体与建筑外墙无关"
+        photo.precheck_model = "guard-test"
+        photo.precheck_error = None
+        photo.precheck_attempts = 1
+        photo.prechecked_at = datetime.now(UTC)
+
+    monkeypatch.setattr(reports, "_enforce_trial_upload_limit", lambda *args: None)
+    monkeypatch.setattr(reports, "run_stored_photo_precheck", reject_after_storage)
+    monkeypatch.setattr(reports, "put_object", put)
+
+    fake_db = UploadedPhotoDb([])
+    uploaded = reports.upload_trial_photo(
+        file=file,
+        db=fake_db,
+        current_user=_trial_customer(),
+    )
+
+    assert stored is True
+    assert uploaded.precheck_status == "rejected"
+    assert len(fake_db.photos) == 1
+
+
+def test_trial_detection_uses_only_precheck_passed_photos() -> None:
+    passed = _uploaded_photo(UUID(int=30_001), filename="building.jpg")
+    rejected = _uploaded_photo(UUID(int=30_002), filename="cat.jpg")
+    rejected.precheck_status = "rejected"
+    rejected.precheck_category = "OTHER"
+
+    selected = reports._quick_detection_photos_for_user(
+        UploadedPhotoDb([passed, rejected]),
+        _trial_customer(),
+        [passed.id, rejected.id],
+    )
+
+    assert [photo.id for photo in selected] == [passed.id]
+
+
+def test_trial_detection_blocks_precheck_errors() -> None:
+    failed = _uploaded_photo(UUID(int=30_003), filename="timeout.jpg")
+    failed.precheck_status = "error"
+    failed.precheck_error = "timeout"
+
+    with pytest.raises(HTTPException) as raised:
+        reports._quick_detection_photos_for_user(
+            UploadedPhotoDb([failed]),
+            _trial_customer(),
+            [failed.id],
+        )
+
+    assert raised.value.status_code == 409
+    assert "预检失败 1 张" in raised.value.detail
+
+
+@pytest.mark.parametrize(
+    ("existing_numbers", "expected"),
+    [
+        ([], "TRY-20260729-001"),
+        (
+            ["TRY-20260729-001", "TRY-20260729-009"],
+            "TRY-20260729-010",
+        ),
+    ],
+)
+def test_trial_result_numbers_use_a_daily_three_digit_sequence(
+    monkeypatch,
+    existing_numbers: list[str],
+    expected: str,
+) -> None:
+    db = UploadedPhotoDb([])
+    db.result_numbers = existing_numbers
+    monkeypatch.setattr(
+        "app.api.reports._trial_result_number_date",
+        lambda: "20260729",
+    )
+
+    assert reports._trial_result_no(db) == expected
+    assert db.execute_count == 1
+
+
+def test_trial_result_defaults_title_to_project_number() -> None:
+    project_no = "TRY-20260729-001"
+
+    assert reports._trial_report_title(None, project_no) == project_no
+    assert reports._trial_report_title("  ", project_no) == project_no
+    assert reports._trial_report_title(" 东立面检测结果 ", project_no) == "东立面检测结果"
+
+
+def test_trial_result_title_can_be_updated_after_archiving() -> None:
+    now = datetime.now(UTC)
+    result = TrialDetectionResult(
+        id=UUID("00000000-0000-0000-0000-000000000401"),
+        result_no="TRY-202607150001",
+        title="原报告名称",
+        status="generated",
+        report_data_json={
+            "project": {},
+            "summary": {},
+            "photos": [],
+            "defects": [],
+            "raw_model_outputs": [],
+        },
+        photo_count=0,
+        finding_count=0,
+        thermal_available_photo_count=0,
+        generated_by=_trial_customer().id,
+        generated_at=now,
+        created_at=now,
+        updated_at=now,
+    )
+    app.dependency_overrides[get_current_user] = _trial_customer
+    app.dependency_overrides[get_db] = lambda: RenamingTrialDb(result)
+    try:
+        response = client.patch(
+            f"/api/reports/{result.id}",
+            json={"title": "  修改后的报告名称  "},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["title"] == "修改后的报告名称"
+    assert result.title == "修改后的报告名称"
 
 
 def test_report_list_item_accepts_docx_phase_contract() -> None:
@@ -237,6 +595,7 @@ def test_report_list_item_accepts_docx_phase_contract() -> None:
             "client_name": "示例委托单位",
             "address": "广州市天河区",
             "total_defects": 3,
+            "photo_count": 8,
             "generated_at": "2026-06-26T10:00:00Z",
             "pushed_at": "2026-06-26T10:30:00Z",
             "updated_at": "2026-06-26T10:30:00Z",
@@ -245,6 +604,7 @@ def test_report_list_item_accepts_docx_phase_contract() -> None:
 
     assert payload.status == "pushed"
     assert payload.total_defects == 3
+    assert payload.photo_count == 8
     assert payload.source_type == "formal"
 
 
@@ -262,6 +622,7 @@ def test_report_list_item_accepts_trial_result_contract() -> None:
             "client_name": "体验用户",
             "address": "体验归档",
             "total_defects": 2,
+            "photo_count": 2,
             "generated_at": "2026-06-30T10:00:00Z",
             "pushed_at": None,
             "updated_at": "2026-06-30T10:00:00Z",
@@ -270,6 +631,7 @@ def test_report_list_item_accepts_trial_result_contract() -> None:
 
     assert payload.source_type == "trial"
     assert payload.project_id is None
+    assert payload.photo_count == 2
 
 
 def test_customer_report_list_is_limited_to_own_formal_and_trial_results() -> None:
@@ -315,6 +677,9 @@ def test_trial_generated_result_can_feed_archive_contract() -> None:
             "models": ["裂缝", "剥落"],
             "files": [{"filename": "trial-001.jpg", "size": 1200}],
             "findings": [{"filename": "trial-001.jpg", "model": "裂缝"}],
+            "raw_model_outputs": [
+                {"filename": "trial-001.jpg", "task_duration_seconds": 12.345}
+            ],
         }
     )
 
@@ -322,6 +687,99 @@ def test_trial_generated_result_can_feed_archive_contract() -> None:
 
     assert archive_payload.generated_at == generated.generated_at
     assert archive_payload.findings[0].model == "裂缝"
+    assert archive_payload.raw_model_outputs[0]["task_duration_seconds"] == 12.345
+
+
+def test_trial_detection_result_can_append_a_later_detection_round() -> None:
+    now = datetime.now(UTC)
+    original_photo_id = UUID("00000000-0000-0000-0000-000000000911")
+    added_photo_id = UUID("00000000-0000-0000-0000-000000000912")
+    result = TrialDetectionResult(
+        id=UUID("00000000-0000-0000-0000-000000000913"),
+        result_no="TRY-202607160001",
+        title="东立面检测结果",
+        status="generated",
+        report_data_json={
+            "project": {},
+            "summary": {
+                "total_review_results": 1,
+                "by_defect_type": {"crack": 1},
+                "by_status": {"generated": 1},
+                "photo_count": 1,
+                "thermal_available_photo_count": 0,
+            },
+            "detection_config": {},
+            "detection_task": {},
+            "photos": [
+                {
+                    "id": str(original_photo_id),
+                    "original_filename": "first.jpg",
+                    "thermal_imaging_available": False,
+                }
+            ],
+            "defects": [
+                {
+                    "id": "existing-defect",
+                    "photo_id": str(original_photo_id),
+                    "defect_type": "crack",
+                    "status": "generated",
+                }
+            ],
+            "raw_model_outputs": [{"photo_id": str(original_photo_id)}],
+        },
+        photo_count=1,
+        finding_count=1,
+        thermal_available_photo_count=0,
+        generated_by=_trial_customer().id,
+        generated_at=now,
+        created_at=now,
+        updated_at=now,
+    )
+    added_photo = _uploaded_photo(
+        added_photo_id,
+        filename="second.jpg",
+        thermal_imaging_available=True,
+    )
+    request = TrialReportRequest.model_validate(
+        {
+            "report_name": "东立面检测结果",
+            "generated_at": now.isoformat(),
+            "models": ["裂缝", "剥落", "空鼓"],
+            "files": [
+                {"photo_id": str(added_photo_id), "filename": "second.jpg", "size": 1200}
+            ],
+            "findings": [
+                {
+                    "photo_id": str(added_photo_id),
+                    "filename": "second.jpg",
+                    "model": "空鼓",
+                    "confidence": 0.87,
+                    "bbox": {"x": 10, "y": 20, "width": 30, "height": 40},
+                }
+            ],
+            "raw_model_outputs": [{"photo_id": str(added_photo_id)}],
+        }
+    )
+
+    appended = _append_trial_detection_result(
+        result=result,
+        trial_request=request,
+        stored_photos_source=[added_photo],
+    )
+
+    assert appended.id == result.id
+    assert appended.photo_count == 2
+    assert appended.finding_count == 2
+    assert appended.thermal_available_photo_count == 1
+    assert added_photo.generated_result_id == result.id
+    assert [photo["id"] for photo in appended.report_data_json["photos"]] == [
+        str(original_photo_id),
+        str(added_photo_id),
+    ]
+    assert appended.report_data_json["defects"][0]["id"] == "existing-defect"
+    assert appended.report_data_json["defects"][1]["photo_id"] == str(added_photo_id)
+    assert appended.report_data_json["summary"]["by_defect_type"] == {"crack": 1, "hollow": 1}
+    assert len(appended.report_data_json["raw_model_outputs"]) == 2
 
 
 def test_trial_generate_endpoint_returns_preview_payload(monkeypatch) -> None:
@@ -334,9 +792,14 @@ def test_trial_generate_endpoint_returns_preview_payload(monkeypatch) -> None:
     payload = response.json()
     assert payload["report_name"] == "东立面体验结果"
     assert payload["models"] == ["裂缝", "剥落"]
-    assert payload["files"] == [{"filename": "trial-001.jpg", "size": len(TRIAL_JPEG_BYTES)}]
+    assert payload["files"] == [{
+        "photo_id": str(UUID(int=10_001)),
+        "filename": "trial-001.jpg",
+        "size": len(TRIAL_JPEG_BYTES),
+    }]
     assert payload["findings"] == [
         {
+            "photo_id": str(UUID(int=10_001)),
             "filename": "trial-001.jpg",
             "model": "剥落",
             "confidence": 0.67,
@@ -346,6 +809,122 @@ def test_trial_generate_endpoint_returns_preview_payload(monkeypatch) -> None:
             "detection_id": "det-1",
         }
     ]
+
+
+def test_trial_generate_records_inference_usage_for_stored_photos(monkeypatch) -> None:
+    _mock_trial_inference(
+        monkeypatch,
+        {
+            "image": {"width": 1000, "height": 500},
+            "inference": {"api_request_count": 3, "tile_count": 3},
+            "token_usage": {
+                "prompt_tokens": 1200,
+                "completion_tokens": 45,
+                "total_tokens": 1245,
+            },
+            "detections": [],
+        },
+    )
+    photo = _uploaded_photo(UUID(int=20_001))
+    photo.file_size = len(TRIAL_JPEG_BYTES)
+    fake_db = UploadedPhotoDb([photo])
+    app.dependency_overrides[get_current_user] = _trial_customer
+    app.dependency_overrides[get_db] = lambda: fake_db
+    monkeypatch.setattr(
+        reports,
+        "get_object_bytes",
+        lambda *_: TRIAL_JPEG_BYTES,
+    )
+    try:
+        response = client.post(
+            "/api/trial/generate",
+            json={
+                "report_name": "存储原图结果",
+                "models": ["裂缝"],
+                "photo_ids": [str(photo.id)],
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert len(fake_db.usage_events) == 1
+    event = fake_db.usage_events[0]
+    assert event.event_type == "inference"
+    assert event.source_type == "trial"
+    assert event.photo_count == 1
+    assert event.storage_bytes == 0
+    assert event.api_request_count == 3
+    assert event.input_token_count == 1200
+    assert event.output_token_count == 45
+    assert event.token_count == 1245
+    assert event.trial_task_count == 1
+
+
+def test_trial_generate_endpoint_preserves_legacy_corrosion_label(monkeypatch) -> None:
+    _mock_trial_inference(
+        monkeypatch,
+        {
+            "image": {"width": 1000, "height": 500},
+            "inference": {"tile_count": 1},
+            "token_usage": {
+                "request_count": 1,
+                "reported_request_count": 1,
+                "prompt_tokens": 1100,
+                "completion_tokens": 24,
+                "total_tokens": 1124,
+            },
+            "tile_token_usages": [
+                {
+                    "tile_index": 1,
+                    "x": 0,
+                    "y": 0,
+                    "valid_width": 1000,
+                    "valid_height": 500,
+                    "token_usage": {
+                        "prompt_tokens": 1100,
+                        "completion_tokens": 24,
+                        "total_tokens": 1124,
+                    },
+                }
+            ],
+            "detections": [
+                {
+                    "id": "corrosion-1",
+                    "type": "corrosion",
+                    "type_name": "锈蚀",
+                    "confidence": 0.81,
+                    "bbox": {"x": 120, "y": 60, "width": 80, "height": 160},
+                    "description": "金属连接件明显锈蚀",
+                }
+            ],
+        },
+    )
+
+    response = _post_trial_generate(
+        [("files", ("trial-rust.jpg", TRIAL_JPEG_BYTES, "image/jpeg"))]
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["findings"] == [
+        {
+            "photo_id": str(UUID(int=10_001)),
+            "filename": "trial-rust.jpg",
+            "model": "锈蚀",
+            "confidence": 0.81,
+            "bbox": {"x": 120, "y": 60, "width": 80, "height": 160},
+            "image_width": 1000,
+            "image_height": 500,
+            "detection_id": "corrosion-1",
+            "description": "金属连接件明显锈蚀",
+        }
+    ]
+    assert payload["raw_model_outputs"][0]["detections"][0]["type"] == "corrosion"
+    assert payload["raw_model_outputs"][0]["detections"][0]["model"] == "锈蚀"
+    assert payload["raw_model_outputs"][0]["task_duration_seconds"] >= 0
+    assert payload["raw_model_outputs"][0]["token_usage"]["total_tokens"] == 1124
+    assert payload["raw_model_outputs"][0]["tile_token_usages"][0]["tile_index"] == 1
 
 
 def test_trial_generate_endpoint_hides_findings_at_point_six(monkeypatch) -> None:
@@ -386,14 +965,17 @@ def test_trial_generate_endpoint_hides_findings_at_point_six(monkeypatch) -> Non
 
 
 def test_trial_generate_endpoint_accepts_uploaded_photo_ids(monkeypatch) -> None:
-    _mock_trial_inference(monkeypatch)
+    captured_kwargs: dict = {}
+    _mock_trial_inference(monkeypatch, captured_kwargs=captured_kwargs)
     monkeypatch.setattr(
         "app.api.reports.get_object_bytes",
         lambda bucket, object_key: TRIAL_JPEG_BYTES,
     )
     photo_id = UUID("00000000-0000-0000-0000-000000000901")
+    photo = _uploaded_photo(photo_id)
+    fake_db = UploadedPhotoDb([photo])
     app.dependency_overrides[get_current_user] = _trial_customer
-    app.dependency_overrides[get_db] = lambda: UploadedPhotoDb([_uploaded_photo(photo_id)])
+    app.dependency_overrides[get_db] = lambda: fake_db
     try:
         response = client.post(
             "/api/trial/generate",
@@ -408,7 +990,12 @@ def test_trial_generate_endpoint_accepts_uploaded_photo_ids(monkeypatch) -> None
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["models"] == ["裂缝", "剥落"]
+    assert payload["archived_report_id"] == str(fake_db.trial_results[0].id)
+    assert payload["archived_report_title"] == "东立面简易检测结果"
+    assert photo.generated_result_id == fake_db.trial_results[0].id
+    assert payload["models"] == ["裂缝"]
+    assert captured_kwargs["visible_defect_types"] == ["crack"]
+    assert "type：只能是 crack" in captured_kwargs["visible_prompt"]
     assert payload["files"] == [{"photo_id": str(photo_id), "filename": "quick-001.jpg", "size": 1200}]
     assert payload["findings"] == [
         {
@@ -422,6 +1009,211 @@ def test_trial_generate_endpoint_accepts_uploaded_photo_ids(monkeypatch) -> None
             "detection_id": "det-1",
         }
     ]
+
+
+def test_trial_generate_endpoint_appends_to_archived_result(monkeypatch) -> None:
+    _mock_trial_inference(monkeypatch)
+    monkeypatch.setattr(
+        "app.api.reports.get_object_bytes",
+        lambda bucket, object_key: TRIAL_JPEG_BYTES,
+    )
+    now = datetime.now(UTC)
+    result = TrialDetectionResult(
+        id=UUID("00000000-0000-0000-0000-000000000921"),
+        result_no="TRY-202607160002",
+        title="东立面简易检测结果",
+        status="generated",
+        report_data_json={
+            "project": {},
+            "summary": {"photo_count": 1, "total_review_results": 0},
+            "detection_config": {},
+            "detection_task": {},
+            "photos": [
+                {
+                    "id": "00000000-0000-0000-0000-000000000922",
+                    "original_filename": "first.jpg",
+                    "thermal_imaging_available": False,
+                }
+            ],
+            "defects": [],
+            "raw_model_outputs": [],
+        },
+        photo_count=1,
+        finding_count=0,
+        thermal_available_photo_count=0,
+        generated_by=_trial_customer().id,
+        generated_at=now,
+        created_at=now,
+        updated_at=now,
+    )
+    photo_id = UUID("00000000-0000-0000-0000-000000000923")
+    photo = _uploaded_photo(photo_id, filename="second.jpg")
+    fake_db = AppendingTrialDb([photo], result)
+    app.dependency_overrides[get_current_user] = _trial_customer
+    app.dependency_overrides[get_db] = lambda: fake_db
+    try:
+        response = client.post(
+            "/api/trial/generate",
+            json={
+                "report_name": result.title,
+                "photo_ids": [str(photo_id)],
+                "archived_report_id": str(result.id),
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["archived_report_id"] == str(result.id)
+    assert fake_db.trial_results == []
+    assert result.photo_count == 2
+    assert result.finding_count == 1
+    assert photo.generated_result_id == result.id
+    assert [item["original_filename"] for item in result.report_data_json["photos"]] == [
+        "first.jpg",
+        "second.jpg",
+    ]
+
+
+@pytest.mark.parametrize(
+    "selected_models",
+    [
+        ["空鼓"],
+        ["裂缝", "剥落", "空鼓"],
+    ],
+    ids=["hollow-only", "all-selected"],
+)
+def test_trial_generate_routes_thermal_photo_to_hollow_only_inference(
+    monkeypatch,
+    selected_models: list[str],
+) -> None:
+    _mock_trial_inference(monkeypatch)
+    monkeypatch.setattr(
+        "app.api.reports.get_object_bytes",
+        lambda bucket, object_key: TRIAL_JPEG_BYTES,
+    )
+    captured_images = []
+
+    async def fake_thermal_inference(images, **kwargs):
+        captured_images.extend(images)
+        return [
+            {
+                "image": {"width": 1280, "height": 1024},
+                "requested_models": ["hollow"],
+                "executed_models": ["qwen3-vl-plus"],
+                "detections": [
+                    {
+                        "id": "crack-ignored",
+                        "type": "crack",
+                        "confidence": 0.91,
+                        "bbox": {"x": 100, "y": 100, "width": 100, "height": 80},
+                        "description": "不应保留的裂缝",
+                    },
+                    {
+                        "id": "spalling-ignored",
+                        "type": "spalling",
+                        "confidence": 0.89,
+                        "bbox": {"x": 300, "y": 100, "width": 120, "height": 90},
+                        "description": "不应保留的剥落",
+                    },
+                    {
+                        "id": "hollow-1",
+                        "type": "hollow",
+                        "type_name": "空鼓",
+                        "confidence": 0.86,
+                        "bbox": {"x": 555, "y": 188, "width": 145, "height": 86},
+                        "description": "疑似墙面空鼓",
+                    }
+                ],
+            }
+            for _ in images
+        ]
+
+    monkeypatch.setattr("app.api.reports.infer_trial_images", fake_thermal_inference)
+    photo_id = UUID("00000000-0000-0000-0000-000000000902")
+    app.dependency_overrides[get_current_user] = _trial_customer
+    app.dependency_overrides[get_db] = lambda: UploadedPhotoDb(
+        [_uploaded_photo(photo_id, filename="thermal.JPG", thermal_imaging_available=True)]
+    )
+    try:
+        response = client.post(
+            "/api/trial/generate",
+            json={
+                "models": selected_models,
+                "photo_ids": [str(photo_id)],
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert len(captured_images) == 1
+    assert captured_images[0].thermal_imaging_available is True
+    payload = response.json()
+    assert payload["models"] == selected_models
+    assert payload["findings"] == [
+        {
+            "photo_id": str(photo_id),
+            "filename": "thermal.JPG",
+            "model": "空鼓",
+            "confidence": 0.86,
+            "bbox": {"x": 555, "y": 188, "width": 145, "height": 86},
+            "image_width": 1280,
+            "image_height": 1024,
+            "detection_id": "hollow-1",
+            "description": "疑似墙面空鼓",
+        }
+    ]
+    assert payload["raw_model_outputs"][0]["requested_models"] == ["空鼓"]
+    assert [item["type"] for item in payload["raw_model_outputs"][0]["detections"]] == ["hollow"]
+    assert payload["raw_model_outputs"][0]["detections"][0]["model"] == "空鼓"
+
+
+@pytest.mark.parametrize(
+    ("thermal_imaging_available", "models", "expected_message"),
+    [
+        (
+            True,
+            ["裂缝", "剥落"],
+            "热成像图片只执行空鼓检测，请勾选空鼓或移除热成像图片。",
+        ),
+        (
+            False,
+            ["空鼓"],
+            "可见光图片只执行裂缝或剥落检测，请至少勾选其中一项或移除可见光图片。",
+        ),
+    ],
+    ids=["thermal-without-hollow", "visible-with-hollow-only"],
+)
+def test_trial_generate_rejects_incompatible_photo_and_model_selection(
+    thermal_imaging_available: bool,
+    models: list[str],
+    expected_message: str,
+) -> None:
+    photo_id = UUID("00000000-0000-0000-0000-000000000903")
+    app.dependency_overrides[get_current_user] = _trial_customer
+    app.dependency_overrides[get_db] = lambda: UploadedPhotoDb(
+        [
+            _uploaded_photo(
+                photo_id,
+                filename="thermal.JPG" if thermal_imaging_available else "visible.jpg",
+                thermal_imaging_available=thermal_imaging_available,
+            )
+        ]
+    )
+    try:
+        response = client.post(
+            "/api/trial/generate",
+            json={
+                "models": models,
+                "photo_ids": [str(photo_id)],
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 400
+    assert response.json()["message"] == expected_message
 
 
 def test_trial_generate_endpoint_requires_configured_inference_service(monkeypatch) -> None:
@@ -494,18 +1286,14 @@ def test_trial_generate_requires_login() -> None:
 
 
 def test_trial_generate_rejects_non_jpeg_or_png_uploads() -> None:
-    response = _post_trial_generate(
-        [("files", ("trial-001.webp", b"RIFFfake-webp", "image/webp"))]
-    )
+    response = _post_trial_photo("trial-001.webp", b"RIFFfake-webp", "image/webp")
 
     assert response.status_code == 400
     assert response.json()["message"] == "仅支持 JPG、PNG 图片。"
 
 
 def test_trial_generate_rejects_mismatched_image_content() -> None:
-    response = _post_trial_generate(
-        [("files", ("trial-001.jpg", b"fake-image", "image/jpeg"))]
-    )
+    response = _post_trial_photo("trial-001.jpg", b"fake-image", "image/jpeg")
 
     assert response.status_code == 400
     assert response.json()["message"] == "图片格式与文件内容不匹配。"
@@ -541,14 +1329,76 @@ def test_trial_generate_rejects_more_than_ten_uploaded_photo_ids() -> None:
     assert response.json()["message"] == "单次最多上传 10 张照片。"
 
 
-def test_trial_generate_rejects_files_larger_than_twenty_mb() -> None:
-    oversized_jpeg = b"\xff\xd8\xff" + (b"0" * (20 * 1024 * 1024 - 2))
-    response = _post_trial_generate(
-        [("files", ("trial-oversized.jpg", oversized_jpeg, "image/jpeg"))]
+def test_trial_upload_rate_limit_allows_thirty_per_ten_minutes(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.api.reports.get_settings",
+        lambda: SimpleNamespace(
+            trial_upload_limit_per_user=30,
+            trial_upload_window_seconds=600,
+        ),
     )
 
+    for _ in range(30):
+        _enforce_trial_upload_limit(_trial_customer())
+
+    with raises(HTTPException) as raised:
+        _enforce_trial_upload_limit(_trial_customer())
+
+    assert raised.value.status_code == 429
+    assert raised.value.detail == "照片上传过于频繁，请稍后重试。"
+
+
+def test_trial_generate_rate_limit_allows_five_per_ten_minutes(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.api.reports.get_settings",
+        lambda: SimpleNamespace(
+            trial_generate_limit_per_user=5,
+            trial_generate_window_seconds=600,
+            trial_daily_api_request_limit=800,
+            trial_job_lock_seconds=900,
+            trial_global_job_concurrency=4,
+        ),
+    )
+
+    for _ in range(5):
+        reservation = _reserve_trial_usage(_trial_customer(), api_request_count=1)
+        reservation.release(successful=True, actual_api_request_count=1)
+
+    with raises(HTTPException) as raised:
+        _reserve_trial_usage(_trial_customer(), api_request_count=1)
+
+    assert raised.value.status_code == 429
+    assert raised.value.detail == "简易检测请求过于频繁，请稍后重试。"
+
+
+def test_trial_daily_api_request_limit_is_reserved_and_reconciled() -> None:
+    first = _reserve_trial_usage(_trial_customer(), api_request_count=800)
+    first.release(successful=True, actual_api_request_count=400)
+
+    second = _reserve_trial_usage(_trial_customer(), api_request_count=400)
+    second.release(successful=True, actual_api_request_count=400)
+
+    with raises(HTTPException) as raised:
+        _reserve_trial_usage(_trial_customer(), api_request_count=1)
+
+    assert raised.value.status_code == 429
+    assert raised.value.detail == "每位用户每天最多使用 800 次模型 API 请求。"
+
+
+def test_trial_failed_inference_refunds_reserved_api_requests() -> None:
+    failed = _reserve_trial_usage(_trial_customer(), api_request_count=800)
+    failed.release(successful=False)
+
+    retried = _reserve_trial_usage(_trial_customer(), api_request_count=800)
+    retried.release(successful=True, actual_api_request_count=800)
+
+
+def test_trial_generate_rejects_files_larger_than_ten_mb() -> None:
+    oversized_jpeg = b"\xff\xd8\xff" + (b"0" * (10 * 1024 * 1024))
+    response = _post_trial_photo("trial-oversized.jpg", oversized_jpeg, "image/jpeg")
+
     assert response.status_code == 400
-    assert response.json()["message"] == "单张图片最大 20MB。"
+    assert response.json()["message"] == "单张图片最大 10MB。"
 
 
 def test_trial_photo_metadata_detects_thermal_available() -> None:
@@ -575,7 +1425,10 @@ def test_docx_report_builder_creates_valid_package() -> None:
         "RPT-202606260001",
         {
             "project": {"name": "科技园 A 座", "client_name": "示例委托单位"},
-            "summary": {"total_review_results": 1, "by_defect_type": {"crack": 1}},
+            "summary": {
+                "total_review_results": 2,
+                "by_defect_type": {"crack": 1, "corrosion": 1},
+            },
             "defects": [
                 {
                     "defect_type": "crack",
@@ -595,6 +1448,7 @@ def test_docx_report_builder_creates_valid_package() -> None:
     assert "示例外墙检测报告" in document
     assert "RPT-202606260001" in document
     assert "facade-001.jpg" in document
+    assert "锈蚀" in document
 
 
 def _jpeg_with_metadata(*, image_source: str, image_description: str) -> bytes:

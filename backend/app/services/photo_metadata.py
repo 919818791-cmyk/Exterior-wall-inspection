@@ -15,10 +15,17 @@ class PhotoMetadata(TypedDict):
 
 
 def extract_photo_metadata(file_obj: BinaryIO) -> PhotoMetadata:
+    reader = getattr(file_obj, "read", None)
+    if not callable(reader):
+        return {
+            "xmp_drone_dji_image_source": None,
+            "ifd0_image_description": None,
+            "thermal_imaging_available": False,
+        }
     position = file_obj.tell()
     try:
         file_obj.seek(0)
-        data = file_obj.read()
+        data = reader(XMP_SCAN_LIMIT)
     finally:
         file_obj.seek(position)
     return extract_photo_metadata_from_bytes(data)

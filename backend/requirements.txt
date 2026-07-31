@@ -11,3 +11,5 @@ python-multipart==0.0.21
 minio==7.2.20
 cryptography==49.0.0
 pillow==11.3.0
+reportlab==4.4.3
+redis==6.4.0

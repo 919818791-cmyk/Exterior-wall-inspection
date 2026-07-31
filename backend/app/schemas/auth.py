@@ -9,7 +9,10 @@ from app.enums.status import UserRole, UserStatus
 
 
 class LoginRequest(BaseModel):
-    username: str = Field(min_length=1, max_length=64)
+    identity: str | None = Field(default=None, min_length=1, max_length=64)
+    phone: str | None = Field(default=None, min_length=1, max_length=32)
+    # Keep both legacy fields while clients migrate to the unified identity field.
+    username: str | None = Field(default=None, min_length=1, max_length=64)
     password: str = Field(min_length=1, max_length=128)
 
 
@@ -21,9 +24,9 @@ class ChangePasswordRequest(BaseModel):
 class TrialApplicationRequest(BaseModel):
     username: str = Field(min_length=1, max_length=64)
     password: str = Field(min_length=8, max_length=128)
-    real_name: str = Field(min_length=1, max_length=64)
+    real_name: str | None = Field(default=None, max_length=64)
     phone: str = Field(min_length=1, max_length=32)
-    organization: str = Field(min_length=1, max_length=128)
+    organization: str | None = Field(default=None, max_length=128)
 
 
 class AuthUserRead(BaseModel):
@@ -32,8 +35,27 @@ class AuthUserRead(BaseModel):
     id: UUID
     username: str
     real_name: str | None
+    phone: str | None
     role: UserRole
     organization: str | None
+
+
+class CurrentUserUpdateRequest(BaseModel):
+    real_name: str | None = Field(default=None, max_length=64)
+    phone: str | None = Field(default=None, max_length=32)
+    organization: str | None = Field(default=None, max_length=128)
+
+
+class AccountDeletionRequest(BaseModel):
+    password: str = Field(min_length=1, max_length=128)
+
+
+class AccountDeletionResponse(BaseModel):
+    ok: bool = True
+    deleted_at: datetime
+    deleted_trial_photos: int
+    deleted_trial_results: int
+    retained_notice: str
 
 
 class AccountRead(BaseModel):
@@ -84,4 +106,4 @@ class LogoutResponse(BaseModel):
 class TrialApplicationResponse(BaseModel):
     ok: bool = True
     username: str
-    status: UserStatus = UserStatus.DISABLED
+    status: UserStatus = UserStatus.ACTIVE

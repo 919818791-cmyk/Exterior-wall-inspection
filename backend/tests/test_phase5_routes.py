@@ -1,9 +1,20 @@
+from types import SimpleNamespace
 from uuid import uuid4
 
+import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
+from app.api.detection_tasks import (
+    _formal_compatible_inference,
+    _validate_formal_photo_model_compatibility,
+)
 from app.main import app
-from app.schemas.phase5 import AlgorithmResultPayload
+from app.schemas.phase5 import (
+    AlgorithmResultPayload,
+    AlgorithmTaskPhoto,
+    DetectionStartRequest,
+)
 
 
 def test_phase5_routes_are_registered() -> None:
@@ -62,3 +73,87 @@ def test_algorithm_result_payload_accepts_fixed_json_contract() -> None:
     assert payload.results[0].photo_id == photo_id
     assert payload.results[0].model_output["image"]["width"] == 1000
     assert payload.results[0].detections[0].type == "crack"
+
+
+def test_detection_start_defaults_to_all_supported_report_types() -> None:
+    payload = DetectionStartRequest.model_validate({})
+
+    assert payload.model_types == ["crack", "spalling", "hollow"]
+
+
+def test_formal_detection_routes_models_by_photo_type() -> None:
+    thermal_photo = SimpleNamespace(photo_type="thermal")
+    visible_photo = SimpleNamespace(photo_type="visible")
+    inference = {
+        "requested_models": ["crack", "spalling", "hollow"],
+        "detections": [
+            {"type": "crack"},
+            {"type": "spalling"},
+            {"type": "hollow"},
+        ],
+    }
+    selected_models = ["crack", "spalling", "hollow"]
+
+    thermal_result = _formal_compatible_inference(
+        thermal_photo,
+        inference,
+        selected_models,
+    )
+    visible_result = _formal_compatible_inference(
+        visible_photo,
+        inference,
+        selected_models,
+    )
+
+    assert thermal_result["requested_models"] == ["hollow"]
+    assert [item["type"] for item in thermal_result["detections"]] == ["hollow"]
+    assert visible_result["requested_models"] == ["crack", "spalling"]
+    assert [item["type"] for item in visible_result["detections"]] == [
+        "crack",
+        "spalling",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("photo_type", "models", "expected_message"),
+    [
+        (
+            "thermal",
+            ["crack", "spalling"],
+            "热成像图片只执行空鼓检测，请勾选空鼓或移除热成像图片。",
+        ),
+        (
+            "visible",
+            ["hollow"],
+            "可见光图片只执行裂缝或剥落检测，请至少勾选其中一项或移除可见光图片。",
+        ),
+    ],
+)
+def test_formal_detection_rejects_incompatible_photo_and_model_selection(
+    photo_type: str,
+    models: list[str],
+    expected_message: str,
+) -> None:
+    with pytest.raises(HTTPException) as raised:
+        _validate_formal_photo_model_compatibility(
+            [SimpleNamespace(photo_type=photo_type)],
+            models,
+        )
+
+    assert raised.value.status_code == 400
+    assert raised.value.detail == expected_message
+
+
+def test_algorithm_task_photo_exposes_photo_type_to_worker() -> None:
+    photo = AlgorithmTaskPhoto.model_validate(
+        {
+            "photo_id": str(uuid4()),
+            "original_filename": "thermal.jpg",
+            "download_url": "https://objects.test/thermal.jpg",
+            "storage_bucket": "test",
+            "storage_object_key": "photos/thermal.jpg",
+            "photo_type": "thermal",
+        }
+    )
+
+    assert photo.photo_type == "thermal"
