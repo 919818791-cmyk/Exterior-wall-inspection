@@ -51,7 +51,7 @@ class Settings(BaseSettings):
     trial_application_window_seconds: int = Field(default=86400, ge=60)
 
     trial_daily_api_request_limit: int = Field(default=800, ge=1)
-    trial_max_file_size_bytes: int = Field(default=10 * 1024 * 1024, ge=1024)
+    trial_max_file_size_bytes: int = Field(default=5 * 1024 * 1024, ge=1024)
     trial_max_image_pixels: int = Field(default=64_000_000, ge=1_000_000)
     trial_inference_max_image_pixels: int = Field(default=64_000_000, ge=1_000_000)
     trial_max_tiles_per_image: int = Field(default=100, ge=1)

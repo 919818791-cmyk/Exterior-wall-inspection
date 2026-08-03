@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, ImageOff, RefreshCcw, Trash2, TriangleAlert, X, ZoomIn, ZoomOut } from "lucide-react";
+import { Check, ImageOff, RefreshCcw, Trash2, X, ZoomIn, ZoomOut } from "lucide-react";
 import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
@@ -49,14 +49,6 @@ function validatePhoto(file: File) {
   return "";
 }
 
-function photoPrecheckLabel(photo: Photo) {
-  if (photo.precheck_status === "passed") return "预检通过";
-  if (photo.precheck_status === "rejected") return "非建筑照片";
-  if (photo.precheck_status === "error") return "预检失败";
-  if (photo.precheck_status === "running") return "正在预检";
-  return "等待预检";
-}
-
 export function ProjectPhotoActions({
   isEditable,
   project
@@ -65,13 +57,25 @@ export function ProjectPhotoActions({
   project: ProjectDetail;
 }) {
   const pendingUploadsRef = useRef<PendingUpload[]>([]);
+  const uploaderRef = useRef<HTMLDivElement | null>(null);
   const previewViewportRef = useRef<HTMLDivElement | null>(null);
   const previewDragRef = useRef<{ pointerId: number; x: number; y: number; distance: number } | null>(null);
   const previewDragMovedRef = useRef(false);
   const queryClient = useQueryClient();
-  const photosQuery = useQuery(projectPhotosQueryOptions(project.id));
+  const photosQuery = useQuery({
+    ...projectPhotosQueryOptions(project.id),
+    refetchInterval: (query) => {
+      const photos = query.state.data as Photo[] | undefined;
+      return photos?.some((photo) => (
+        photo.precheck_status === "pending" || photo.precheck_status === "running"
+      )) ? 1500 : false;
+    }
+  });
   const projectPhotos = useMemo(
-    () => photosQuery.data ?? [],
+    () => [...(photosQuery.data ?? [])].sort((left, right) => (
+      Date.parse(left.created_at) - Date.parse(right.created_at)
+      || left.id.localeCompare(right.id)
+    )),
     [photosQuery.data]
   );
   const [pendingUploads, setPendingUploads] = useState<PendingUpload[]>([]);
@@ -85,6 +89,8 @@ export function ProjectPhotoActions({
   const hasPhotos = Boolean(projectPhotos.length || pendingUploads.length);
   const uploadedPendingCount = pendingUploads.filter((item) => item.status === "uploaded").length;
   const failedPendingCount = pendingUploads.filter((item) => item.status === "failed").length;
+  const activePendingCount = pendingUploads.filter((item) => item.status === "uploading").length;
+  const visiblePhotoCount = projectPhotos.length + pendingUploads.length;
   const uploadPercent = pendingUploads.length
     ? Math.round((uploadedPendingCount / pendingUploads.length) * 100)
     : 0;
@@ -193,6 +199,14 @@ export function ProjectPhotoActions({
   useEffect(() => () => {
     pendingUploadsRef.current.forEach((item) => URL.revokeObjectURL(item.previewUrl));
   }, []);
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      const uploader = uploaderRef.current;
+      if (uploader) uploader.scrollTop = uploader.scrollHeight;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [pendingUploads.length, projectPhotos.length]);
 
   const startUploads = (entries: PendingUpload[]) => {
     if (!entries.length || !isEditable || uploadMutation.isPending) return;
@@ -331,35 +345,49 @@ export function ProjectPhotoActions({
 
   return (
     <>
-      <ProjectPhotoUploader
-        disabled={!isEditable || uploadMutation.isPending}
-        footer={pendingUploads.length ? (
-          <div className={`project-uploader-progress ${failedPendingCount ? "has-error" : ""}`}>
-            <div>
-              <span>
-                {uploadMutation.isPending
-                  ? `正在上传，已完成 ${uploadedPendingCount}/${pendingUploads.length}`
-                  : failedPendingCount
-                    ? `${failedPendingCount} 张上传失败`
-                    : `上传完成 ${uploadedPendingCount}/${pendingUploads.length}`}
+      <header className="project-photo-workspace-heading">
+        <h2 id="project-photo-title">检测照片</h2>
+        <div className="new-project-photo-heading-status">
+          {activePendingCount ? (
+            <div className="new-project-upload-overview" role="status" aria-live="polite">
+              <span>正在上传，已完成 {uploadedPendingCount}/{pendingUploads.length}</span>
+              <span
+                aria-label={`照片上传进度 ${uploadPercent}%`}
+                aria-valuemax={100}
+                aria-valuemin={0}
+                aria-valuenow={uploadPercent}
+                className="new-project-upload-track"
+                role="progressbar"
+              >
+                <i style={{ width: `${uploadPercent}%` }} />
               </span>
-              <strong>{uploadPercent}%</strong>
             </div>
-            <div className="project-progress-track" role="progressbar" aria-label="照片上传总进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={uploadPercent}>
-              <span style={{ width: `${uploadPercent}%` }} />
-            </div>
-            {failedPendingCount && !uploadMutation.isPending ? (
-              <button type="button" onClick={retryFailedUploads}><RefreshCcw aria-hidden="true" />重新上传失败图片</button>
-            ) : null}
-          </div>
-        ) : null}
+          ) : failedPendingCount ? (
+            <button
+              className="new-project-upload-summary is-error detail-photo-upload-retry"
+              type="button"
+              onClick={retryFailedUploads}
+            >
+              <RefreshCcw aria-hidden="true" />{failedPendingCount} 张失败，重试
+            </button>
+          ) : visiblePhotoCount ? (
+            <span className="new-project-upload-summary is-complete">上传完成</span>
+          ) : null}
+          <span className="new-project-photo-count">{visiblePhotoCount} 张</span>
+        </div>
+      </header>
+      <ProjectPhotoUploader
+        containerRef={uploaderRef}
+        disabled={!isEditable || uploadMutation.isPending}
         hasPhotos={hasPhotos}
         isLoading={photosQuery.isLoading}
         onFilesSelected={applyFiles}
       >
         {projectPhotos.map((photo) => {
           const previewUrl = photo.thumbnail_url ?? photo.preview_url;
-          const precheckDetail = photo.precheck_error ?? photo.precheck_reason ?? photoPrecheckLabel(photo);
+          const hasPrecheckIssue = photo.precheck_status === "rejected" || photo.precheck_status === "error";
+          const precheckDetail = photo.precheck_error ?? photo.precheck_reason
+            ?? (photo.precheck_status === "rejected" ? "建筑判断未通过" : "建筑判断异常");
           return (
             <figure className={`project-photo-thumb is-uploaded precheck-${photo.precheck_status}`} key={photo.id}>
               <div
@@ -381,12 +409,14 @@ export function ProjectPhotoActions({
                 {previewUrl
                   ? <img alt={photo.original_filename} src={previewUrl} />
                   : <span className="project-photo-missing"><ImageOff aria-hidden="true" /></span>}
-                {photo.precheck_status === "passed" ? (
-                  <span className="project-photo-check"><Check aria-hidden="true" /></span>
-                ) : photo.precheck_status === "rejected" ? (
-                  <span className="project-photo-precheck-alert is-rejected" aria-hidden="true">!</span>
-                ) : photo.precheck_status === "error" ? (
-                  <span className="project-photo-precheck-alert"><TriangleAlert aria-hidden="true" /></span>
+                {hasPrecheckIssue ? (
+                  <span
+                    aria-label={`${photo.original_filename}：${precheckDetail}`}
+                    className="project-photo-precheck-alert is-issue"
+                    title={precheckDetail}
+                  >
+                    !
+                  </span>
                 ) : null}
                 <div className="project-photo-thumb-actions">
                   <button aria-label={`放大查看 ${photo.original_filename}`} disabled={!previewUrl} title="放大查看" type="button" onClick={() => openPhotoPreview(photo.id)}><ZoomIn aria-hidden="true" /></button>
@@ -394,12 +424,6 @@ export function ProjectPhotoActions({
                 </div>
               </div>
               <figcaption>{photo.original_filename}</figcaption>
-              <span
-                className={`project-photo-precheck-status is-${photo.precheck_status}`}
-                title={precheckDetail}
-              >
-                {photoPrecheckLabel(photo)}
-              </span>
             </figure>
           );
         })}
@@ -407,12 +431,21 @@ export function ProjectPhotoActions({
           <figure className={`project-photo-thumb is-${item.status}`} key={item.id}>
             <div className="project-photo-thumb-image">
               <img alt={item.file.name} src={item.previewUrl} />
-              {item.status === "uploaded" ? <span className="project-photo-check"><Check aria-hidden="true" /></span> : null}
+              {item.status === "uploading" ? (
+                <span
+                  aria-label={`${item.file.name}正在上传`}
+                  className="new-project-photo-upload-indicator"
+                  role="status"
+                >
+                  <span aria-hidden="true" className="new-project-photo-upload-ring" />
+                  <small>上传中</small>
+                </span>
+              ) : item.status === "uploaded" ? (
+                <span className="project-photo-check"><Check aria-hidden="true" /></span>
+              ) : null}
             </div>
             <figcaption>{item.file.name}</figcaption>
-            <span className="project-photo-upload-status">
-              {item.status === "failed" ? "上传失败" : item.status === "uploaded" ? "上传完成" : "上传中"}
-            </span>
+            {item.status === "failed" ? <span className="project-photo-upload-status">上传失败</span> : null}
           </figure>
         ))}
       </ProjectPhotoUploader>

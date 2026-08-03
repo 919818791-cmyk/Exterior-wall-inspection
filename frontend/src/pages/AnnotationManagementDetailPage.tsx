@@ -476,7 +476,6 @@ function AnnotationPhotoEditor({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [touched, setTouched] = useState(false);
-  const [message, setMessage] = useState("");
 
   useEffect(() => {
     if (touched) return;
@@ -518,7 +517,6 @@ function AnnotationPhotoEditor({
     },
     onSuccess: async () => {
       setTouched(false);
-      setMessage("标注已保存。");
       await invalidate();
     }
   });
@@ -545,7 +543,6 @@ function AnnotationPhotoEditor({
     setAnnotations((current) => current.map((item) => item.id === annotationId ? { ...item, ...patch } : item));
     setSelectedId(annotationId);
     setTouched(true);
-    setMessage("");
   }
 
   function createAnnotation(bbox: AnnotationBBox) {
@@ -561,7 +558,6 @@ function AnnotationPhotoEditor({
     setSelectedId(annotation.id);
     setIsDrawing(false);
     setTouched(true);
-    setMessage("");
   }
 
   function toggleDrawing() {
@@ -571,7 +567,6 @@ function AnnotationPhotoEditor({
       if (next) setSelectedId(null);
       return next;
     });
-    setMessage("");
   }
 
   function deleteSelected() {
@@ -579,29 +574,32 @@ function AnnotationPhotoEditor({
     setAnnotations((current) => current.filter((item) => item.id !== selected.id));
     setSelectedId(null);
     setTouched(true);
-    setMessage("");
   }
 
   const activeError = saveMutation.error;
   return (
     <div className="annotation-photo-editor-module">
       {activeError ? <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-700">{errorMessage(activeError)}</p> : null}
-      {message ? <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-700">{message}</p> : null}
 
       <AnnotationColumn title={row.filename}>
         <div className="mb-3 flex flex-wrap items-center gap-2">
-          <Button
-            aria-pressed={isDrawing}
-            className={`annotation-action-button rounded-lg border border-green-600 font-bold shadow-none transition-colors data-[hover=true]:!bg-green-600 data-[hover=true]:!text-white ${isDrawing ? "bg-green-600 text-white" : "bg-white text-green-600"}`}
-            size="sm"
-            isDisabled={readOnly}
-            startContent={<CopyPlus className="h-4 w-4" aria-hidden="true" />}
-            variant="flat"
+          <AnnotationIconButton
+            disabled={readOnly}
+            label={isDrawing ? "取消画框" : "新增标注"}
+            pressed={isDrawing}
+            tone="add"
             onPress={toggleDrawing}
           >
-            {isDrawing ? "取消画框" : "新增标注"}
-          </Button>
-          <Button className="annotation-action-button rounded-lg border border-red-200 bg-white font-bold text-red-600 shadow-none transition-colors data-[hover=true]:!bg-red-600 data-[hover=true]:!text-white" isDisabled={!selected || readOnly} size="sm" startContent={<Trash2 className="h-4 w-4" aria-hidden="true" />} variant="flat" onPress={deleteSelected}>删除标注</Button>
+            <CopyPlus aria-hidden="true" />
+          </AnnotationIconButton>
+          <AnnotationIconButton
+            disabled={!selected || readOnly}
+            label="删除标注"
+            tone="delete"
+            onPress={deleteSelected}
+          >
+            <Trash2 aria-hidden="true" />
+          </AnnotationIconButton>
           <p className="min-w-0 text-sm font-bold text-slate-500" aria-live="polite">
             {isDrawing ? (
               <strong className="text-green-700">请在照片上按住鼠标并拖动绘制标注框，按 Esc 可取消</strong>
@@ -670,6 +668,38 @@ function AnnotationPhotoEditor({
         </div>
       </AnnotationColumn>
     </div>
+  );
+}
+
+function AnnotationIconButton({
+  children,
+  disabled,
+  label,
+  onPress,
+  pressed,
+  tone
+}: {
+  children: React.ReactNode;
+  disabled: boolean;
+  label: string;
+  onPress: () => void;
+  pressed?: boolean;
+  tone: "add" | "delete";
+}) {
+  return (
+    <Button
+      aria-label={label}
+      aria-pressed={pressed}
+      className={`annotation-action-button annotation-action-${tone}`}
+      isDisabled={disabled}
+      isIconOnly
+      size="sm"
+      title={label}
+      variant="flat"
+      onPress={onPress}
+    >
+      {children}
+    </Button>
   );
 }
 

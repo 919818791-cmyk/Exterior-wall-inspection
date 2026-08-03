@@ -5,10 +5,14 @@ import { Link } from "react-router-dom";
 export function ProjectWorkbenchShell({
   actionLabel,
   children,
+  headerActions,
+  hideHeader = false,
   title = "检测工作台"
 }: {
   actionLabel: "返回" | "取消";
   children: ReactNode;
+  headerActions?: ReactNode;
+  hideHeader?: boolean;
   title?: string;
 }) {
   const ActionIcon = actionLabel === "取消" ? X : ArrowLeft;
@@ -16,7 +20,7 @@ export function ProjectWorkbenchShell({
   return (
     <div className="management-list-page project-editor-management-page">
       <div className="project-workspace">
-        <section className="project-hero">
+        {!hideHeader ? <section className="project-hero">
           <div className="management-page-title">
             <FolderKanban aria-hidden="true" className="management-page-title-icon" />
             <h1>{title}</h1>
@@ -26,8 +30,9 @@ export function ProjectWorkbenchShell({
               <ActionIcon aria-hidden="true" />
               {actionLabel}
             </Link>
+            {headerActions}
           </div>
-        </section>
+        </section> : null}
         {children}
       </div>
     </div>

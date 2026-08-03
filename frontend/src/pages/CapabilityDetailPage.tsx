@@ -268,6 +268,7 @@ export function TimeRecommendation() {
   const [date, setDate] = useState(today);
   const [orientation, setOrientation] = useState<Orientation>("东");
   const [address, setAddress] = useState("");
+  const [locateSignal, setLocateSignal] = useState(0);
   const [position, setPosition] = useState<RecommendationPosition | null>(null);
   const [isPositionConfirmed, setIsPositionConfirmed] = useState(false);
   const [recommendation, setRecommendation] = useState<TimeRecommendationResult | null>(null);
@@ -305,6 +306,7 @@ export function TimeRecommendation() {
 
   function openRecommendationDialog() {
     setDate(today());
+    setLocateSignal(0);
     setRecommendation(null);
     setRecommendationError("");
     setIsDialogOpen(true);
@@ -384,17 +386,17 @@ export function TimeRecommendation() {
 
   return <>
     <section ref={heroRef} className="detail-hero recommendation-hero"><div className="detail-hero-copy"><h1>检测时段推荐</h1><StaggeredLead>综合计划时间、立面朝向与气象条件，提前筛选更稳定、更安全的无人机采集窗口。</StaggeredLead><div className="detail-actions"><button className="button primary" type="button" onClick={openDialog}><DroneScanIcon aria-hidden="true" />查询推荐时段</button></div></div></section>
-    <dialog ref={dialogRef} aria-labelledby="time-recommendation-title" className={`project-dialog recommendation-dialog detection-time-dialog${recommendation ? ` detection-time-dialog--results${showsTwoRecommendationWindows ? " detection-time-dialog--two-windows" : ""}` : isQuerying ? " detection-time-dialog--loading" : ""}`} onCancel={(event) => { event.preventDefault(); requestDialogClose(); }} onClick={(event) => { if (event.target === event.currentTarget) requestDialogClose(); }} onClose={() => setIsDialogOpen(false)}>
+    <dialog ref={dialogRef} aria-labelledby="time-recommendation-title" className={`project-dialog recommendation-dialog detection-time-dialog${recommendation ? ` detection-time-dialog--results${showsTwoRecommendationWindows ? " detection-time-dialog--two-windows" : ""}` : isQuerying ? " detection-time-dialog--loading" : ""}`} onCancel={(event) => { event.preventDefault(); requestDialogClose(); }} onClose={() => setIsDialogOpen(false)}>
       <div className="dialog-heading"><div className="recommendation-dialog-title"><DroneScanIcon aria-hidden="true" className="recommendation-dialog-title-icon" /><h2 id="time-recommendation-title">检测时段推荐</h2></div><button aria-label="关闭检测时段推荐" className="icon-button" type="button" onClick={requestDialogClose}><X aria-hidden="true" /></button></div>
       <div className="recommendation-content">
         <div className="recommendation-form-grid recommendation-form-grid--without-project">
-          <label className="recommendation-date-field"><span>日期</span><input aria-label="选择日期" className="recommendation-date-input" max={latestDate} min={earliestDate} type="date" value={date} onChange={(event) => { setDate(event.target.value); resetResult(); }} /></label>
-          <label className="recommendation-date-field"><span>立面朝向</span><select aria-label="选择立面朝向" value={orientation} onChange={(event) => { setOrientation(event.target.value as Orientation); resetResult(); }}>{(Object.keys(orientationAzimuth) as Orientation[]).map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+          <label className="recommendation-date-field"><span>日期</span><input aria-label="选择日期" className="recommendation-date-input" disabled={Boolean(recommendation)} max={latestDate} min={earliestDate} type="date" value={date} onChange={(event) => { setDate(event.target.value); resetResult(); }} /></label>
+          <label className="recommendation-date-field"><span>立面朝向</span><select aria-label="选择立面朝向" disabled={Boolean(recommendation)} value={orientation} onChange={(event) => { setOrientation(event.target.value as Orientation); resetResult(); }}>{(Object.keys(orientationAzimuth) as Orientation[]).map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
         </div>
-        {!isQuerying && !recommendation ? <div className="recommendation-location-section">
-          <label className="recommendation-date-field recommendation-address-field"><span>检测位置</span><input aria-label="输入检测位置" placeholder="输入地址后请搜索定位，也可直接点击地图" value={address} onChange={(event) => { setAddress(event.target.value); setIsPositionConfirmed(false); resetResult(); }} /></label>
-          {isMapMounted ? <ProjectLocationMap address={address} className="recommendation-location-map" initialPosition={position} onPositionChange={updatePosition} usageLabel="检测位置" /> : null}
-          {address.trim() && position && !isPositionConfirmed ? <p className="recommendation-location-warning" role="status">地址已修改，请点击“搜索定位”或在地图上重新选点，确认坐标后才能查询。</p> : null}
+        {!isQuerying ? <div className="recommendation-location-section">
+          <label className="recommendation-date-field recommendation-address-field"><span>检测位置</span><input aria-label="输入检测位置" disabled={Boolean(recommendation)} placeholder="输入地址后按回车定位，也可直接点击地图" value={address} onChange={(event) => { setAddress(event.target.value); setIsPositionConfirmed(false); resetResult(); }} onKeyDown={(event) => { if (event.key !== "Enter" || event.nativeEvent.isComposing || !address.trim()) return; event.preventDefault(); setLocateSignal((signal) => signal + 1); }} /></label>
+          {isMapMounted && !recommendation ? <ProjectLocationMap address={address} className="recommendation-location-map" initialPosition={position} locateSignal={locateSignal} onAddressChange={setAddress} onPositionChange={updatePosition} showToolbar={false} usageLabel="检测位置" /> : null}
+          {!recommendation && address.trim() && position && !isPositionConfirmed ? <p className="recommendation-location-warning" role="status">地址已修改，请按回车定位或在地图上重新选点，确认坐标后才能查询。</p> : null}
         </div> : null}
         {isQuerying ? <RecommendationLoadingSkeleton /> : null}
         {recommendationError ? <div className="recommendation-weather-input recommendation-weather-input--error"><span>计算失败</span><strong>{recommendationError}</strong></div> : null}
@@ -402,20 +404,16 @@ export function TimeRecommendation() {
           <div className={`recommendation-primary recommendation-primary--${recommendation.recommendationLevel === "优选时段" ? "preferred" : recommendation.recommendationLevel === "可用时段" ? "usable" : "unavailable"}`}>
             {recommendation.recommendationLevel !== "不推荐" ? <span>{recommendation.recommendationLevel}</span> : null}
             <strong>{recommendation.primaryWindow?.label ?? "不推荐检测"}</strong>
-            <small>{recommendation.status} · {date} · {recommendation.headline} · {recommendation.reason}</small>
           </div>
           {recommendation.recommendationLevel === "优选时段" && recommendation.usableWindow ? <div className="recommendation-primary recommendation-primary--usable">
             <span>可用时段</span>
             <strong>{recommendation.usableWindow.label}</strong>
-            <small>满足 |ΔT| ≥ 0.8 ℃且连续 ≥ 30 分钟</small>
           </div> : null}
           <section className="recommendation-calculation" aria-labelledby="recommendation-calculation-title">
             <div className="recommendation-calculation-heading">
               <div>
-                <span>结果说明</span>
-                <h3 id="recommendation-calculation-title">计算过程与判断逻辑</h3>
+                <span id="recommendation-calculation-title">结果说明</span>
               </div>
-              <small>{recommendation.calculation.criteria}</small>
             </div>
             <ol>
               <li><span>1</span><div><strong>确定参与计算的时段</strong><p>{recommendation.calculation.evaluationRange}</p></div></li>

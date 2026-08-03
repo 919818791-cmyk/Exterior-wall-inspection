@@ -1393,12 +1393,12 @@ def test_trial_failed_inference_refunds_reserved_api_requests() -> None:
     retried.release(successful=True, actual_api_request_count=800)
 
 
-def test_trial_generate_rejects_files_larger_than_ten_mb() -> None:
-    oversized_jpeg = b"\xff\xd8\xff" + (b"0" * (10 * 1024 * 1024))
+def test_trial_generate_rejects_files_larger_than_five_mb() -> None:
+    oversized_jpeg = b"\xff\xd8\xff" + (b"0" * (5 * 1024 * 1024))
     response = _post_trial_photo("trial-oversized.jpg", oversized_jpeg, "image/jpeg")
 
     assert response.status_code == 400
-    assert response.json()["message"] == "单张图片最大 10MB。"
+    assert response.json()["message"] == "单张图片最大 5MB。"
 
 
 def test_trial_photo_metadata_detects_thermal_available() -> None:

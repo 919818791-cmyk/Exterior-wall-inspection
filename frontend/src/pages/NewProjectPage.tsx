@@ -1,12 +1,12 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { Send, X } from "lucide-react";
+import { ArrowLeft, Send, X } from "lucide-react";
 import {
   type FormEvent,
   useEffect,
   useRef,
   useState
 } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 import {
   createProjectDraft,
@@ -19,6 +19,7 @@ import { ProjectPhotoUploader } from "@/components/project/ProjectPhotoUploader"
 import { ProjectWorkbenchShell } from "@/components/project/ProjectWorkbenchShell";
 import type { ProjectCreatePayload, ProjectDetail } from "@/types/projects";
 import { createClientId } from "@/utils/id";
+import { PROJECT_STATUS_LABELS } from "@/utils/projectDisplay";
 
 const ACCEPTED_PHOTO_TYPES = new Set(["image/jpeg", "image/png"]);
 
@@ -386,12 +387,29 @@ export function NewProjectPage() {
   };
 
   const isSaving = saveStatus === "saving";
+  const totalPhotoCount = form.photos.length;
+  const uploadedPhotoCount = form.photos.filter((photo) => photo.status === "saved").length;
+  const failedPhotoCount = form.photos.filter((photo) => photo.status === "failed").length;
+  const activePhotoUploadCount = form.photos.filter(
+    (photo) => photo.status === "pending" || photo.status === "uploading"
+  ).length;
+  const photoUploadProgress = totalPhotoCount
+    ? Math.round(uploadedPhotoCount / totalPhotoCount * 100)
+    : 0;
+  const allPhotosUploaded = totalPhotoCount > 0 && uploadedPhotoCount === totalPhotoCount;
 
   return (
-    <ProjectWorkbenchShell actionLabel="返回" title="新增检测项目">
+    <ProjectWorkbenchShell actionLabel="返回" hideHeader>
       <form className="create-workspace" onSubmit={handleSubmit}>
+        <h1 className="sr-only">新增检测项目</h1>
         <section className="project-editor-panel" aria-label="新建项目">
           <div className="project-editor-block project-fields project-editor-basic-fields">
+            <Label label="项目编号">
+              <input readOnly value="自动生成" />
+            </Label>
+            <Label label="项目状态">
+              <input readOnly value={PROJECT_STATUS_LABELS.draft} />
+            </Label>
             <Label label="项目名称">
               <input
                 value={form.name}
@@ -414,7 +432,28 @@ export function NewProjectPage() {
             <section className="project-photo-workspace" aria-labelledby="new-project-photo-title">
               <header className="project-photo-workspace-heading">
                 <h2 id="new-project-photo-title">检测照片</h2>
-                <span>{form.photos.length} 张</span>
+                <div className="new-project-photo-heading-status">
+                  {activePhotoUploadCount ? (
+                    <div className="new-project-upload-overview" role="status" aria-live="polite">
+                      <span>正在上传，已完成 {uploadedPhotoCount}/{totalPhotoCount}</span>
+                      <span
+                        aria-label={`照片上传进度 ${photoUploadProgress}%`}
+                        aria-valuemax={100}
+                        aria-valuemin={0}
+                        aria-valuenow={photoUploadProgress}
+                        className="new-project-upload-track"
+                        role="progressbar"
+                      >
+                        <i style={{ width: `${photoUploadProgress}%` }} />
+                      </span>
+                    </div>
+                  ) : failedPhotoCount ? (
+                    <span className="new-project-upload-summary is-error">{failedPhotoCount} 张上传失败</span>
+                  ) : allPhotosUploaded ? (
+                    <span className="new-project-upload-summary is-complete">上传完成</span>
+                  ) : null}
+                  <span className="new-project-photo-count">{totalPhotoCount} 张</span>
+                </div>
               </header>
               <ProjectPhotoUploader
                 addDisabled={startDetectionPending}
@@ -426,6 +465,16 @@ export function NewProjectPage() {
                   <figure className={`project-photo-thumb is-${photo.status}`} key={photo.localId}>
                     <div className="project-photo-thumb-image">
                       <img alt={photo.file.name} src={photo.previewUrl} />
+                      {photo.status === "pending" || photo.status === "uploading" ? (
+                        <span
+                          aria-label={`${photo.file.name}${photo.status === "pending" ? "等待上传" : "正在上传"}`}
+                          className="new-project-photo-upload-indicator"
+                          role="status"
+                        >
+                          <span aria-hidden="true" className="new-project-photo-upload-ring" />
+                          <small>{photo.status === "pending" ? "等待上传" : "上传中"}</small>
+                        </span>
+                      ) : null}
                       <button
                         aria-label={`移除 ${photo.file.name}`}
                         className="new-project-photo-remove"
@@ -445,10 +494,10 @@ export function NewProjectPage() {
             </section>
           </div>
 
-          {(formError || saveError) ? (
-            <p className="create-form-error">{formError || saveError}</p>
-          ) : null}
           <div className="create-action-bar new-project-action-bar">
+            {(formError || saveError) ? (
+              <p className="create-form-error">{formError || saveError}</p>
+            ) : null}
             <div>
               {saveMessage ? (
                 <span
@@ -458,6 +507,13 @@ export function NewProjectPage() {
                   {saveMessage}
                 </span>
               ) : null}
+              <Link
+                className="button secondary report-back-button project-workbench-nav-button new-project-back-button"
+                to="/projects"
+              >
+                <ArrowLeft aria-hidden="true" />
+                返回
+              </Link>
               <button
                 className="button primary start-ai-detection-button"
                 disabled={startDetectionPending}

@@ -2,6 +2,7 @@ import { ImageUp } from "lucide-react";
 import {
   type ChangeEvent,
   type DragEvent,
+  type Ref,
   type ReactNode,
   useRef
 } from "react";
@@ -14,6 +15,7 @@ export function ProjectPhotoUploader({
   hasPhotos,
   isLoading = false,
   loadingLabel = "正在加载照片",
+  containerRef,
   onFilesSelected
 }: {
   addDisabled?: boolean;
@@ -23,6 +25,7 @@ export function ProjectPhotoUploader({
   hasPhotos: boolean;
   isLoading?: boolean;
   loadingLabel?: string;
+  containerRef?: Ref<HTMLDivElement>;
   onFilesSelected: (files: File[]) => void;
 }) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -46,6 +49,7 @@ export function ProjectPhotoUploader({
 
   return (
     <div
+      ref={containerRef}
       className={`project-photo-uploader ${hasPhotos ? "has-photos" : "is-empty"}`}
       aria-live="polite"
       onDragOver={(event) => event.preventDefault()}

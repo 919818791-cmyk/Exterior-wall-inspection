@@ -20,10 +20,23 @@ interface AMapMarker {
   setPosition: (position: [number, number]) => void;
 }
 
+type AMapServiceResult = Record<string, unknown> | string;
+
 interface AMapGeocoder {
+  getAddress: (
+    position: [number, number],
+    callback: (status: string, result: AMapServiceResult) => void
+  ) => void;
   getLocation: (
     address: string,
-    callback: (status: string, result: { geocodes?: Array<{ location: AMapPosition }> }) => void
+    callback: (status: string, result: AMapServiceResult) => void
+  ) => void;
+}
+
+interface AMapPlaceSearch {
+  search: (
+    keyword: string,
+    callback: (status: string, result: AMapServiceResult) => void
   ) => void;
 }
 
@@ -31,6 +44,8 @@ interface AMapNamespace {
   Map: new (container: HTMLDivElement, options: Record<string, unknown>) => AMapMap;
   Marker: new (options: Record<string, unknown>) => AMapMarker;
   Geocoder: new (options: Record<string, unknown>) => AMapGeocoder;
+  PlaceSearch: new (options: Record<string, unknown>) => AMapPlaceSearch;
+  plugin: (plugins: string | string[], callback: () => void) => void;
 }
 
 declare global {
@@ -58,8 +73,17 @@ const AMAP_SERVICE_HOST = new URL(
   window.location.origin
 ).toString().replace(/\/$/, "");
 
+function ensureAmapSearchPlugins(AMap: AMapNamespace) {
+  return new Promise<AMapNamespace>((resolve, reject) => {
+    AMap.plugin(["AMap.Geocoder", "AMap.PlaceSearch"], () => {
+      if (typeof AMap.Geocoder === "function" && typeof AMap.PlaceSearch === "function") resolve(AMap);
+      else reject(new Error("高德地图搜索插件加载失败。"));
+    });
+  });
+}
+
 function loadAmap(key: string, serviceHost: string) {
-  if (window.AMap) return Promise.resolve(window.AMap);
+  if (window.AMap) return ensureAmapSearchPlugins(window.AMap);
   if (amapLoader) return amapLoader;
 
   window._AMapSecurityConfig = {
@@ -71,8 +95,15 @@ function loadAmap(key: string, serviceHost: string) {
   amapLoader = new Promise<AMapNamespace>((resolve, reject) => {
     script = document.createElement("script");
     script.async = true;
-    script.src = `https://webapi.amap.com/maps?v=2.0&key=${encodeURIComponent(key)}&plugin=AMap.Geocoder`;
-    script.onload = () => window.AMap ? resolve(window.AMap) : reject(new Error("高德地图脚本加载失败。"));
+    script.src = `https://webapi.amap.com/maps?v=2.0&key=${encodeURIComponent(key)}&plugin=AMap.Geocoder,AMap.PlaceSearch`;
+    script.onload = () => {
+      const AMap = window.AMap;
+      if (!AMap) {
+        reject(new Error("高德地图脚本加载失败。"));
+        return;
+      }
+      void ensureAmapSearchPlugins(AMap).then(resolve, reject);
+    };
     script.onerror = () => reject(new Error("高德地图脚本加载失败。"));
     document.head.append(script);
   });
@@ -85,13 +116,60 @@ function loadAmap(key: string, serviceHost: string) {
   return amapLoader;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function normalizeAmapPosition(value: unknown) {
+  if (typeof value === "string") {
+    const [longitude, latitude] = value.split(",").map(Number);
+    return Number.isFinite(longitude) && Number.isFinite(latitude) ? { latitude, longitude } : null;
+  }
+  if (Array.isArray(value)) {
+    const [longitude, latitude] = value.map(Number);
+    return Number.isFinite(longitude) && Number.isFinite(latitude) ? { latitude, longitude } : null;
+  }
+  if (!isRecord(value)) return null;
+
+  const getLng = value.getLng;
+  const getLat = value.getLat;
+  const longitude = Number(typeof getLng === "function" ? getLng.call(value) : value.lng ?? value.longitude);
+  const latitude = Number(typeof getLat === "function" ? getLat.call(value) : value.lat ?? value.latitude);
+  if (!Number.isFinite(longitude) || !Number.isFinite(latitude)) return null;
+  return { latitude, longitude };
+}
+
+function findAmapResultPosition(result: AMapServiceResult) {
+  if (!isRecord(result)) return null;
+  const poiList = isRecord(result.poiList) ? result.poiList : null;
+  const collections = [poiList?.pois, result.pois, result.tips, result.geocodes];
+
+  for (const collection of collections) {
+    if (!Array.isArray(collection)) continue;
+    for (const item of collection) {
+      if (!isRecord(item)) continue;
+      const position = normalizeAmapPosition(item.location);
+      if (position) return position;
+    }
+  }
+  return null;
+}
+
+function findAmapFormattedAddress(result: AMapServiceResult) {
+  if (!isRecord(result) || !isRecord(result.regeocode)) return "";
+  const value = result.regeocode.formattedAddress ?? result.regeocode.formatted_address;
+  return typeof value === "string" ? value.trim() : "";
+}
+
 export function ProjectLocationMap({
   address,
   className = "",
   initialPosition,
   isEditable = true,
   locateSignal = 0,
+  onAddressChange,
   onPositionChange,
+  showToolbar = true,
   usageLabel = "项目"
 }: {
   address: string;
@@ -99,7 +177,9 @@ export function ProjectLocationMap({
   initialPosition?: { longitude: number; latitude: number } | null;
   isEditable?: boolean;
   locateSignal?: number;
+  onAddressChange?: (address: string) => void;
   onPositionChange?: (position: { longitude: number; latitude: number }) => void;
+  showToolbar?: boolean;
   usageLabel?: string;
 }) {
   const mapElementRef = useRef<HTMLDivElement | null>(null);
@@ -126,6 +206,23 @@ export function ProjectLocationMap({
     if (notify) onPositionChange?.(position);
   }, [onPositionChange]);
 
+  const resolveAddress = useCallback((position: { longitude: number; latitude: number }) => {
+    const AMap = window.AMap;
+    if (!AMap || !onAddressChange) return;
+
+    setStatusText("已选择地图坐标，正在识别地址");
+    const geocoder = new AMap.Geocoder({ extensions: "all", radius: 1000 });
+    geocoder.getAddress([position.longitude, position.latitude], (_status, result) => {
+      const formattedAddress = findAmapFormattedAddress(result);
+      if (!formattedAddress) {
+        setStatusText("已选择地图坐标，暂未识别出详细地址");
+        return;
+      }
+      onAddressChange(formattedAddress);
+      setStatusText("已选择地图坐标并识别地址");
+    });
+  }, [onAddressChange]);
+
   const recenter = () => {
     const marker = markerRef.current;
     const map = mapRef.current;
@@ -147,19 +244,44 @@ export function ProjectLocationMap({
     if (!isEditable || !map || !AMap || !query) return;
 
     setIsLocating(true);
-    const geocoder = new AMap.Geocoder({ city: "全国" });
-    geocoder.getLocation(query, (status, result) => {
-      setIsLocating(false);
-      const position = status === "complete" ? result.geocodes?.[0]?.location : undefined;
-      if (!position) {
-        setStatusText("未找到精确位置，请补充街道或门牌号后重试");
-        return;
-      }
-      const nextPosition = { longitude: position.getLng(), latitude: position.getLat() };
+    setStatusText("正在搜索地址或地点");
+
+    const applyLocatedPosition = (nextPosition: { longitude: number; latitude: number }) => {
       markerRef.current?.setPosition([nextPosition.longitude, nextPosition.latitude]);
       map.setCenter([nextPosition.longitude, nextPosition.latitude]);
       map.setZoom(16);
       setPosition(nextPosition, "定位成功，可点击地图或拖动标记微调");
+    };
+
+    const searchPlace = () => {
+      const placeSearch = new AMap.PlaceSearch({
+        city: "全国",
+        citylimit: false,
+        extensions: "base",
+        pageIndex: 1,
+        pageSize: 10,
+        type: ""
+      });
+      placeSearch.search(query, (_status, result) => {
+        const position = findAmapResultPosition(result);
+        setIsLocating(false);
+        if (!position) {
+          setStatusText("未找到匹配位置，请补充城市或地点全称后重试");
+          return;
+        }
+        applyLocatedPosition(position);
+      });
+    };
+
+    const geocoder = new AMap.Geocoder({ city: "全国" });
+    geocoder.getLocation(query, (_status, result) => {
+      const position = findAmapResultPosition(result);
+      if (!position) {
+        searchPlace();
+        return;
+      }
+      setIsLocating(false);
+      applyLocatedPosition(position);
     });
   }, [address, isEditable, setPosition]);
 
@@ -196,13 +318,13 @@ export function ProjectLocationMap({
             const nextPosition = { longitude: lnglat.getLng(), latitude: lnglat.getLat() };
             marker.setPosition([nextPosition.longitude, nextPosition.latitude]);
             setPosition(nextPosition, "已选择地图坐标");
+            resolveAddress(nextPosition);
           });
           marker.on("dragend", () => {
             const position = marker.getPosition();
-            setPosition(
-              { longitude: position.getLng(), latitude: position.getLat() },
-              "已微调标记坐标"
-            );
+            const nextPosition = { longitude: position.getLng(), latitude: position.getLat() };
+            setPosition(nextPosition, "已微调标记坐标");
+            resolveAddress(nextPosition);
           });
         }
         mapRef.current = map;
@@ -269,8 +391,8 @@ export function ProjectLocationMap({
       : { description: "请联系管理员完成地图服务配置", title: "地图服务暂未配置" };
 
   return (
-    <aside className={`map-panel ${className}`.trim()}>
-      <div className="map-panel-heading">
+    <aside className={`map-panel${showToolbar ? "" : " map-panel--without-toolbar"} ${className}`.trim()}>
+      {showToolbar ? <div className="map-panel-heading">
         <strong>在线地图</strong>
         <div className="map-panel-actions">
           <button
@@ -284,7 +406,7 @@ export function ProjectLocationMap({
             <Crosshair aria-hidden="true" />回到标记
           </button>
         </div>
-      </div>
+      </div> : null}
       <div aria-busy={mapStatus === "loading"} className="map-stage">
         <div
           aria-label={`${usageLabel}位置地图`}

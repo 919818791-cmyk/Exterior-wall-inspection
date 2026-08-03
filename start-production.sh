@@ -340,24 +340,22 @@ server {
     }
 
     # Official AMap JS API security proxy. The security code remains server-side.
-    location = /_AMapService/v4/map/styles {
-        set \$amap_styles_upstream webapi.amap.com;
+    location /_AMapService/v4/map/styles {
         set \$args "\$args&jscode=$AMAP_SECURITY_JS_CODE";
-        rewrite ^/_AMapService(/.*)\$ \$1 break;
+        # AMap service plugins load JSONP through script tags. The upstream
+        # response is application/json, so nosniff would block execution.
+        add_header X-Content-Type-Options "";
         proxy_ssl_server_name on;
         proxy_ssl_name webapi.amap.com;
-        proxy_set_header Host webapi.amap.com;
-        proxy_pass https://\$amap_styles_upstream;
+        proxy_pass https://webapi.amap.com/v4/map/styles;
     }
 
     location /_AMapService/ {
-        set \$amap_rest_upstream restapi.amap.com;
         set \$args "\$args&jscode=$AMAP_SECURITY_JS_CODE";
-        rewrite ^/_AMapService/(.*)\$ /\$1 break;
+        add_header X-Content-Type-Options "";
         proxy_ssl_server_name on;
         proxy_ssl_name restapi.amap.com;
-        proxy_set_header Host restapi.amap.com;
-        proxy_pass https://\$amap_rest_upstream;
+        proxy_pass https://restapi.amap.com/;
     }
 
     location / {

@@ -8,7 +8,7 @@ import {
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useLayoutEffect, useRef } from "react";
-import { Link, useOutletContext } from "react-router-dom";
+import { Link } from "react-router-dom";
 
 import { usePublicHeroAnimation } from "@/hooks/usePublicHeroAnimation";
 
@@ -44,9 +44,7 @@ const defects = [
 export function DashboardPage() {
   const pageRef = useRef<HTMLDivElement>(null);
   const heroRef = useRef<HTMLElement>(null);
-  const { homeDarkTheme } = useOutletContext<{ homeDarkTheme: boolean }>();
-
-  usePublicHeroAnimation(heroRef, homeDarkTheme);
+  usePublicHeroAnimation(heroRef);
 
   useLayoutEffect(() => {
     const page = pageRef.current;
@@ -82,7 +80,7 @@ export function DashboardPage() {
     return () => {
       context.revert();
     };
-  }, [homeDarkTheme]);
+  }, []);
 
   return (
     <div ref={pageRef} className="home-page">
@@ -93,7 +91,7 @@ export function DashboardPage() {
           loop
           muted
           playsInline
-          preload="metadata"
+          preload="auto"
           aria-hidden="true"
         >
           <source src="/videos/MZ.mp4" type="video/mp4" />

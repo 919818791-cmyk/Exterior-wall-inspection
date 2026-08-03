@@ -2873,20 +2873,20 @@ body.auth-modal-open {
 
 .project-dialog.detection-time-dialog {
   --detection-dialog-inline-padding: 28px;
-  --detection-dialog-target-height: 960px;
+  --detection-dialog-target-height: 1040px;
   --detection-dialog-max-height: min(var(--detection-dialog-target-height), calc(100dvh - 32px));
   grid-template-rows: auto minmax(0, 1fr) auto;
-  width: min(96vw, 800px);
+  width: min(96vw, 700px);
   max-height: var(--detection-dialog-max-height);
   overflow: hidden;
 }
 
 .detection-time-dialog--results {
-  height: var(--detection-dialog-max-height);
+  height: auto;
 }
 
 .project-dialog.detection-time-dialog--two-windows {
-  --detection-dialog-target-height: 1120px;
+  --detection-dialog-target-height: 1200px;
 }
 
 .recommendation-content {
@@ -2895,6 +2895,8 @@ body.auth-modal-open {
 }
 
 .detection-time-dialog .recommendation-content {
+  align-content: start;
+  grid-auto-rows: max-content;
   min-height: 0;
   max-height: none;
   overflow-x: hidden;
@@ -2910,6 +2912,10 @@ body.auth-modal-open {
   gap: 12px;
 }
 
+.recommendation-form-grid--without-project {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .recommendation-location-section {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -2917,7 +2923,7 @@ body.auth-modal-open {
 }
 
 .recommendation-address-field {
-  grid-column: 1 / -1;
+  min-width: 0;
 }
 
 .project-dialog input.recommendation-date-input {
@@ -2942,8 +2948,17 @@ body.auth-modal-open {
   border-radius: 8px;
 }
 
+.recommendation-location-map.map-panel--without-toolbar {
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
 .recommendation-location-map #project-map {
+  height: 100%;
   min-height: 360px;
+}
+
+.recommendation-location-map .map-stage {
+  height: 100%;
 }
 
 .recommendation-location-map .map-panel-heading {
@@ -3153,8 +3168,13 @@ body.auth-modal-open {
 
 .recommendation-primary strong {
   color: #245cff;
-  font-size: 28px;
+  font-size: clamp(32px, 4vw, 38px);
   line-height: 1.2;
+}
+
+.recommendation-primary > span {
+  font-size: 18px;
+  line-height: 1.25;
 }
 
 .recommendation-primary small {
@@ -3194,8 +3214,8 @@ body.auth-modal-open {
 
 .recommendation-calculation-heading {
   display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
+  align-items: center;
+  justify-content: flex-start;
   gap: 20px;
   padding: 16px 18px;
   border-bottom: 1px solid #e6edf6;
@@ -3216,19 +3236,9 @@ body.auth-modal-open {
   letter-spacing: 0.06em;
 }
 
-.recommendation-calculation-heading h3 {
-  margin: 0;
-  color: #203858;
-  font-size: 16px;
-}
-
-.recommendation-calculation-heading small {
-  max-width: 52%;
-  color: #526986;
-  font-size: 12px;
-  line-height: 1.5;
-  overflow-wrap: anywhere;
-  text-align: right;
+.recommendation-calculation-heading > div > span {
+  font-size: 18px;
+  line-height: 1.25;
 }
 
 .recommendation-calculation ol {
@@ -3999,17 +4009,6 @@ body.auth-modal-open {
     border-left: 0;
   }
 
-  .recommendation-calculation-heading {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .recommendation-calculation-heading small {
-    max-width: none;
-    white-space: normal;
-    text-align: left;
-  }
 }
 
 .table-action:hover,
@@ -4136,6 +4135,10 @@ body.auth-modal-open {
   text-overflow: ellipsis;
 }
 
+.detection-time-dialog .dialog-heading h2 {
+  color: #245cff;
+}
+
 .recommendation-dialog-title {
   display: flex;
   align-items: center;
@@ -4192,6 +4195,22 @@ body.auth-modal-open {
   font-weight: 400;
 }
 
+.detection-time-dialog .recommendation-date-field > span {
+  font-size: 16px;
+}
+
+.detection-time-dialog .recommendation-date-field :is(input, select) {
+  min-height: 54px;
+  font-size: 17px;
+}
+
+.detection-time-dialog .recommendation-date-field :is(input, select):disabled {
+  color: #52627d;
+  background: #f3f6fa;
+  cursor: not-allowed;
+  opacity: 1;
+}
+
 .dialog-actions {
   display: flex;
   justify-content: flex-end;
@@ -4211,6 +4230,14 @@ body.auth-modal-open {
   font-size: 12px;
   font-weight: 800;
   cursor: pointer;
+}
+
+.detection-time-dialog .dialog-actions .button {
+  min-width: 112px;
+  min-height: 48px;
+  padding: 0 24px;
+  border-radius: 999px;
+  font-size: 16px;
 }
 
 .dialog-actions .button.secondary:hover:not(:disabled),

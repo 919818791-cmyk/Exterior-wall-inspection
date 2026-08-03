@@ -224,10 +224,6 @@ export function AuthModal({ isOpen, notice, onClose, onAuthenticated }: AuthModa
                 注册账号
               </button>
             </div>
-            <div className="auth-legal-links" aria-label="登录相关法律文件">
-              <a href="/privacy" rel="noreferrer" target="_blank">隐私政策</a>
-              <a href="/terms" rel="noreferrer" target="_blank">用户服务协议</a>
-            </div>
           </form>
         ) : trialApplicationSubmittedUsername ? (
           <div className="auth-form auth-success-panel" role="status">

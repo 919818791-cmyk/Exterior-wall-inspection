@@ -10,23 +10,21 @@ import {
 } from "@heroui/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  CheckCircle2,
-  Eye,
-  FileImage,
+  ArrowLeft,
   FileText,
   Images,
   ScanLine,
   Send,
+  Trash2,
   X,
 } from "lucide-react";
-import type { CSSProperties } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link as RouterLink, useLocation, useParams } from "react-router-dom";
+import { Link as RouterLink, useLocation, useNavigate, useParams } from "react-router-dom";
 
 import {
+  deleteProject,
   projectQueryOptions,
   projectPhotosQueryOptions,
-  projectReviewedResultQueryOptions,
   startDetection,
   updateProject
 } from "@/api/projects";
@@ -39,11 +37,6 @@ import type {
   ProjectUpdatePayload,
   StartDetectionPayload
 } from "@/types/projects";
-import type {
-  ReportDefectSnapshot,
-  ReportDetail,
-  ReportPhotoSnapshot
-} from "@/types/reports";
 import { PROJECT_STATUS_LABELS } from "@/utils/projectDisplay";
 
 interface ProjectBasicDraft {
@@ -85,7 +78,7 @@ function getPrimaryAction(status: ProjectStatus) {
     case "pending_review":
       return { label: "结果审核中，不可点击", note: "普通用户侧不展示内部审核细节。" };
     case "reviewed":
-      return { label: "查看审核结果", note: "审核结果已经固化，可在当前详情页查看。" };
+      return { label: "审核完成", note: "审核结果已固化，等待最终报告推送。" };
     case "completed":
       return { label: "查看结果", note: "最终结果已推送，可在线预览并下载 DOCX。" };
     default:
@@ -100,14 +93,11 @@ function getErrorMessage(error: unknown) {
 export function ProjectDetailPage() {
   const { id = "" } = useParams();
   const location = useLocation();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const projectQuery = useQuery(projectQueryOptions(id));
   const projectPhotosQuery = useQuery(projectPhotosQueryOptions(id));
   const project = projectQuery.data;
-  const reviewedResultEnabled = project?.status === "reviewed" || project?.status === "completed";
-  const reviewedResultQuery = useQuery(
-    projectReviewedResultQueryOptions(id, reviewedResultEnabled)
-  );
   const projectCreationState = location.state as {
     openDetectionModal?: boolean;
     projectCreationNotice?: string;
@@ -163,6 +153,16 @@ export function ProjectDetailPage() {
       }
       await queryClient.invalidateQueries({ queryKey: ["projects"], exact: true });
     }
+  });
+
+  const deleteProjectMutation = useMutation({
+    mutationFn: deleteProject,
+    onSuccess: async (_, projectId) => {
+      await queryClient.invalidateQueries({ queryKey: ["projects"], exact: true });
+      queryClient.removeQueries({ queryKey: ["projects", projectId] });
+      navigate("/projects", { replace: true });
+    },
+    onError: (error) => setFormError(getErrorMessage(error))
   });
 
   const runAutoSaveQueue = async () => {
@@ -268,9 +268,18 @@ export function ProjectDetailPage() {
     setDetectionModalOpen(true);
   };
 
+  const handleDeleteProject = () => {
+    if (!project || project.status !== "draft") return;
+    if (!window.confirm(`确认删除项目“${project.name}”？此操作会软删除项目及其照片。`)) return;
+
+    queuedAutoSaveRef.current = null;
+    setFormError("");
+    deleteProjectMutation.mutate(project.id);
+  };
+
   if (projectQuery.isLoading) {
     return (
-      <ProjectWorkbenchShell actionLabel="返回">
+      <ProjectWorkbenchShell actionLabel="返回" hideHeader>
         <div className="create-workspace grid gap-5">
           <Skeleton className="h-20 rounded-lg" />
           <Skeleton className="h-64 rounded-lg" />
@@ -282,7 +291,7 @@ export function ProjectDetailPage() {
 
   if (projectQuery.isError || !project) {
     return (
-      <ProjectWorkbenchShell actionLabel="返回">
+      <ProjectWorkbenchShell actionLabel="返回" hideHeader>
         <div className="create-workspace grid min-h-[calc(100svh-12rem)] place-items-center">
           <Card className="w-full max-w-2xl rounded-lg border border-red-200 shadow-none">
             <CardBody className="gap-4 p-6">
@@ -290,6 +299,9 @@ export function ProjectDetailPage() {
               <p className="text-sm font-bold text-red-700">
                 {getErrorMessage(projectQuery.error)}
               </p>
+              <RouterLink className="button secondary report-back-button w-fit" to="/projects">
+                <ArrowLeft aria-hidden="true" />返回
+              </RouterLink>
             </CardBody>
           </Card>
         </div>
@@ -298,9 +310,10 @@ export function ProjectDetailPage() {
   }
 
   return (
-    <ProjectWorkbenchShell actionLabel="返回">
+    <ProjectWorkbenchShell actionLabel="返回" hideHeader>
       <ProjectDetailPrototype
         activeError={activeError}
+        deleteProjectPending={deleteProjectMutation.isPending}
         formError={formError}
         isEditable={isEditable}
         primaryAction={primaryAction}
@@ -310,9 +323,8 @@ export function ProjectDetailPage() {
         startDetectionPending={startDetectionMutation.isPending}
         detectionModalOpen={detectionModalOpen}
         photos={projectPhotosQuery.data ?? []}
-        reviewedResult={reviewedResultQuery.data ?? null}
-        reviewedResultError={reviewedResultQuery.error}
-        reviewedResultLoading={reviewedResultQuery.isLoading}
+        updateProjectPending={updateProjectMutation.isPending}
+        onDeleteProject={handleDeleteProject}
         onPrimaryAction={handlePrimaryAction}
         onDetectionModalOpenChange={setDetectionModalOpen}
         onStartDetection={(payload) => startDetectionMutation.mutate(payload)}
@@ -330,14 +342,14 @@ function ProjectDetailPrototype({
   projectDraft,
   formError,
   activeError,
+  deleteProjectPending,
   primaryAction,
   projectCreationNotice,
   startDetectionPending,
   detectionModalOpen,
   photos,
-  reviewedResult,
-  reviewedResultError,
-  reviewedResultLoading,
+  updateProjectPending,
+  onDeleteProject,
   onProjectFieldChange,
   onProjectFieldBlur,
   onPrimaryAction,
@@ -349,14 +361,14 @@ function ProjectDetailPrototype({
   projectDraft: ProjectBasicDraft;
   formError: string;
   activeError: unknown;
+  deleteProjectPending: boolean;
   primaryAction: { label: string; note: string };
   projectCreationNotice: string;
   startDetectionPending: boolean;
   detectionModalOpen: boolean;
   photos: Photo[];
-  reviewedResult: ReportDetail | null;
-  reviewedResultError: unknown;
-  reviewedResultLoading: boolean;
+  updateProjectPending: boolean;
+  onDeleteProject: () => void;
   onProjectFieldChange: (field: keyof ProjectBasicDraft, value: string) => void;
   onProjectFieldBlur: () => void;
   onPrimaryAction: () => void;
@@ -378,29 +390,29 @@ function ProjectDetailPrototype({
 
         <div className="project-editor-block project-editor-photo-block">
           <section className="project-photo-workspace" aria-labelledby="project-photo-title">
-            <header className="project-photo-workspace-heading">
-              <h2 id="project-photo-title">检测照片</h2>
-              <span>{photos.length} 张</span>
-            </header>
             <ProjectPhotoActions isEditable={isEditable} project={project} />
           </section>
         </div>
 
-        {project.status === "reviewed" || project.status === "completed" ? (
-          <ReviewedDetectionResult
-            error={reviewedResultError}
-            isLoading={reviewedResultLoading}
-            report={reviewedResult}
-          />
-        ) : null}
-
         <div className="create-action-bar detail-action-bar">
           <div className="detail-view-actions">
+            <RouterLink className="button secondary report-back-button project-detail-back-button" to="/projects">
+              <ArrowLeft aria-hidden="true" />返回
+            </RouterLink>
+            {project.status === "draft" ? (
+              <button
+                className="button secondary project-detail-delete-button"
+                disabled={deleteProjectPending || updateProjectPending}
+                type="button"
+                onClick={onDeleteProject}
+              >
+                <Trash2 aria-hidden="true" />
+                {deleteProjectPending ? "删除中…" : "删除"}
+              </button>
+            ) : null}
             {project.status === "completed" && project.current_report_id
               ? <RouterLink className="button primary" to={`/reports/${project.current_report_id}`}><FileText aria-hidden="true" />查看结果</RouterLink>
-              : project.status === "reviewed"
-                ? <a className="button primary" href="#reviewed-detection-results"><Eye aria-hidden="true" />查看审核结果</a>
-                : <button className="button primary start-ai-detection-button" disabled={project.status !== "draft" || startDetectionPending} type="button" onClick={onPrimaryAction}><Send aria-hidden="true" />{startDetectionPending ? "正在创建" : primaryAction.label}</button>}
+              : <button className="button primary start-ai-detection-button" disabled={project.status !== "draft" || startDetectionPending} type="button" onClick={onPrimaryAction}><Send aria-hidden="true" />{startDetectionPending ? "正在创建" : primaryAction.label}</button>}
           </div>
         </div>
       </section>
@@ -413,210 +425,6 @@ function ProjectDetailPrototype({
         onSubmit={onStartDetection}
       />
     </div>
-  );
-}
-
-const REVIEWED_DEFECT_LABELS: Record<string, string> = {
-  crack: "裂缝",
-  spalling: "剥落",
-  hollow: "空鼓",
-  moisture: "潮湿"
-};
-
-const REVIEWED_DEFECT_COLORS: Record<string, string> = {
-  crack: "#ef4444",
-  spalling: "#f97316",
-  hollow: "#7c3aed",
-  moisture: "#0ea5e9"
-};
-
-function finitePositive(value: unknown) {
-  const numeric = Number(value);
-  return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
-}
-
-function reviewedBoxStyle(
-  photo: ReportPhotoSnapshot,
-  defect: ReportDefectSnapshot
-): CSSProperties | undefined {
-  const imageWidth = finitePositive(photo.image_width);
-  const imageHeight = finitePositive(photo.image_height);
-  const bbox = defect.bbox_json;
-  const x = Number(bbox?.x);
-  const y = Number(bbox?.y);
-  const width = Number(bbox?.width);
-  const height = Number(bbox?.height);
-  if (
-    imageWidth === null
-    || imageHeight === null
-    || ![x, y, width, height].every(Number.isFinite)
-    || width <= 0
-    || height <= 0
-  ) return undefined;
-
-  const left = Math.min(imageWidth, Math.max(0, x));
-  const top = Math.min(imageHeight, Math.max(0, y));
-  const right = Math.min(imageWidth, Math.max(left, x + width));
-  const bottom = Math.min(imageHeight, Math.max(top, y + height));
-  return {
-    left: `${left / imageWidth * 100}%`,
-    top: `${top / imageHeight * 100}%`,
-    width: `${Math.max(0, right - left) / imageWidth * 100}%`,
-    height: `${Math.max(0, bottom - top) / imageHeight * 100}%`
-  };
-}
-
-function defectsForReviewedPhoto(
-  report: ReportDetail,
-  photo: ReportPhotoSnapshot
-) {
-  return report.defects.filter((defect) => (
-    (photo.id && defect.photo_id === photo.id)
-    || (!defect.photo_id && defect.photo_filename === photo.original_filename)
-  ));
-}
-
-function ReviewedDetectionResult({
-  error,
-  isLoading,
-  report
-}: {
-  error: unknown;
-  isLoading: boolean;
-  report: ReportDetail | null;
-}) {
-  return (
-    <section
-      className="project-editor-block scroll-mt-24"
-      id="reviewed-detection-results"
-      aria-labelledby="reviewed-detection-results-title"
-    >
-      <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 id="reviewed-detection-results-title" className="flex items-center gap-2 text-lg font-black text-ink">
-            <CheckCircle2 className="h-5 w-5 text-emerald-600" aria-hidden="true" />
-            审核结果
-          </h2>
-          <p className="mt-1 text-xs font-bold text-slate-500">
-            这里只展示审核工作台已完成并固化的结果，AI 原始结果不会提前显示。
-          </p>
-        </div>
-        {!isLoading && !error ? (
-          <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">
-            {report?.defects.length ?? 0} 项缺陷
-          </span>
-        ) : null}
-      </header>
-
-      {isLoading ? (
-        <div className="grid gap-3 md:grid-cols-2">
-          <Skeleton className="h-64 rounded-lg" />
-          <Skeleton className="h-64 rounded-lg" />
-        </div>
-      ) : error ? (
-        <p className="detail-feedback error">审核结果加载失败：{getErrorMessage(error)}</p>
-      ) : report ? (
-        <ReviewedReportBlock report={report} />
-      ) : (
-        <div className="grid min-h-40 place-items-center rounded-lg border border-slate-200 bg-slate-50 p-6 text-center">
-          <div>
-            <FileImage className="mx-auto h-9 w-9 text-slate-400" aria-hidden="true" />
-            <strong className="mt-3 block text-sm text-ink">暂无已固化的审核结果</strong>
-          </div>
-        </div>
-      )}
-    </section>
-  );
-}
-
-function ReviewedReportBlock({ report }: { report: ReportDetail }) {
-  const defectSummary = Object.entries(report.summary.by_defect_type ?? {});
-  return (
-    <article className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3">
-        <div>
-          <h3 className="text-sm font-black text-ink">{report.title}</h3>
-          <p className="mt-1 text-xs font-bold text-slate-500">
-            {report.report_no} · {report.photos.length} 张照片
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {defectSummary.map(([type, count]) => (
-            <span key={type} className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-600">
-              {REVIEWED_DEFECT_LABELS[type] ?? type} {count}
-            </span>
-          ))}
-          {report.status === "pushed" ? (
-            <RouterLink className="table-action table-action-result" to={`/reports/${report.id}`}>
-              <Eye aria-hidden="true" />完整结果
-            </RouterLink>
-          ) : null}
-        </div>
-      </header>
-      <div className="grid gap-4 p-4 md:grid-cols-2">
-        {report.photos.map((photo, index) => (
-          <ReviewedPhotoCard
-            defects={defectsForReviewedPhoto(report, photo)}
-            key={photo.id ?? `${photo.original_filename}-${index}`}
-            photo={photo}
-          />
-        ))}
-      </div>
-    </article>
-  );
-}
-
-function ReviewedPhotoCard({
-  defects,
-  photo
-}: {
-  defects: ReportDefectSnapshot[];
-  photo: ReportPhotoSnapshot;
-}) {
-  const imageUrl = photo.preview_url ?? photo.thumbnail_url ?? "";
-  return (
-    <figure className="min-w-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
-      <div className="relative overflow-hidden bg-slate-200">
-        {imageUrl ? (
-          <img
-            alt={photo.original_filename ?? "检测照片"}
-            className="block h-auto w-full"
-            src={imageUrl}
-          />
-        ) : (
-          <div className="grid h-48 place-items-center text-slate-400">
-            <FileImage className="h-9 w-9" aria-hidden="true" />
-          </div>
-        )}
-        {imageUrl ? defects.map((defect, index) => {
-          const style = reviewedBoxStyle(photo, defect);
-          if (!style) return null;
-          const type = defect.defect_type ?? "";
-          const color = REVIEWED_DEFECT_COLORS[type] ?? "#64748b";
-          return (
-            <span
-              aria-label={`${REVIEWED_DEFECT_LABELS[type] ?? type}标注框`}
-              className="pointer-events-none absolute border-2"
-              key={defect.id ?? index}
-              style={{ ...style, borderColor: color }}
-            >
-              <span
-                className="absolute left-0 top-0 max-w-full truncate px-1.5 py-0.5 text-[10px] font-black leading-tight text-white"
-                style={{ backgroundColor: color }}
-              >
-                {REVIEWED_DEFECT_LABELS[type] ?? type}
-              </span>
-            </span>
-          );
-        }) : null}
-      </div>
-      <figcaption className="flex items-center justify-between gap-3 px-3 py-2 text-xs font-bold text-slate-600">
-        <span className="min-w-0 truncate" title={photo.original_filename ?? undefined}>
-          {photo.original_filename ?? "检测照片"}
-        </span>
-        <span className="shrink-0">{defects.length} 项</span>
-      </figcaption>
-    </figure>
   );
 }
 

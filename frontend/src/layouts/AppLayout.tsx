@@ -1,4 +1,4 @@
-import { ChevronDown, Gauge, LogOut, Menu, Moon, RefreshCw, Sun, UserRound, X } from "lucide-react";
+import { ChevronDown, Gauge, LogOut, Menu, RefreshCw, UserRound, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -6,6 +6,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { currentAccountUsageQueryOptions } from "@/api/accounts";
 import { logout } from "@/api/auth";
 import { AUTH_UNAUTHORIZED_EVENT } from "@/api/client";
+import { AppVisualLoader } from "@/components/AppVisualLoader";
 import { AuthModal } from "@/components/auth/AuthModal";
 import { ChangePasswordModal } from "@/components/auth/ChangePasswordModal";
 import { PersonalInfoModal } from "@/components/auth/PersonalInfoModal";
@@ -20,14 +21,16 @@ const defectLinks = [
   { label: "锈蚀识别", to: "/capabilities/corrosion" }
 ];
 
-const HOME_DARK_THEME_STORAGE_KEY = "exterior-wall-home-dark-theme";
-
 function pageClass(pathname: string) {
   if (pathname === "/trial") return "detail-page trial-experience-page";
-  if (pathname === "/reports") return "project-page report-list-route";
+  if (pathname === "/reports") return "project-page project-list-route report-list-route";
   if (pathname === "/annotation-management") return "project-page annotation-management-route";
   if (pathname === "/projects") return "project-page project-list-route";
   if (pathname === "/capabilities/time") return "detail-page recommendation-detail-page";
+  if (pathname.startsWith("/accounts")) return "project-page account-management-route";
+  if (pathname.startsWith("/data-management")) return "project-page data-management-route";
+  if (pathname === "/review") return "project-page review-workbench-route";
+  if (pathname.startsWith("/review")) return "project-page review-workbench-route";
   if (pathname === "/projects/new") return "project-page new-project-page";
   if (/^\/projects\/[^/]+$/.test(pathname)) return "project-page project-detail-page";
   if (pathname.startsWith("/projects") || pathname.startsWith("/accounts") || pathname.startsWith("/data-management") || pathname.startsWith("/annotation-management") || pathname.startsWith("/system-settings") || pathname.startsWith("/reports") || pathname.startsWith("/review")) {
@@ -57,13 +60,6 @@ export function AppLayout() {
   const [managementMenuOpen, setManagementMenuOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [headerScrolled, setHeaderScrolled] = useState(false);
-  const [homeDarkTheme, setHomeDarkTheme] = useState(() => {
-    try {
-      return window.localStorage.getItem(HOME_DARK_THEME_STORAGE_KEY) === "true";
-    } catch {
-      return false;
-    }
-  });
   const accountUsageQuery = useQuery({
     ...currentAccountUsageQueryOptions,
     enabled: Boolean(user && accountMenuOpen)
@@ -89,7 +85,7 @@ export function AppLayout() {
   const isCapabilityDetailRoute = location.pathname.startsWith("/capabilities");
   const isThemeHeroRoute = isTrialRoute || isReportRoute || isProjectRoute || isManagementRoute;
   const usesPermanentDarkShell = isCapabilityDetailRoute || isThemeHeroRoute;
-  const usesDarkShell = homeDarkTheme || usesPermanentDarkShell;
+  const usesDarkShell = usesPermanentDarkShell;
   const canAccessAdmin = user?.role === "admin";
   const canAccessReview = user?.role === "reviewer" || user?.role === "admin";
 
@@ -277,20 +273,7 @@ export function AppLayout() {
     }
   }
 
-  function toggleHomeTheme() {
-    setHomeDarkTheme((isDark) => {
-      const nextTheme = !isDark;
-      try {
-        window.localStorage.setItem(HOME_DARK_THEME_STORAGE_KEY, String(nextTheme));
-      } catch {
-        // The theme still changes for this session when browser storage is unavailable.
-      }
-      return nextTheme;
-    });
-  }
-
   const displayName = user?.real_name?.trim() || user?.username || "";
-  const avatarInitial = displayName.slice(0, 1).toLocaleUpperCase();
   const managementLinks = [
     ...(canAccessAdmin ? [{ label: "账号管理", to: "/accounts" }, { label: "数据管理", to: "/data-management" }, { label: "标注管理", to: "/annotation-management" }, { label: "推理设置", to: "/system-settings" }] : []),
     ...(canAccessReview ? [{ label: "审核工作台", to: "/review" }] : [])
@@ -298,9 +281,10 @@ export function AppLayout() {
 
   return (
     <div
-      className={`${currentPageClass} ${usesDarkShell ? "site-dark-theme" : ""} ${isThemeHeroRoute ? "theme-hero-page" : ""} ${isTrialRoute ? "trial-fixed-light-panels" : ""} ${isHomeRoute && homeDarkTheme ? "home-dark-theme" : ""}`.trim()}
+      className={`${currentPageClass} ${usesDarkShell ? "site-dark-theme" : ""} ${isThemeHeroRoute ? "theme-hero-page" : ""} ${isTrialRoute ? "trial-fixed-light-panels" : ""}`.trim()}
       data-defect={defectKey}
     >
+      <AppVisualLoader key={`${location.pathname}${location.search}`} />
       <header
         ref={headerRef}
         hidden={isAnnotationDetailRoute || isSystemSettingsRoute}
@@ -400,7 +384,7 @@ export function AppLayout() {
               type="button"
               onClick={() => setAccountMenuOpen((open) => !open)}
             >
-              <span aria-hidden="true" className="account-avatar">{avatarInitial}</span>
+              <span aria-hidden="true" className="account-avatar"><UserRound /></span>
               <span className="account-trigger-name">{displayName}</span>
               <ChevronDown aria-hidden="true" className="account-trigger-chevron" />
             </button>
@@ -427,20 +411,10 @@ export function AppLayout() {
             <span>登录</span>
           </button>
           )}
-          <button
-            aria-label={homeDarkTheme ? "切换为日间主题" : "切换为黑夜主题"}
-            aria-pressed={homeDarkTheme}
-            className="home-theme-toggle"
-            title={homeDarkTheme ? "切换为日间主题" : "切换为黑夜主题"}
-            type="button"
-            onClick={toggleHomeTheme}
-          >
-            {homeDarkTheme ? <Sun aria-hidden="true" /> : <Moon aria-hidden="true" />}
-          </button>
         </div>
       </header>
 
-      <main className="app-main"><Outlet context={{ homeDarkTheme, requestAuthentication }} /></main>
+      <main className="app-main"><Outlet context={{ requestAuthentication }} /></main>
       <AuthModal
         isOpen={authModalOpen}
         notice={authNotice}

@@ -46,15 +46,24 @@ export function ChangePasswordModal({ isOpen, onClose, onPasswordChanged }: Chan
   useEffect(() => {
     if (!isOpen) return;
 
+    document.body.classList.add("auth-modal-open");
+    const focusFrame = window.requestAnimationFrame(() => currentPasswordRef.current?.focus());
+
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      document.body.classList.remove("auth-modal-open");
+    };
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") closeModal();
     };
-    document.body.classList.add("auth-modal-open");
     document.addEventListener("keydown", closeOnEscape);
-    window.requestAnimationFrame(() => currentPasswordRef.current?.focus());
 
     return () => {
-      document.body.classList.remove("auth-modal-open");
       document.removeEventListener("keydown", closeOnEscape);
     };
   }, [changePasswordMutation.isPending, confirmPassword, currentPassword, isOpen, newPassword, onClose]);

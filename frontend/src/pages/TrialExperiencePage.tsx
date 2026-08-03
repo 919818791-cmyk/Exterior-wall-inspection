@@ -8,7 +8,6 @@ import {
 } from "@heroui/react";
 import {
   Check,
-  ChevronLeft,
   Home,
   Images,
   ImageUp,
@@ -21,7 +20,6 @@ import {
   ZoomIn,
   ZoomOut
 } from "lucide-react";
-import gsap from "gsap";
 import {
   type CSSProperties,
   type ChangeEvent,
@@ -31,7 +29,6 @@ import {
   type WheelEvent as ReactWheelEvent,
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState
@@ -49,7 +46,6 @@ import {
   type TrialGeneratedResult,
   type TrialUploadedPhoto
 } from "@/api/reports";
-import { TilePreviewDialog, type TilePreviewSource } from "@/components/TilePreviewDialog";
 import { useAuthStore } from "@/stores/useAuthStore";
 import { createAsyncLimiter } from "@/utils/asyncLimiter";
 import { trialDefectBoxLabel, trialDefectDisplayFromModel } from "@/utils/trialDefectDisplay";
@@ -58,7 +54,7 @@ import { createClientId } from "@/utils/id";
 
 const MODEL_OPTIONS = ["裂缝", "剥落", "空鼓"] as const;
 const MAX_TRIAL_PHOTO_COUNT = 10;
-const MAX_TRIAL_PHOTO_SIZE_BYTES = 10 * 1024 * 1024;
+const MAX_TRIAL_PHOTO_SIZE_BYTES = 5 * 1024 * 1024;
 const TRIAL_RESULT_CONFIDENCE_THRESHOLD = 0.6;
 const PHOTO_PREVIEW_DEFAULT_ZOOM = 1;
 const PHOTO_PREVIEW_MIN_ZOOM = 1;
@@ -66,7 +62,7 @@ const PHOTO_PREVIEW_MAX_ZOOM = 4;
 const PHOTO_PREVIEW_ZOOM_STEP = 0.25;
 const ACCEPTED_TRIAL_PHOTO_TYPES = new Set(["image/jpeg", "image/png"]);
 const runTrialPhotoUpload = createAsyncLimiter(6);
-const UPLOAD_LIMIT_TIP = "支持 JPG、PNG 图片，单张最大 10MB；单次最多 10 张";
+const UPLOAD_LIMIT_TIP = "支持 JPG、PNG 图片，单张最大 5MB；单次最多 10 张";
 const GENERATION_STEP_MESSAGES = [
   "正在读取照片信息",
   "正在调用视觉检测服务",
@@ -123,12 +119,6 @@ function trialRequestStorageKey(userId: string) {
 export function TrialExperiencePage() {
   const navigate = useNavigate();
   const user = useAuthStore((state) => state.user);
-  const canShowTile = user?.role === "admin";
-  const trialGridRef = useRef<HTMLElement | null>(null);
-  const guidePanelRef = useRef<HTMLElement | null>(null);
-  const guideListRef = useRef<HTMLDivElement | null>(null);
-  const guideAnimationRef = useRef<gsap.core.Timeline | null>(null);
-  const isGuideClosingRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const previewViewportRef = useRef<HTMLDivElement | null>(null);
   const previewDragRef = useRef<{ pointerId: number; x: number; y: number; distance: number } | null>(null);
@@ -154,9 +144,7 @@ export function TrialExperiencePage() {
   const [previewZoom, setPreviewZoom] = useState(PHOTO_PREVIEW_DEFAULT_ZOOM);
   const [previewPan, setPreviewPan] = useState({ x: 0, y: 0 });
   const [generationStepIndex, setGenerationStepIndex] = useState(0);
-  const [tilePreview, setTilePreview] = useState<TilePreviewSource | null>(null);
   const [isVersionNoticeOpen, setIsVersionNoticeOpen] = useState(true);
-  const [isGuideExpanded, setIsGuideExpanded] = useState(true);
   const [guideExampleTab, setGuideExampleTab] = useState<"original" | "annotated">("original");
   const [recentlyRemovedPhoto, setRecentlyRemovedPhoto] = useState<RemovedTrialPhoto | null>(null);
   const [activeTrialRequestId, setActiveTrialRequestId] = useState<string | null>(() => {
@@ -213,23 +201,13 @@ export function TrialExperiencePage() {
         isTrialResultFinding(item)
         && (file.photo_id ? item.photo_id === file.photo_id : item.filename === file.filename)
       ));
-      const modelOutput = generatedResult.raw_model_outputs?.find((item) => (
-        file.photo_id ? item.photo_id === file.photo_id : item.filename === file.filename
-      ));
       return {
         filename: file.filename,
         previewUrl: file.photo_id ? previewByPhotoId.get(file.photo_id) ?? "" : photoPreviews[index]?.previewUrl ?? "",
-        imageWidth: modelOutput?.image_width,
-        imageHeight: modelOutput?.image_height,
-        tileWidth: modelOutput?.tile_width,
-        tileHeight: modelOutput?.tile_height,
-        tileOverlapRatio: modelOutput?.tile_overlap_ratio,
-        detections: modelOutput?.detections,
         findings
       };
     });
   }, [generatedResult, photoPreviews]);
-  const uploadSummary = useMemo(() => trialUploadSummary(selectedPhotos), [selectedPhotos]);
   const isUploading = pendingPhotos.some((photo) => photo.uploadStatus === "uploading");
   const isInteractionBusy = isUploading || isGenerating || isArchiving;
   const isPhotoEditingLocked = isInteractionBusy || (Boolean(generatedResult) && !archivedReportId);
@@ -368,72 +346,6 @@ export function TrialExperiencePage() {
     }
   }, []);
 
-  useLayoutEffect(() => {
-    const grid = trialGridRef.current;
-    if (!grid) return undefined;
-
-    if (!isGuideExpanded) {
-      grid.style.removeProperty("--trial-guide-current-width");
-      return undefined;
-    }
-
-    const guidePanel = guidePanelRef.current;
-    const guideList = guideListRef.current;
-    if (!guidePanel || !guideList) return undefined;
-
-    const cards = Array.from(guideList.querySelectorAll<HTMLElement>(".trial-guide-card"));
-    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (reduceMotion) {
-      gsap.set([guideList, ...cards], { clearProps: "opacity,transform,visibility" });
-      return undefined;
-    }
-
-    const collapsedWidth = getComputedStyle(grid)
-      .getPropertyValue("--trial-guide-collapsed-width")
-      .trim() || "56px";
-    const expandedWidth = guidePanel.getBoundingClientRect().width;
-
-    guideAnimationRef.current?.kill();
-    gsap.set(grid, { "--trial-guide-current-width": collapsedWidth });
-    gsap.set(guideList, { autoAlpha: 0 });
-    gsap.set(cards, { autoAlpha: 0, y: 18, scale: 0.985 });
-
-    const timeline = gsap.timeline({
-      onComplete: () => {
-        grid.style.removeProperty("--trial-guide-current-width");
-        gsap.set([guideList, ...cards], { clearProps: "opacity,transform,visibility" });
-        if (guideAnimationRef.current === timeline) guideAnimationRef.current = null;
-      }
-    });
-    guideAnimationRef.current = timeline;
-    timeline
-      .to(grid, {
-        "--trial-guide-current-width": `${expandedWidth}px`,
-        duration: 0.46,
-        ease: "power3.inOut"
-      })
-      .to(guideList, {
-        autoAlpha: 1,
-        duration: 0.14,
-        ease: "power1.out"
-      }, 0.39)
-      .to(cards, {
-        autoAlpha: 1,
-        y: 0,
-        scale: 1,
-        duration: 0.4,
-        stagger: 0.065,
-        ease: "power3.out"
-      }, 0.39);
-
-    return () => {
-      timeline.kill();
-      if (guideAnimationRef.current === timeline) guideAnimationRef.current = null;
-      grid.style.removeProperty("--trial-guide-current-width");
-      gsap.set([guideList, ...cards], { clearProps: "opacity,transform,visibility" });
-    };
-  }, [isGuideExpanded]);
-
   useEffect(() => {
     if (previewIndex === null && !annotatedPreview) return;
 
@@ -525,59 +437,6 @@ export function TrialExperiencePage() {
     resetPhotoPreviewTransform();
     setAnnotatedPreview(null);
     setPreviewIndex(index);
-  }
-
-  function toggleGuide() {
-    if (isGuideClosingRef.current) return;
-    if (!isGuideExpanded) {
-      setIsGuideExpanded(true);
-      return;
-    }
-
-    const grid = trialGridRef.current;
-    const guideList = guideListRef.current;
-    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (!grid || !guideList || reduceMotion) {
-      setIsGuideExpanded(false);
-      return;
-    }
-
-    const cards = Array.from(guideList.querySelectorAll<HTMLElement>(".trial-guide-card"));
-    const collapsedWidth = getComputedStyle(grid)
-      .getPropertyValue("--trial-guide-collapsed-width")
-      .trim() || "56px";
-    const currentGuideWidth = guidePanelRef.current?.getBoundingClientRect().width ?? 400;
-
-    guideAnimationRef.current?.kill();
-    gsap.set(grid, { "--trial-guide-current-width": `${currentGuideWidth}px` });
-    isGuideClosingRef.current = true;
-    const timeline = gsap.timeline({
-      onComplete: () => {
-        isGuideClosingRef.current = false;
-        if (guideAnimationRef.current === timeline) guideAnimationRef.current = null;
-        setIsGuideExpanded(false);
-      }
-    });
-    guideAnimationRef.current = timeline;
-    timeline
-      .to(cards, {
-        autoAlpha: 0,
-        y: -10,
-        scale: 0.99,
-        duration: 0.18,
-        stagger: { each: 0.025, from: "end" },
-        ease: "power2.in"
-      })
-      .to(guideList, {
-        autoAlpha: 0,
-        duration: 0.08,
-        ease: "power1.in"
-      }, "-=0.05")
-      .to(grid, {
-        "--trial-guide-current-width": collapsedWidth,
-        duration: 0.42,
-        ease: "power3.inOut"
-      }, "-=0.01");
   }
 
   function previewAnnotatedPhoto(preview: TrialAnnotatedPreview) {
@@ -1036,13 +895,10 @@ export function TrialExperiencePage() {
 
   return (
     <>
-      <div className={`trial-detection-page management-list-page ${isGuideExpanded ? "is-guide-expanded" : "is-guide-collapsed"}`}>
+      <div className="trial-detection-page management-list-page">
         <div className="project-workspace">
           <div className="trial-experience-shell trial-experience-content-shell trial-live-shell">
-            <section
-              ref={trialGridRef}
-              className={`trial-experience-grid${isGuideExpanded ? " is-guide-expanded" : " is-guide-collapsed"}`}
-            >
+            <section className="trial-experience-grid">
           <div className="trial-upload-panel">
             <div className="trial-report-name-field">
               <h2>报告名称：</h2>
@@ -1136,7 +992,6 @@ export function TrialExperiencePage() {
                 <>
                   <div className="trial-photo-grid">
                     {photoPreviews.map((photo, index) => {
-                      const photoProgress = clampProgress(photo.uploadProgress);
                       const precheckStatus = photo.uploadedPhoto?.precheck_status;
                       const precheckNeedsRetry = precheckStatus === "rejected"
                         || precheckStatus === "error";
@@ -1152,8 +1007,15 @@ export function TrialExperiencePage() {
                             {thermalAvailable ? (
                               <span className="trial-thermal-available-tag">热成像</span>
                             ) : null}
-                            {photo.uploadStatus === "uploaded" && precheckStatus === "passed" ? (
-                              <span className="trial-photo-check"><Check aria-hidden="true" /></span>
+                            {photo.uploadStatus === "ready" || photo.uploadStatus === "uploading" ? (
+                              <span
+                                aria-label={`${photo.file.name}${photo.uploadStatus === "ready" ? "等待上传" : "正在上传"}`}
+                                className="new-project-photo-upload-indicator"
+                                role="status"
+                              >
+                                <span aria-hidden="true" className="new-project-photo-upload-ring" />
+                                <small>{photo.uploadStatus === "ready" ? "等待上传" : "上传中"}</small>
+                              </span>
                             ) : photo.uploadStatus === "uploaded" && precheckNeedsRetry ? (
                               <span className="trial-photo-precheck-alert"><TriangleAlert aria-hidden="true" /></span>
                             ) : null}
@@ -1181,24 +1043,6 @@ export function TrialExperiencePage() {
                             ) : null}
                           </div>
                           <figcaption>{photo.file.name}</figcaption>
-                          <div className="trial-photo-progress" aria-label={`${photo.file.name} 上传进度`}>
-                            <div className="trial-photo-progress-meta">
-                              <span>{trialPhotoStatusLabel(photo)}</span>
-                              <strong>{photoProgress}%</strong>
-                            </div>
-                            <div
-                              className="trial-progress-track"
-                              role="progressbar"
-                              aria-valuemin={0}
-                              aria-valuemax={100}
-                              aria-valuenow={photoProgress}
-                            >
-                              <span
-                                className="trial-progress-fill"
-                                style={{ width: `${photoProgress}%` }}
-                              />
-                            </div>
-                          </div>
                           {photo.uploadStatus === "failed" ? (
                             <>
                               <p className="trial-photo-upload-error">{photo.uploadError || "上传失败，请重新上传。"}</p>
@@ -1231,25 +1075,6 @@ export function TrialExperiencePage() {
                     >
                       + 继续添加
                     </button>
-                  </div>
-                  <div className={`trial-uploader-progress-footer ${uploadSummary.failedCount ? "has-error" : ""}`}>
-                    <div className="trial-uploader-progress-head">
-                      <span>{uploadSummary.label}</span>
-                      <strong>{uploadSummary.percent}%</strong>
-                    </div>
-                    <div
-                      className="trial-progress-track"
-                      role="progressbar"
-                      aria-label="照片上传总进度"
-                      aria-valuemin={0}
-                      aria-valuemax={100}
-                      aria-valuenow={uploadSummary.percent}
-                    >
-                      <span
-                        className="trial-progress-fill"
-                        style={{ width: `${uploadSummary.percent}%` }}
-                      />
-                    </div>
                   </div>
                 </>
               ) : (
@@ -1321,22 +1146,17 @@ export function TrialExperiencePage() {
             {generatedResult ? (
               <div className="trial-report-result is-headless">
                 <div className="trial-report-table-wrap">
-                  <table
-                    className={`trial-report-table${canShowTile ? " trial-report-table--with-tile" : " trial-report-table--without-tile"}`}
-                    aria-busy={isGenerating}
-                  >
+                  <table className="trial-report-table trial-report-table--without-tile" aria-busy={isGenerating}>
                     <colgroup>
                       <col className="trial-sequence-col" />
                       <col className="trial-photo-col" />
                       <col className="trial-description-col" />
-                      {canShowTile ? <col className="trial-tile-col" /> : null}
                     </colgroup>
                     <thead>
                       <tr>
                         <th className="trial-sequence-column">序号</th>
                         <th className="trial-photo-column">含标注的照片</th>
                         <th className="trial-report-description">检测说明</th>
-                        {canShowTile ? <th className="trial-tile-column">tile</th> : null}
                       </tr>
                     </thead>
                     <tbody>
@@ -1411,32 +1231,10 @@ export function TrialExperiencePage() {
                               <p><span>未检出明显缺陷</span></p>
                             )}
                           </td>
-                          {canShowTile ? (
-                            <td className="trial-tile-column">
-                              <button
-                                className="trial-tile-view-button"
-                                disabled={!row.previewUrl}
-                                type="button"
-                                onClick={() => setTilePreview({
-                                  filename: row.filename,
-                                  imageUrl: row.previewUrl,
-                                  imageWidth: row.imageWidth,
-                                  imageHeight: row.imageHeight,
-                                  tileWidth: row.tileWidth,
-                                  tileHeight: row.tileHeight,
-                                  tileOverlapRatio: row.tileOverlapRatio,
-                                  detections: row.detections
-                                })}
-                              >
-                                查看tile
-                              </button>
-                            </td>
-                          ) : null}
                         </tr>
                       ))}
                       {isGenerating ? (
                         <TrialGeneratingRows
-                          canShowTile={canShowTile}
                           photos={pendingPhotoPreviews}
                           startIndex={reportRows.length}
                           stepIndex={generationStepIndex}
@@ -1448,29 +1246,23 @@ export function TrialExperiencePage() {
               </div>
             ) : isGenerating ? (
               <TrialGeneratingResult
-                canShowTile={canShowTile}
                 photos={pendingPhotoPreviews}
                 stepIndex={generationStepIndex}
               />
             ) : (
               <div className="trial-report-result is-headless">
                 <div className="trial-report-table-wrap">
-                  <table
-                    className={`trial-report-table${canShowTile ? " trial-report-table--with-tile" : " trial-report-table--without-tile"}`}
-                    aria-label="检测结果"
-                  >
+                  <table className="trial-report-table trial-report-table--without-tile" aria-label="检测结果">
                     <colgroup>
                       <col className="trial-sequence-col" />
                       <col className="trial-photo-col" />
                       <col className="trial-description-col" />
-                      {canShowTile ? <col className="trial-tile-col" /> : null}
                     </colgroup>
                     <thead>
                       <tr>
                         <th className="trial-sequence-column">序号</th>
                         <th className="trial-photo-column">含标注的照片</th>
                         <th className="trial-report-description">检测说明</th>
-                        {canShowTile ? <th className="trial-tile-column">tile</th> : null}
                       </tr>
                     </thead>
                     <tbody />
@@ -1487,38 +1279,15 @@ export function TrialExperiencePage() {
               </div>
             )}
           </aside>
-          <aside
-            ref={guidePanelRef}
-            className={`trial-guide-panel${isGuideExpanded ? " is-expanded" : " is-collapsed"}`}
-            aria-label="检测示例"
-          >
-            <div className="trial-guide-heading">
-              <button
-                aria-controls="trial-guide-content"
-                aria-expanded={isGuideExpanded}
-                className="trial-guide-toggle"
-                onClick={toggleGuide}
-                type="button"
-              >
-                <span className="trial-guide-toggle-label">
-                  {isGuideExpanded ? "收起说明" : "展开说明"}
-                </span>
-                <ChevronLeft aria-hidden="true" />
-              </button>
-            </div>
-            {isGuideExpanded ? <div ref={guideListRef} className="trial-guide-list" id="trial-guide-content">
+          <aside className="trial-guide-panel" aria-label="检测示例">
+            <div className="trial-guide-list" id="trial-guide-content">
               <article className="trial-guide-card trial-guide-card-detection">
                 <span className="trial-guide-icon" aria-hidden="true">
                   <ScanSearch />
                 </span>
                 <div>
                   <h3>支持检测类型</h3>
-                  <p>体验版目前支持三类常见外墙缺陷识别</p>
-                  <div className="trial-guide-tags" aria-label="支持裂缝、剥落和空鼓">
-                    <span>裂缝</span>
-                    <span>剥落</span>
-                    <span>空鼓</span>
-                  </div>
+                  <p>体验版目前支持裂缝、剥落和空鼓三类常见外墙缺陷识别。</p>
                 </div>
               </article>
               <article className="trial-guide-card trial-guide-card-photo">
@@ -1527,12 +1296,7 @@ export function TrialExperiencePage() {
                 </span>
                 <div>
                   <h3>照片建议</h3>
-                  <p>可见光照片检测裂缝和剥落；IronRed 热成像照片仅检测空鼓。</p>
-                  <div className="trial-guide-tags" aria-label="照片建议：清晰、完整、无遮挡">
-                    <span>画面清晰</span>
-                    <span>墙面完整</span>
-                    <span>无遮挡</span>
-                  </div>
+                  <p>上传画面清晰、墙面完整且无遮挡的照片。</p>
                 </div>
               </article>
               <article className="trial-guide-card trial-guide-example-card">
@@ -1601,15 +1365,9 @@ export function TrialExperiencePage() {
                     ))}
                   </div>
                 )}
-                <p
-                  aria-hidden={guideExampleTab !== "annotated"}
-                  className={`trial-guide-example-note${guideExampleTab === "annotated" ? "" : " is-placeholder"}`}
-                >
-                  注：示例仅供参考，实际效果因照片质量有所不同
-                </p>
               </article>
-            </div> : null}
-            </aside>
+            </div>
+          </aside>
           </section>
           </div>
         </div>
@@ -1698,9 +1456,6 @@ export function TrialExperiencePage() {
           </figure>
         </div>
       ) : null}
-      {canShowTile && tilePreview ? (
-        <TilePreviewDialog source={tilePreview} onClose={() => setTilePreview(null)} />
-      ) : null}
       <Modal
         classNames={{
           backdrop: "trial-version-modal-backdrop",
@@ -1753,11 +1508,9 @@ export function TrialExperiencePage() {
 }
 
 function TrialGeneratingResult({
-  canShowTile,
   photos,
   stepIndex
 }: {
-  canShowTile: boolean;
   photos: SelectedPhotoPreview[];
   stepIndex: number;
 }) {
@@ -1769,27 +1522,21 @@ function TrialGeneratingResult({
       aria-label="检测结果生成中"
     >
       <div className="trial-report-table-wrap trial-generating-table-wrap">
-        <table
-          className={`trial-report-table trial-generating-table${canShowTile ? " trial-report-table--with-tile" : " trial-report-table--without-tile"}`}
-          aria-busy="true"
-        >
+        <table className="trial-report-table trial-generating-table trial-report-table--without-tile" aria-busy="true">
           <colgroup>
             <col className="trial-sequence-col" />
             <col className="trial-photo-col" />
             <col className="trial-description-col" />
-            {canShowTile ? <col className="trial-tile-col" /> : null}
           </colgroup>
           <thead>
             <tr>
               <th className="trial-sequence-column">序号</th>
               <th className="trial-photo-column">含标注的照片</th>
               <th className="trial-report-description">检测说明</th>
-              {canShowTile ? <th className="trial-tile-column">tile</th> : null}
             </tr>
           </thead>
           <tbody>
             <TrialGeneratingRows
-              canShowTile={canShowTile}
               photos={photos}
               startIndex={0}
               stepIndex={stepIndex}
@@ -1802,12 +1549,10 @@ function TrialGeneratingResult({
 }
 
 function TrialGeneratingRows({
-  canShowTile,
   photos,
   startIndex,
   stepIndex
 }: {
-  canShowTile: boolean;
   photos: SelectedPhotoPreview[];
   startIndex: number;
   stepIndex: number;
@@ -1866,17 +1611,6 @@ function TrialGeneratingRows({
                 <Skeleton className="trial-generating-line is-short" />
               </div>
             </td>
-            {canShowTile ? (
-              <td className="trial-tile-column">
-                <button
-                  className="trial-tile-view-button"
-                  disabled
-                  type="button"
-                >
-                  生成中
-                </button>
-              </td>
-            ) : null}
           </tr>
         );
       })}
@@ -1909,7 +1643,7 @@ function createTrialPhotoId(file: File) {
 
 function validateTrialPhoto(file: File) {
   if (!ACCEPTED_TRIAL_PHOTO_TYPES.has(file.type)) return "仅支持 JPG、PNG 图片。";
-  if (file.size > MAX_TRIAL_PHOTO_SIZE_BYTES) return "单张图片最大 10MB。";
+  if (file.size > MAX_TRIAL_PHOTO_SIZE_BYTES) return "单张图片最大 5MB。";
   return "";
 }
 
@@ -1970,63 +1704,6 @@ function metadataFromUploadedPhoto(uploadedPhoto: TrialUploadedPhoto, fallback: 
       : fallback.ifd0ImageDescription,
     thermalImagingAvailable: uploadedPhoto.thermal_imaging_available
   };
-}
-
-function trialUploadSummary(photos: SelectedTrialPhoto[]) {
-  const totalBytes = photos.reduce((sum, photo) => sum + Math.max(photo.file.size, 1), 0);
-  const uploadedBytes = photos.reduce(
-    (sum, photo) => sum + Math.max(photo.file.size, 1) * (clampProgress(photo.uploadProgress) / 100),
-    0
-  );
-  const uploadedCount = photos.filter((photo) => photo.uploadStatus === "uploaded").length;
-  const uploadingCount = photos.filter((photo) => photo.uploadStatus === "uploading").length;
-  const failedCount = photos.filter((photo) => photo.uploadStatus === "failed").length;
-  const percent = totalBytes ? Math.round((uploadedBytes / totalBytes) * 100) : 0;
-  return {
-    failedCount,
-    percent: clampProgress(percent),
-    label: uploadSummaryLabel({
-      totalCount: photos.length,
-      uploadedCount,
-      uploadingCount,
-      failedCount
-    })
-  };
-}
-
-function uploadSummaryLabel({
-  totalCount,
-  uploadedCount,
-  uploadingCount,
-  failedCount
-}: {
-  totalCount: number;
-  uploadedCount: number;
-  uploadingCount: number;
-  failedCount: number;
-}) {
-  if (uploadingCount) return `正在上传 ${uploadingCount} 张，已完成 ${uploadedCount}/${totalCount}`;
-  if (failedCount) return `${failedCount} 张上传失败，可单张重新上传`;
-  if (totalCount && uploadedCount === totalCount) return `上传完成 ${uploadedCount}/${totalCount}`;
-  return `等待上传 0/${totalCount}`;
-}
-
-function trialPhotoStatusLabel(photo: SelectedTrialPhoto) {
-  if (photo.isArchived) return "已检测并存档";
-  if (photo.uploadStatus === "uploading") return "上传中";
-  if (photo.uploadStatus === "uploaded") {
-    if (photo.uploadedPhoto?.precheck_status === "passed") return "上传完成 · 预检通过";
-    if (photo.uploadedPhoto?.precheck_status === "rejected") return "上传完成 · 非建筑照片";
-    if (photo.uploadedPhoto?.precheck_status === "error") return "上传完成 · 预检失败";
-    if (photo.uploadedPhoto?.precheck_status === "running") return "上传完成 · 正在预检";
-    return "上传完成 · 等待预检";
-  }
-  if (photo.uploadStatus === "failed") return "上传失败";
-  return "等待上传";
-}
-
-function clampProgress(value: number) {
-  return Math.min(100, Math.max(0, Math.round(value)));
 }
 
 function trialUploadErrorMessage(error: unknown) {
