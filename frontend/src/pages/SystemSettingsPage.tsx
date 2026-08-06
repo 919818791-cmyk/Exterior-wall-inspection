@@ -85,6 +85,12 @@ export function SystemSettingsPage() {
     if (settingQuery.data) setForm(formFromSetting(settingQuery.data));
   }, [settingQuery.data]);
 
+  useEffect(() => {
+    if (!notice) return;
+    const timeoutId = window.setTimeout(() => setNotice(""), 3000);
+    return () => window.clearTimeout(timeoutId);
+  }, [notice]);
+
   const updateMutation = useMutation({
     mutationFn: updateTrialInferenceSettings,
     onSuccess: async (setting) => {
@@ -114,6 +120,12 @@ export function SystemSettingsPage() {
 
   return (
     <div className="system-settings-page management-list-page">
+      {notice ? (
+        <div className="system-settings-toast" role="status" aria-live="polite" aria-atomic="true">
+          <CheckCircle2 aria-hidden="true" />
+          <span>{notice}</span>
+        </div>
+      ) : null}
       <div className="project-workspace">
         <section className="project-hero">
           <div className="management-page-title system-settings-title">
@@ -193,15 +205,16 @@ export function SystemSettingsPage() {
 
               <div className="system-setting-block prompt-setting-block">
                 <h3>检测提示词</h3>
-                <label className="system-setting-field"><span>裂缝 + 剥落合并提示词</span><textarea rows={14} value={form.visible_prompt} onChange={(event) => setForm({ ...form, visible_prompt: event.target.value })} /></label>
-                <label className="system-setting-field"><span>裂缝单独提示词</span><textarea rows={14} value={form.crack_prompt} onChange={(event) => setForm({ ...form, crack_prompt: event.target.value })} /></label>
-                <label className="system-setting-field"><span>剥落单独提示词</span><textarea rows={14} value={form.spalling_prompt} onChange={(event) => setForm({ ...form, spalling_prompt: event.target.value })} /></label>
-                <label className="system-setting-field"><span>热成像照片提示词</span><textarea rows={14} value={form.thermal_prompt} onChange={(event) => setForm({ ...form, thermal_prompt: event.target.value })} /></label>
-                <label className="system-setting-field"><span>建筑照片相关性判断提示词</span><textarea rows={14} value={form.photo_guard_prompt} onChange={(event) => setForm({ ...form, photo_guard_prompt: event.target.value })} /></label>
+                <div className="prompt-setting-grid">
+                  <label className="system-setting-field prompt-setting-field is-primary"><span>裂缝 + 剥落合并提示词</span><textarea rows={10} value={form.visible_prompt} onChange={(event) => setForm({ ...form, visible_prompt: event.target.value })} /></label>
+                  <label className="system-setting-field prompt-setting-field"><span>裂缝单独提示词</span><textarea rows={10} value={form.crack_prompt} onChange={(event) => setForm({ ...form, crack_prompt: event.target.value })} /></label>
+                  <label className="system-setting-field prompt-setting-field"><span>剥落单独提示词</span><textarea rows={10} value={form.spalling_prompt} onChange={(event) => setForm({ ...form, spalling_prompt: event.target.value })} /></label>
+                  <label className="system-setting-field prompt-setting-field"><span>热成像照片提示词</span><textarea rows={10} value={form.thermal_prompt} onChange={(event) => setForm({ ...form, thermal_prompt: event.target.value })} /></label>
+                  <label className="system-setting-field prompt-setting-field"><span>建筑照片相关性判断提示词</span><textarea rows={10} value={form.photo_guard_prompt} onChange={(event) => setForm({ ...form, photo_guard_prompt: event.target.value })} /></label>
+                </div>
               </div>
 
               {updateMutation.isError ? <div className="system-settings-message is-error">{errorMessage(updateMutation.error)}</div> : null}
-              {notice ? <div className="system-settings-message is-success"><CheckCircle2 aria-hidden="true" />{notice}</div> : null}
             </>
           ) : null}
         </section>

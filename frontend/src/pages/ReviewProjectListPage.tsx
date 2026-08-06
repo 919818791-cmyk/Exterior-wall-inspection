@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import {
+  ArrowLeft,
   ClipboardCheck,
   Eye,
   FileText,
@@ -18,8 +19,8 @@ import { formatDateTime } from "@/utils/projectDisplay";
 const statusLabels: Record<ReviewDetectionStatus, string> = {
   detecting: "AI 检测中",
   pending_review: "待审核",
-  reviewed: "已审核",
-  completed: "已推送",
+  reviewed: "已完成",
+  completed: "已完成",
   failed: "检测失败"
 };
 
@@ -47,19 +48,14 @@ function actionFor(result: ReviewDetectionListItem) {
       disabled: false
     };
   }
-  if (result.review_status === "reviewed" && result.report_id) {
-    return {
-      label: "预览报告并推送",
-      to: `/reports/${result.report_id}?mode=review`,
-      Icon: FileText,
-      disabled: false
-    };
-  }
-  if (result.review_status === "completed" && result.report_id) {
+  if (
+    (result.review_status === "reviewed" || result.review_status === "completed")
+    && result.report_id
+  ) {
     return {
       label: "查看结果",
       to: `/reports/${result.report_id}`,
-      Icon: Eye,
+      Icon: result.review_status === "reviewed" ? FileText : Eye,
       disabled: false
     };
   }
@@ -72,9 +68,19 @@ function actionFor(result: ReviewDetectionListItem) {
 }
 
 export function ReviewProjectListPage() {
-  const resultsQuery = useQuery(reviewDetectionsQueryOptions);
+  const resultsQuery = useQuery({
+    ...reviewDetectionsQueryOptions,
+    // Keep polling only while a task is still producing its AI result. The next
+    // response replaces this disabled placeholder with the reviewable result.
+    refetchInterval: (query) => (
+      query.state.data?.some((result) => result.review_status === "detecting")
+        ? 5_000
+        : false
+    )
+  });
   const results = (resultsQuery.data ?? []).filter((result) => (
-    result.review_status === "pending_review"
+    result.review_status === "detecting"
+    || result.review_status === "pending_review"
     || result.review_status === "reviewed"
     || result.review_status === "completed"
   ));
@@ -86,6 +92,12 @@ export function ReviewProjectListPage() {
           <div className="management-page-title">
             <ClipboardCheck aria-hidden="true" className="management-page-title-icon" />
             <h1>审核工作台</h1>
+          </div>
+          <div className="project-hero-action standalone-management-actions">
+            <Link className="button secondary report-back-button standalone-management-home-link" to="/">
+              <ArrowLeft aria-hidden="true" />
+              <span>返回首页</span>
+            </Link>
           </div>
         </section>
 
@@ -162,9 +174,6 @@ export function ReviewProjectListPage() {
                 <span>项目完成 AI 检测后会在这里显示一条记录。</span>
               </div>
             )}
-          </div>
-          <div className="project-pagination">
-            <span>共 <strong>{results.length}</strong> 条</span>
           </div>
         </section>
       </div>

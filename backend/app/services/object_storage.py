@@ -97,7 +97,11 @@ def signed_object_url(
 ) -> str | None:
     if not bucket or not object_key:
         return None
-    expires_at = int(time.time()) + expires_minutes * 60
+    # Quantize expirations so repeated list requests reuse the same signed URL
+    # and the browser can cache the lightweight redirect and thumbnail.
+    ttl_seconds = max(60, expires_minutes * 60)
+    now = int(time.time())
+    expires_at = ((now + ttl_seconds + ttl_seconds - 1) // ttl_seconds) * ttl_seconds
     signature = sign_object_access(bucket, object_key, expires_at)
     encoded_bucket = quote(bucket, safe="")
     encoded_key = quote(object_key, safe="/")

@@ -2,10 +2,10 @@ import { queryOptions } from "@tanstack/react-query";
 
 import { apiRequest } from "@/api/client";
 import type {
-  AnnotationManagementDetail,
   AnnotationPhotoEdit,
-  SavePhotoAnnotationsPayload
-} from "@/types/annotationManagement";
+  ReviewAnnotationDetail,
+  SaveReviewAnnotationsPayload
+} from "@/types/reviewAnnotations";
 import type {
   InspectionReport,
   ReviewDetectionListItem,
@@ -38,7 +38,7 @@ export function reviewDetectionQueryOptions(taskId: string) {
 export function reviewDetectionAnnotationsQueryOptions(taskId: string) {
   return queryOptions({
     queryKey: ["review", "detections", taskId, "annotations"],
-    queryFn: () => apiRequest<AnnotationManagementDetail>(
+    queryFn: () => apiRequest<ReviewAnnotationDetail>(
       `/review/detections/${taskId}/annotations`
     ),
     enabled: Boolean(taskId)
@@ -47,7 +47,7 @@ export function reviewDetectionAnnotationsQueryOptions(taskId: string) {
 
 export function saveReviewDetectionAnnotations(
   taskId: string,
-  payload: SavePhotoAnnotationsPayload
+  payload: SaveReviewAnnotationsPayload
 ) {
   return apiRequest<AnnotationPhotoEdit>(
     `/review/detections/${taskId}/annotations/photos`,

@@ -5,6 +5,7 @@
 # Local planning, prototype, and design-review artifacts
 /.agents/
 /.codex/
+/tmp/
 /原型/
 /assets/
 /design-qa.md

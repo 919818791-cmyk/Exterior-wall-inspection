@@ -3,8 +3,8 @@ import type { ProjectStatus } from "@/types/projects";
 export const PROJECT_STATUS_LABELS: Record<ProjectStatus, string> = {
   draft: "待检测",
   detecting: "AI检测中",
-  pending_review: "审核中",
-  reviewed: "审核完成",
+  pending_review: "检测中",
+  reviewed: "已完成",
   completed: "已完成"
 };
 
@@ -12,7 +12,7 @@ export const PROJECT_STATUS_TONES: Record<ProjectStatus, "success" | "warning" |
   draft: "warning",
   detecting: "warning",
   pending_review: "warning",
-  reviewed: "warning",
+  reviewed: "success",
   completed: "success"
 };
 

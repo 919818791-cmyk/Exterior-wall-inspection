@@ -9,25 +9,17 @@ import {
   CopyPlus,
   FileImage,
   Save,
-  Tags,
   Trash2
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Group, Image as KonvaImage, Layer, Rect, Stage, Text, Transformer } from "react-konva";
 import {
   Link as RouterLink,
-  Navigate,
   useBeforeUnload,
   useBlocker,
-  useNavigate,
-  useParams,
-  useSearchParams
+  useNavigate
 } from "react-router-dom";
 
-import {
-  annotationResultQueryOptions,
-  savePhotoAnnotations
-} from "@/api/annotationManagement";
 import {
   completeDetectionReview,
   reviewDetectionAnnotationsQueryOptions,
@@ -36,9 +28,8 @@ import {
 import type {
   AnnotationBBox,
   AnnotationPhotoEdit,
-  AnnotationSourceType,
   ManagedAnnotation
-} from "@/types/annotationManagement";
+} from "@/types/reviewAnnotations";
 import type { ReportDefectSnapshot, ReportDetail, ReportPhotoSnapshot } from "@/types/reports";
 import { createClientId } from "@/utils/id";
 
@@ -142,51 +133,22 @@ function useElementWidth<T extends HTMLElement>() {
   return [ref, width] as const;
 }
 
-export function AnnotationManagementDetailPage() {
-  const { id = "" } = useParams();
-  const [searchParams] = useSearchParams();
-  const sourceValue = searchParams.get("source_type");
-  const sourceType: AnnotationSourceType = sourceValue === "formal" ? "formal" : "trial";
-
-  if (sourceValue !== "formal" && sourceValue !== "trial") {
-    return <Navigate replace to="/annotation-management" />;
-  }
-
-  return (
-    <AnnotationResultWorkbench
-      backLabel="返回列表"
-      backTo="/annotation-management"
-      pageTitle="标注管理"
-      resultId={id}
-      sourceType={sourceType}
-    />
-  );
-}
-
-export function AnnotationResultWorkbench({
+export function ReviewAnnotationWorkbench({
   backLabel,
   backTo,
   pageTitle,
   projectName,
-  resultId,
-  reviewTaskId,
-  sourceType
+  reviewTaskId
 }: {
   backLabel: string;
   backTo: string;
   pageTitle: string;
   projectName?: string;
-  resultId: string;
-  reviewTaskId?: string;
-  sourceType: AnnotationSourceType;
+  reviewTaskId: string;
 }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const detailQuery = useQuery(
-    reviewTaskId
-      ? reviewDetectionAnnotationsQueryOptions(reviewTaskId)
-      : annotationResultQueryOptions(resultId, sourceType)
-  );
+  const detailQuery = useQuery(reviewDetectionAnnotationsQueryOptions(reviewTaskId));
   const rows = useMemo(
     () => detailQuery.data ? buildAnnotationPhotoRows(detailQuery.data.result) : [],
     [detailQuery.data]
@@ -263,17 +225,14 @@ export function AnnotationResultWorkbench({
   }, [navigationBlocker.state]);
 
   const completeMutation = useMutation({
-    mutationFn: () => {
-      if (!reviewTaskId) throw new Error("缺少检测任务。");
-      return completeDetectionReview(reviewTaskId);
-    },
+    mutationFn: () => completeDetectionReview(reviewTaskId),
     onSuccess: async (report) => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["review"] }),
         queryClient.invalidateQueries({ queryKey: ["projects"] }),
         queryClient.invalidateQueries({ queryKey: ["reports"] })
       ]);
-      navigate(`/reports/${report.id}?mode=review`);
+      navigate(`/reports/${report.id}`);
     }
   });
 
@@ -299,14 +258,14 @@ export function AnnotationResultWorkbench({
   }
 
   const report = detailQuery.data.result;
-  const readOnly = Boolean(reviewTaskId && report.status !== "draft");
+  const readOnly = report.status !== "draft";
   const activeSaveStatus = activePhotoKey ? editorSaveStatuses[activePhotoKey] : undefined;
   const saveActivePhoto = () => {
     if (!activePhotoKey || readOnly || !activeSaveStatus?.dirty || activeSaveStatus.isSaving) return;
     editorSaveHandlersRef.current.get(activePhotoKey)?.();
   };
   const completeReview = () => {
-    if (!reviewTaskId || completeMutation.isPending) return;
+    if (completeMutation.isPending) return;
     if (hasUnsavedChanges || isAnyEditorSaving) {
       window.alert("请先保存所有照片的标注，等待保存完成后再提交审核。");
       return;
@@ -317,14 +276,12 @@ export function AnnotationResultWorkbench({
     completeMutation.mutate();
   };
   return (
-    <div className="annotation-management-detail grid gap-5">
+    <div className="review-annotation-detail grid gap-5">
       {rows.length ? (
         <section className="annotation-detail-workbench" aria-label="照片标注编辑工作台">
           <header className="annotation-detail-header">
             <div className="management-page-title">
-              {reviewTaskId
-                ? <ClipboardCheck aria-hidden="true" className="management-page-title-icon" />
-                : <Tags aria-hidden="true" className="management-page-title-icon" />}
+              <ClipboardCheck aria-hidden="true" className="management-page-title-icon" />
               <div>
                 <h1>{pageTitle}</h1>
                 {projectName ? (
@@ -335,23 +292,21 @@ export function AnnotationResultWorkbench({
               </div>
             </div>
             <div className="annotation-detail-header-actions">
-              {reviewTaskId ? (
-                <button
-                  className="button primary annotation-complete-review"
-                  disabled={readOnly || hasUnsavedChanges || isAnyEditorSaving || completeMutation.isPending}
-                  type="button"
-                  onClick={completeReview}
-                >
-                  <CircleCheckBig aria-hidden="true" />
-                  {readOnly
-                    ? "审核已完成"
-                    : hasUnsavedChanges || isAnyEditorSaving
-                      ? "请先保存标注"
-                      : completeMutation.isPending
-                        ? "正在生成报告…"
-                        : "完成审核"}
-                </button>
-              ) : null}
+              <button
+                className="button primary annotation-complete-review"
+                disabled={readOnly || hasUnsavedChanges || isAnyEditorSaving || completeMutation.isPending}
+                type="button"
+                onClick={completeReview}
+              >
+                <CircleCheckBig aria-hidden="true" />
+                {readOnly
+                  ? "审核已完成"
+                  : hasUnsavedChanges || isAnyEditorSaving
+                    ? "请先保存标注"
+                    : completeMutation.isPending
+                      ? "正在生成报告…"
+                      : "完成审核"}
+              </button>
               <button
                 className="button primary annotation-save-annotations"
                 disabled={readOnly || !activeSaveStatus?.dirty || activeSaveStatus.isSaving}
@@ -409,10 +364,8 @@ export function AnnotationResultWorkbench({
                     photoCount={rows.length}
                     photoIndex={index}
                     readOnly={readOnly}
-                    resultId={resultId}
                     reviewTaskId={reviewTaskId}
                     row={row}
-                    sourceType={sourceType}
                     onRegisterSaveHandler={registerEditorSaveHandler}
                     onSaveStatusChange={updateEditorSaveStatus}
                     onSelectPhoto={selectPhoto}
@@ -443,10 +396,8 @@ function AnnotationPhotoEditor({
   photoCount,
   photoIndex,
   readOnly,
-  resultId,
   reviewTaskId,
   row,
-  sourceType,
   onRegisterSaveHandler,
   onSaveStatusChange,
   onSelectPhoto
@@ -455,10 +406,8 @@ function AnnotationPhotoEditor({
   photoCount: number;
   photoIndex: number;
   readOnly: boolean;
-  resultId: string;
-  reviewTaskId?: string;
+  reviewTaskId: string;
   row: AnnotationPhotoRowData;
-  sourceType: AnnotationSourceType;
   onRegisterSaveHandler: (photoKey: string, handler: AnnotationEditorSaveHandler | null) => void;
   onSaveStatusChange: (photoKey: string, status: AnnotationEditorSaveStatus) => void;
   onSelectPhoto: (index: number) => void;
@@ -497,23 +446,16 @@ function AnnotationPhotoEditor({
     ? annotations.findIndex((annotation) => annotation.id === selected.id)
     : -1;
   const dirty = JSON.stringify(cleanAnnotations(annotations)) !== JSON.stringify(cleanAnnotations(savedAnnotations));
-  const defectOptions = reviewTaskId
-    ? DEFECT_OPTIONS.filter((option) => ["crack", "spalling", "hollow"].includes(option.value))
-    : DEFECT_OPTIONS;
+  const defectOptions = DEFECT_OPTIONS.filter((option) => ["crack", "spalling", "hollow"].includes(option.value));
 
-  const invalidate = () => Promise.all([
-    queryClient.invalidateQueries({ queryKey: ["annotation-management"] }),
-    queryClient.invalidateQueries({ queryKey: ["review", "detections"] })
-  ]);
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ["review", "detections"] });
   const saveMutation = useMutation({
     mutationFn: () => {
       const payload = {
         photo_key: row.key,
         annotations: cleanAnnotations(annotations)
       };
-      return reviewTaskId
-        ? saveReviewDetectionAnnotations(reviewTaskId, payload)
-        : savePhotoAnnotations(resultId, sourceType, payload);
+      return saveReviewDetectionAnnotations(reviewTaskId, payload);
     },
     onSuccess: async () => {
       setTouched(false);

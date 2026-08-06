@@ -41,7 +41,10 @@ export interface ProjectListItem {
   longitude: string | null;
   latitude: string | null;
   status: ProjectStatus;
+  current_report_id: string | null;
   photo_count: number;
+  total_defects: number;
+  by_defect_type: Record<string, number>;
   first_photo_url: string | null;
   created_at: string;
   updated_at: string;
@@ -49,7 +52,6 @@ export interface ProjectListItem {
 
 export interface ProjectDetail extends ProjectListItem {
   current_task_id: string | null;
-  current_report_id: string | null;
   current_task_status: DetectionTaskStatus | null;
   started_at: string | null;
   completed_at: string | null;
@@ -86,6 +88,9 @@ export interface Photo {
   thumbnail_object_key: string | null;
   image_width: number | null;
   image_height: number | null;
+  relative_altitude: number | null;
+  gimbal_yaw_degree: number | null;
+  facade_orientation: string | null;
   photo_type: PhotoType;
   status: PhotoStatus;
   precheck_status: PhotoPrecheckStatus;

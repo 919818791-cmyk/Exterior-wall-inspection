@@ -7,13 +7,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.api.annotation_management import (
-    _edit_read,
-    _result_detail,
-    _valid_photo_keys,
-)
 from app.api.dependencies import AuthenticatedUser, get_current_user, require_roles
 from app.api.projects import _get_project_or_404
+from app.api.reports import _detail_item
 from app.db.session import get_db
 from app.enums.status import (
     DefectType,
@@ -36,10 +32,10 @@ from app.models.tables import (
     ReviewOperationLog,
     ReviewResult,
 )
-from app.schemas.annotation_management import (
-    AnnotationManagementDetail,
+from app.schemas.review_annotations import (
     AnnotationPhotoEditRead,
     AnnotationPhotoEditRequest,
+    ReviewAnnotationDetail,
 )
 from app.schemas.phase6 import (
     AiDetectionResultRead,
@@ -54,6 +50,7 @@ from app.schemas.phase6 import (
     ReviewResultUpdateRequest,
 )
 from app.schemas.projects import DeleteResponse
+from app.schemas.phase7 import ReportDetailRead
 from app.services.object_storage import presigned_get_url
 from app.services.report_data import build_report_data
 
@@ -163,9 +160,7 @@ def _detection_review_status(
         return "detecting"
     if report is None or report.status == InspectionReportStatus.DRAFT.value:
         return "pending_review"
-    if report.status == InspectionReportStatus.PUSHED.value:
-        return "completed"
-    return "reviewed"
+    return "completed"
 
 
 def _review_detection_item(
@@ -378,18 +373,74 @@ def _review_annotation_report(
     return task, report
 
 
+def _review_result_detail(
+    db: Session,
+    request: Request,
+    report: InspectionReport,
+) -> ReportDetailRead:
+    project = _get_project_or_404(db, report.project_id)
+    return _detail_item(db, report, project, request)
+
+
+def _photo_group_key(value: dict, *, fallback: str = "") -> str:
+    if value.get("id"):
+        return f"photo:{value['id']}"
+    if value.get("original_filename"):
+        return f"filename:{value['original_filename']}"
+    return fallback
+
+
+def _defect_group_key(value: dict) -> str:
+    if value.get("photo_id"):
+        return f"photo:{value['photo_id']}"
+    if value.get("photo_filename"):
+        return f"filename:{value['photo_filename']}"
+    if value.get("id"):
+        return f"defect:{value['id']}"
+    return ""
+
+
+def _valid_photo_keys(result: ReportDetailRead) -> set[str]:
+    keys = {
+        key
+        for index, photo in enumerate(result.photos)
+        if (key := _photo_group_key(photo, fallback=f"photo-index:{index}"))
+    }
+    keys.update(
+        key
+        for defect in result.defects
+        if (key := _defect_group_key(defect))
+    )
+    return keys
+
+
+def _edit_read(edit: AnnotationPhotoEdit) -> AnnotationPhotoEditRead:
+    if edit.report_id is None:
+        raise RuntimeError("Review annotation edit is missing its inspection report.")
+    return AnnotationPhotoEditRead(
+        id=edit.id,
+        source_type="formal",
+        result_id=edit.report_id,
+        photo_key=edit.photo_key,
+        annotations=edit.annotations_json,
+        edited_by=edit.edited_by,
+        created_at=edit.created_at,
+        updated_at=edit.updated_at,
+    )
+
+
 @router.get(
     "/review/detections/{task_id}/annotations",
-    response_model=AnnotationManagementDetail,
+    response_model=ReviewAnnotationDetail,
 )
 def get_review_detection_annotations(
     request: Request,
     task_id: UUID,
     db: Session = Depends(get_db),
     _: AuthenticatedUser = Depends(get_current_user),
-) -> AnnotationManagementDetail:
+) -> ReviewAnnotationDetail:
     _, report = _review_annotation_report(db, task_id)
-    result = _result_detail(db, request, report.id, "formal")
+    result = _review_result_detail(db, request, report)
     edits = list(
         db.scalars(
             select(AnnotationPhotoEdit)
@@ -397,7 +448,7 @@ def get_review_detection_annotations(
             .order_by(AnnotationPhotoEdit.created_at.asc())
         )
     )
-    return AnnotationManagementDetail(
+    return ReviewAnnotationDetail(
         result=result,
         edits=[_edit_read(edit) for edit in edits],
     )
@@ -429,7 +480,7 @@ def save_review_detection_annotations(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Review annotations only support crack, spalling, and hollow.",
         )
-    result = _result_detail(db, request, report.id, "formal")
+    result = _review_result_detail(db, request, report)
     if payload.photo_key not in _valid_photo_keys(result):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -475,7 +526,7 @@ def reset_review_detection_annotations(
 ) -> DeleteResponse:
     task, report = _review_annotation_report(db, task_id)
     _ensure_task_mutable(db, task.id)
-    result = _result_detail(db, request, report.id, "formal")
+    result = _review_result_detail(db, request, report)
     if photo_key not in _valid_photo_keys(result):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -1063,7 +1114,8 @@ def complete_detection_review(
     report.updated_at = now
     db.flush()
 
-    project.status = ProjectStatus.REVIEWED.value
+    project.status = ProjectStatus.COMPLETED.value
+    project.completed_at = now
     project.current_report_id = report.id
     project.updated_at = now
     _write_operation_log(

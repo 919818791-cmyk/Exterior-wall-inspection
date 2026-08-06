@@ -51,7 +51,10 @@ class ProjectListItem(ApiSchema):
     longitude: Decimal | None
     latitude: Decimal | None
     status: ProjectStatus
+    current_report_id: UUID | None
     photo_count: int
+    total_defects: int = 0
+    by_defect_type: dict[str, int] = Field(default_factory=dict)
     first_photo_url: str | None = None
     created_at: datetime
     updated_at: datetime

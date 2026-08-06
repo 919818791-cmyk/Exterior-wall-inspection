@@ -13,7 +13,7 @@ from app.api.dependencies import AuthenticatedUser, ensure_project_access, get_c
 from app.core.config import get_settings
 from app.db.session import get_db
 from app.enums.status import ProjectStatus
-from app.models.tables import DetectionTask, Photo, Project
+from app.models.tables import AiDetectionResult, DetectionTask, Photo, Project
 from app.schemas.projects import (
     DeleteResponse,
     ProjectCreateRequest,
@@ -98,20 +98,14 @@ def _api_base_url(request: Request) -> str:
     return f"{scheme}://{host}/{prefix}" if prefix else f"{scheme}://{host}"
 
 
-def _first_project_photo_url(db: Session, project_id: UUID, request: Request) -> str | None:
-    photo = db.scalar(
-        select(Photo)
-        .where(Photo.project_id == project_id, Photo.deleted_at.is_(None))
-        .order_by(Photo.created_at.asc())
-        .limit(1)
-    )
-    if photo is None:
-        return None
-    object_key = photo.thumbnail_object_key or photo.storage_object_key
-    return signed_object_url(_api_base_url(request), photo.storage_bucket, object_key)
-
-
-def _project_list_item(db: Session, project: Project) -> ProjectListItem:
+def _project_list_item(
+    db: Session,
+    project: Project,
+    *,
+    photo_count: int | None = None,
+    total_defects: int | None = None,
+    by_defect_type: dict[str, int] | None = None,
+) -> ProjectListItem:
     return ProjectListItem(
         id=project.id,
         project_no=project.project_no,
@@ -124,7 +118,19 @@ def _project_list_item(db: Session, project: Project) -> ProjectListItem:
         longitude=project.longitude,
         latitude=project.latitude,
         status=project.status,
-        photo_count=_count_photos(db, project.id),
+        current_report_id=project.current_report_id,
+        photo_count=_count_photos(db, project.id) if photo_count is None else photo_count,
+        total_defects=(
+            db.scalar(
+                select(func.count())
+                .select_from(AiDetectionResult)
+                .where(
+                    AiDetectionResult.project_id == project.id,
+                    AiDetectionResult.detection_task_id == project.current_task_id,
+                )
+            ) or 0
+        ) if total_defects is None else total_defects,
+        by_defect_type=by_defect_type or {},
         created_at=project.created_at,
         updated_at=project.updated_at,
     )
@@ -135,7 +141,6 @@ def _project_detail(db: Session, project: Project) -> ProjectDetailRead:
     return ProjectDetailRead(
         **_project_list_item(db, project).model_dump(),
         current_task_id=project.current_task_id,
-        current_report_id=project.current_report_id,
         current_task_status=current_task.status if current_task else None,
         started_at=project.started_at,
         completed_at=project.completed_at,
@@ -206,12 +211,61 @@ def list_projects(
             .order_by(Project.updated_at.desc(), Project.created_at.desc())
         )
     )
-    return [
-        _project_list_item(db, project).model_copy(
-            update={"first_photo_url": _first_project_photo_url(db, project.id, request)}
+    if not projects:
+        return []
+
+    project_ids = [project.id for project in projects]
+    photo_counts = dict(
+        db.execute(
+            select(Photo.project_id, func.count())
+            .where(
+                Photo.project_id.in_(project_ids),
+                Photo.deleted_at.is_(None),
+            )
+            .group_by(Photo.project_id)
+        ).all()
+    )
+    current_task_ids = [project.current_task_id for project in projects if project.current_task_id]
+    defect_counts: dict[UUID, dict[str, int]] = {}
+    for task_id, defect_type, count in db.execute(
+            select(AiDetectionResult.detection_task_id, AiDetectionResult.defect_type, func.count())
+            .where(AiDetectionResult.detection_task_id.in_(current_task_ids))
+            .group_by(AiDetectionResult.detection_task_id, AiDetectionResult.defect_type)
+        ).all() if current_task_ids else []:
+        defect_counts.setdefault(task_id, {})[defect_type] = int(count)
+    first_photos: dict[UUID, Photo] = {}
+    for photo in db.scalars(
+        select(Photo)
+        .where(
+            Photo.project_id.in_(project_ids),
+            Photo.deleted_at.is_(None),
         )
-        for project in projects
-    ]
+        .order_by(Photo.project_id.asc(), Photo.created_at.asc())
+    ):
+        first_photos.setdefault(photo.project_id, photo)
+
+    items: list[ProjectListItem] = []
+    for project in projects:
+        first_photo = first_photos.get(project.id)
+        first_photo_url = None
+        # Prefer the lightweight thumbnail. Falling back to the original keeps
+        # legacy/local data usable until its thumbnail backfill has run.
+        if first_photo is not None:
+            first_photo_url = signed_object_url(
+                _api_base_url(request),
+                first_photo.storage_bucket,
+                first_photo.thumbnail_object_key or first_photo.storage_object_key,
+            )
+        items.append(
+            _project_list_item(
+                db,
+                project,
+                photo_count=int(photo_counts.get(project.id, 0)),
+                total_defects=sum(defect_counts.get(project.current_task_id, {}).values()),
+                by_defect_type=defect_counts.get(project.current_task_id, {}),
+            ).model_copy(update={"first_photo_url": first_photo_url})
+        )
+    return items
 
 
 @router.post(

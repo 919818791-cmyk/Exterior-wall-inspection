@@ -150,6 +150,8 @@ class PhotoBase(OrmSchema):
     capture_time: datetime | None = None
     longitude: Decimal | None = None
     latitude: Decimal | None = None
+    relative_altitude: Decimal | None = None
+    gimbal_yaw_degree: Decimal | None = None
     status: PhotoStatus = PhotoStatus.UPLOADED
     precheck_status: PhotoPrecheckStatus = PhotoPrecheckStatus.PENDING
     precheck_category: str | None = None

@@ -3,13 +3,12 @@ from types import SimpleNamespace
 from uuid import UUID
 
 import pytest
-from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from app.api.dependencies import AuthenticatedUser
 from app.api.reports import delete_report, restore_trial_report
 from app.db.session import get_db
-from app.enums.status import UserRole
+from app.enums.status import ProjectStatus, UserRole
 from app.main import app
 
 
@@ -65,20 +64,58 @@ def test_registration_idempotency_does_not_create_duplicate_account() -> None:
     assert fake_db.add_count == 1
 
 
-def test_customer_cannot_delete_formal_report() -> None:
+def test_customer_can_delete_accessible_formal_report() -> None:
+    report_id = UUID(int=1)
+    task_id = UUID(int=3)
+    report = SimpleNamespace(
+        id=report_id,
+        detection_task_id=task_id,
+        docx_bucket=None,
+        docx_object_key=None,
+    )
+    task = SimpleNamespace(id=task_id)
+    project = SimpleNamespace(
+        id=UUID(int=2),
+        current_report_id=report_id,
+        current_task_id=task_id,
+        status=ProjectStatus.COMPLETED.value,
+        started_at=datetime.now(UTC),
+        completed_at=datetime.now(UTC),
+        updated_at=None,
+        deleted_at=None,
+    )
+
     class Rows:
         def first(self):
-            return SimpleNamespace(id=UUID(int=1)), SimpleNamespace(id=UUID(int=2))
+            return report, project
 
     class FakeDb:
+        def __init__(self) -> None:
+            self.deleted: list[object] = []
+            self.commit_count = 0
+
         def execute(self, _: object) -> Rows:
             return Rows()
 
-    with pytest.raises(HTTPException) as raised:
-        delete_report(UUID(int=1), FakeDb(), CUSTOMER)
+        def get(self, _: type, item_id: UUID) -> object | None:
+            return task if item_id == task_id else None
 
-    assert raised.value.status_code == 403
-    assert "普通用户不能删除" in raised.value.detail
+        def delete(self, value: object) -> None:
+            self.deleted.append(value)
+
+        def commit(self) -> None:
+            self.commit_count += 1
+
+    fake_db = FakeDb()
+    delete_report(report_id, fake_db, CUSTOMER)
+
+    assert fake_db.deleted == [report, task]
+    assert fake_db.commit_count == 1
+    assert project.current_report_id is None
+    assert project.current_task_id is None
+    assert project.status == ProjectStatus.COMPLETED.value
+    assert isinstance(project.deleted_at, datetime)
+    assert project.deleted_at.tzinfo == UTC
 
 
 def test_trial_result_delete_is_recoverable(monkeypatch: pytest.MonkeyPatch) -> None:

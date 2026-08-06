@@ -12,6 +12,7 @@ export interface ReportListItem {
   client_name: string | null;
   address: string | null;
   total_defects: number;
+  by_defect_type: Record<string, number>;
   photo_count: number;
   first_photo_url: string | null;
   generated_at: string;
@@ -40,6 +41,9 @@ export interface ReportPhotoSnapshot {
   mime_type?: string | null;
   image_width?: number | null;
   image_height?: number | null;
+  relative_altitude?: number | string | null;
+  gimbal_yaw_degree?: number | string | null;
+  facade_orientation?: string | null;
   photo_type?: string | null;
   metadata_json?: {
     xmp_drone_dji_image_source?: string | null;

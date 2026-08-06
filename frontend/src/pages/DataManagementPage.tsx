@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
-import { Bot, ChevronDown, Database, Gauge, HardDrive, Image, RefreshCw } from "lucide-react";
+import { ArrowLeft, Bot, ChevronDown, Database, Gauge, HardDrive, Image, RefreshCw } from "lucide-react";
 import { useState, type ReactNode } from "react";
+import { Link as RouterLink } from "react-router-dom";
 
 import { dataUsageQueryOptions } from "@/api/dataManagement";
 import type { DataUsagePeriod, UsagePeriodMetrics } from "@/types/dataManagement";
@@ -20,8 +21,6 @@ interface MetricDefinition {
 }
 
 const integerFormatter = new Intl.NumberFormat("zh-CN");
-const historyPageSize = 10;
-
 const metricDefinitions: MetricDefinition[] = [
   { key: "photo_count", label: "照片数量", unit: "张", icon: <Image aria-hidden="true" />, color: "blue", format: (value) => integerFormatter.format(value) },
   { key: "storage_mb", label: "上传数据量", unit: "MB", icon: <HardDrive aria-hidden="true" />, color: "cyan", format: (value) => value.toFixed(2) },
@@ -69,7 +68,6 @@ function MetricCard({ definition, values }: { definition: MetricDefinition; valu
 export function DataManagementPage() {
   const [period, setPeriod] = useState<DataUsagePeriod>("week");
   const [isHistoryExpanded, setIsHistoryExpanded] = useState(true);
-  const [historyPage, setHistoryPage] = useState(1);
   const usageQuery = useQuery(dataUsageQueryOptions(period));
   const history = usageQuery.data?.history ?? [];
   const current = usageQuery.data?.current;
@@ -81,18 +79,6 @@ export function DataManagementPage() {
     || item.token_count > 0
     || item.trial_task_count > 0
   ));
-  const historyPageCount = Math.max(1, Math.ceil(visibleHistory.length / historyPageSize));
-  const currentHistoryPage = Math.min(historyPage, historyPageCount);
-  const paginatedHistory = visibleHistory.slice(
-    (currentHistoryPage - 1) * historyPageSize,
-    currentHistoryPage * historyPageSize
-  );
-
-  const changePeriod = (nextPeriod: DataUsagePeriod) => {
-    setPeriod(nextPeriod);
-    setHistoryPage(1);
-  };
-
   return (
     <div className="data-management-page management-list-page">
       <div className="project-workspace">
@@ -102,9 +88,15 @@ export function DataManagementPage() {
               <Database aria-hidden="true" className="management-page-title-icon" />
               <h1>数据管理</h1>
             </div>
-            <div className="data-period-switch" aria-label="统计周期">
-              <button className={period === "week" ? "active" : ""} type="button" onClick={() => changePeriod("week")}>按周</button>
-              <button className={period === "month" ? "active" : ""} type="button" onClick={() => changePeriod("month")}>按月</button>
+            <div className="project-hero-action standalone-management-actions">
+              <RouterLink className="button secondary report-back-button standalone-management-home-link" to="/">
+                <ArrowLeft aria-hidden="true" />
+                <span>返回首页</span>
+              </RouterLink>
+              <div className="data-period-switch" aria-label="统计周期">
+                <button className={period === "week" ? "active" : ""} type="button" onClick={() => setPeriod("week")}>按周</button>
+                <button className={period === "month" ? "active" : ""} type="button" onClick={() => setPeriod("month")}>按月</button>
+              </div>
             </div>
           </section>
 
@@ -154,18 +146,12 @@ export function DataManagementPage() {
                   <span>数据更新时间：刚刚</span>
                 </div>
 
-                <section className="data-metric-grid" aria-label="本期用量概览">
-                  {metricDefinitions.map((definition) => (
-                    <MetricCard key={definition.key} definition={definition} values={current} />
-                  ))}
-                </section>
-
                 <section className="data-history-panel" aria-label="历史明细">
                   <div className="data-history-table-wrap">
                     <table className="data-history-table">
                       <thead><tr><th>周期</th><th className="data-history-first-collapse">照片数量</th><th className="data-history-second-collapse">上传数据量</th><th>模型 API 请求</th><th className="data-history-second-collapse">Token 消耗</th><th className="data-history-first-collapse">Trial 任务</th></tr></thead>
                       <tbody>
-                        {paginatedHistory.map((item) => (
+                        {visibleHistory.map((item) => (
                           <tr key={item.start_date} className={item.start_date === current.start_date ? "current" : ""}>
                             <td><strong>{item.label}</strong>{item.start_date === current.start_date ? <small>当前</small> : null}</td>
                             <td className="data-history-first-collapse">{integerFormatter.format(item.photo_count)} 张</td>
@@ -180,33 +166,6 @@ export function DataManagementPage() {
                         ))}
                       </tbody>
                     </table>
-                  </div>
-                  <div className="project-pagination data-history-pagination">
-                    <span>共 <strong>{visibleHistory.length}</strong> 条</span>
-                    <div>
-                      <button
-                        aria-label="上一页"
-                        disabled={currentHistoryPage === 1}
-                        type="button"
-                        onClick={() => setHistoryPage(currentHistoryPage - 1)}
-                      >‹</button>
-                      {Array.from({ length: historyPageCount }, (_, index) => index + 1).map((pageNumber) => (
-                        <button
-                          aria-current={pageNumber === currentHistoryPage ? "page" : undefined}
-                          className={pageNumber === currentHistoryPage ? "current-page" : undefined}
-                          key={pageNumber}
-                          type="button"
-                          onClick={() => setHistoryPage(pageNumber)}
-                        >{pageNumber}</button>
-                      ))}
-                      <button
-                        aria-label="下一页"
-                        disabled={currentHistoryPage === historyPageCount}
-                        type="button"
-                        onClick={() => setHistoryPage(currentHistoryPage + 1)}
-                      >›</button>
-                      <span className="page-size">{historyPageSize} 条/页</span>
-                    </div>
                   </div>
                 </section>
               </>

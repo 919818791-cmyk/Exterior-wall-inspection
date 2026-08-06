@@ -81,7 +81,7 @@ export function PrivacyPolicyPage() {
               </tr>
               <tr>
                 <td>检测工作台</td>
-                <td>项目名称、项目地址、经纬度与建筑信息</td>
+                <td>检测名称、检测位置、经纬度与建筑信息</td>
                 <td>建立检测项目、定位建筑、安排检测和生成项目报告</td>
               </tr>
               <tr>

@@ -49,6 +49,9 @@ class PhotoRead(ApiSchema):
     thumbnail_object_key: str | None
     image_width: int | None
     image_height: int | None
+    relative_altitude: float | None
+    gimbal_yaw_degree: float | None
+    facade_orientation: str | None
     photo_type: PhotoType
     status: PhotoStatus
     precheck_status: PhotoPrecheckStatus

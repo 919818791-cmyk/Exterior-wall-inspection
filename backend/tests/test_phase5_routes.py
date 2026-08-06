@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -7,8 +8,10 @@ from fastapi.testclient import TestClient
 
 from app.api.detection_tasks import (
     _formal_compatible_inference,
+    _remove_rejected_project_photos,
     _validate_formal_photo_model_compatibility,
 )
+from app.enums.status import PhotoPrecheckStatus
 from app.main import app
 from app.schemas.phase5 import (
     AlgorithmResultPayload,
@@ -79,6 +82,53 @@ def test_detection_start_defaults_to_all_supported_report_types() -> None:
     payload = DetectionStartRequest.model_validate({})
 
     assert payload.model_types == ["crack", "spalling", "hollow"]
+
+
+def test_start_detection_removes_rejected_photos_from_project_list() -> None:
+    rejected_batch_id = uuid4()
+    retained_batch_id = uuid4()
+    removed_at = datetime.now(UTC)
+    rejected_photos = [
+        SimpleNamespace(
+            precheck_status=PhotoPrecheckStatus.REJECTED.value,
+            upload_batch_id=rejected_batch_id,
+            deleted_at=None,
+            updated_at=None,
+        ),
+        SimpleNamespace(
+            precheck_status=PhotoPrecheckStatus.REJECTED.value,
+            upload_batch_id=rejected_batch_id,
+            deleted_at=None,
+            updated_at=None,
+        ),
+    ]
+    passed_photo = SimpleNamespace(
+        precheck_status=PhotoPrecheckStatus.PASSED.value,
+        upload_batch_id=retained_batch_id,
+        deleted_at=None,
+        updated_at=None,
+    )
+    batches = {
+        rejected_batch_id: SimpleNamespace(photo_count=3),
+        retained_batch_id: SimpleNamespace(photo_count=1),
+    }
+
+    class FakeDb:
+        def get(self, _: type, upload_batch_id: object) -> object | None:
+            return batches.get(upload_batch_id)
+
+    removed = _remove_rejected_project_photos(
+        FakeDb(),
+        [*rejected_photos, passed_photo],
+        deleted_at=removed_at,
+    )
+
+    assert removed == rejected_photos
+    assert all(photo.deleted_at == removed_at for photo in rejected_photos)
+    assert all(photo.updated_at == removed_at for photo in rejected_photos)
+    assert passed_photo.deleted_at is None
+    assert batches[rejected_batch_id].photo_count == 1
+    assert batches[retained_batch_id].photo_count == 1
 
 
 def test_formal_detection_routes_models_by_photo_type() -> None:

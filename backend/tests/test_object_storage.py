@@ -24,3 +24,21 @@ def test_presigned_url_uses_public_minio_endpoint(monkeypatch) -> None:
     assert parsed.netloc == "inspection.example"
     assert parsed.path == "/building-exterior/photos/facade.jpg"
 
+
+def test_app_signed_url_is_stable_within_cache_window(monkeypatch) -> None:
+    settings = SimpleNamespace(auth_secret_key="test-signing-secret")
+    monkeypatch.setattr(object_storage, "get_settings", lambda: settings)
+    monkeypatch.setattr(object_storage.time, "time", lambda: 1_800_000_100)
+    first = object_storage.signed_object_url(
+        "https://inspection.example/api",
+        "building-exterior",
+        "photos/facade.jpg",
+    )
+    monkeypatch.setattr(object_storage.time, "time", lambda: 1_800_000_900)
+    second = object_storage.signed_object_url(
+        "https://inspection.example/api",
+        "building-exterior",
+        "photos/facade.jpg",
+    )
+
+    assert first == second

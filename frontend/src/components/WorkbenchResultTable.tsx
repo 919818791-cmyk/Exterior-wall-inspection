@@ -16,6 +16,7 @@ interface WorkbenchResultTableProps<T extends WorkbenchResultListItem> {
   getKey: (item: T) => string;
   items: T[];
   onOpen: (item: T) => void;
+  renderDetectionDescription?: (item: T) => ReactNode;
   renderTitleAccessory?: (item: T) => ReactNode;
 }
 
@@ -25,6 +26,7 @@ export function WorkbenchResultTable<T extends WorkbenchResultListItem>({
   getKey,
   items,
   onOpen,
+  renderDetectionDescription,
   renderTitleAccessory
 }: WorkbenchResultTableProps<T>) {
   return (
@@ -32,6 +34,8 @@ export function WorkbenchResultTable<T extends WorkbenchResultListItem>({
       <colgroup>
         <col className="project-folder-col" />
         <col className="workbench-result-name-col" />
+        {renderTitleAccessory ? <col className="workbench-result-status-col" /> : null}
+        {renderDetectionDescription ? <col className="workbench-result-description-col" /> : null}
       </colgroup>
       <tbody>
         {items.map((item) => (
@@ -51,7 +55,7 @@ export function WorkbenchResultTable<T extends WorkbenchResultListItem>({
             <td className="result-folder-column">
               <ResultFolderThumbnail
                 firstPhotoUrl={item.first_photo_url}
-                folderImageSrc="/images/project-folder-z.png"
+                folderImageSrc="/bg-folder.png"
                 title={item.title}
               />
             </td>
@@ -59,16 +63,30 @@ export function WorkbenchResultTable<T extends WorkbenchResultListItem>({
               <span className="result-name-content workbench-list-copy">
                 <span className="project-name-line workbench-list-title-line">
                   <strong className="project-name workbench-list-title">{item.title}</strong>
-                  {renderTitleAccessory?.(item)}
                 </span>
                 <small className="result-generated-time workbench-list-meta">
                   {formatDateTime(item.generated_at)} · {item.photo_count}张照片
                 </small>
               </span>
             </td>
+            {renderTitleAccessory ? (
+              <td className="workbench-result-status-column">
+                {renderTitleAccessory(item)}
+              </td>
+            ) : null}
+            {renderDetectionDescription ? (
+              <td className="trial-report-description workbench-result-description-column">
+                {renderDetectionDescription(item)}
+              </td>
+            ) : null}
           </tr>
         ))}
       </tbody>
     </table>
   );
+}
+
+export function WorkbenchDefectSummary({ counts }: { counts: Record<string, number> }) {
+  const total = Object.values(counts).reduce((sum, count) => sum + Math.max(0, count), 0);
+  return <p>共{total}处缺陷</p>;
 }

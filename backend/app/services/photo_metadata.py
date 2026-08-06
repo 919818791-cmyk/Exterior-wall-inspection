@@ -14,6 +14,12 @@ class PhotoMetadata(TypedDict):
     thermal_imaging_available: bool
 
 
+class FormalPhotoMetadata(PhotoMetadata):
+    relative_altitude: float | None
+    gimbal_yaw_degree: float | None
+    facade_orientation: str | None
+
+
 def extract_photo_metadata(file_obj: BinaryIO) -> PhotoMetadata:
     reader = getattr(file_obj, "read", None)
     if not callable(reader):
@@ -42,6 +48,66 @@ def extract_photo_metadata_from_bytes(data: bytes) -> PhotoMetadata:
         "ifd0_image_description": image_description,
         "thermal_imaging_available": _is_thermal_imaging_available(image_source, image_description),
     }
+
+
+def extract_formal_photo_metadata(file_obj: BinaryIO) -> FormalPhotoMetadata:
+    reader = getattr(file_obj, "read", None)
+    if not callable(reader):
+        return {
+            "xmp_drone_dji_image_source": None,
+            "ifd0_image_description": None,
+            "thermal_imaging_available": False,
+            "relative_altitude": None,
+            "gimbal_yaw_degree": None,
+            "facade_orientation": None,
+        }
+    position = file_obj.tell()
+    try:
+        file_obj.seek(0)
+        data = reader(XMP_SCAN_LIMIT)
+    finally:
+        file_obj.seek(position)
+    return extract_formal_photo_metadata_from_bytes(data)
+
+
+def extract_formal_photo_metadata_from_bytes(data: bytes) -> FormalPhotoMetadata:
+    metadata = extract_photo_metadata_from_bytes(data)
+    relative_altitude = _find_float_value(
+        data,
+        ("XMP-drone-dji-RelativeAltitude", "drone-dji:RelativeAltitude", "RelativeAltitude"),
+    )
+    gimbal_yaw_degree = _find_float_value(
+        data,
+        ("XMP-drone-dji-GimbalYawDegree", "drone-dji:GimbalYawDegree", "GimbalYawDegree"),
+    )
+    return {
+        **metadata,
+        "relative_altitude": relative_altitude,
+        "gimbal_yaw_degree": gimbal_yaw_degree,
+        "facade_orientation": facade_orientation_from_yaw(gimbal_yaw_degree),
+    }
+
+
+def facade_orientation_from_yaw(yaw: float | None) -> str | None:
+    """Convert DJI gimbal heading to the facade that faces the camera."""
+    if yaw is None:
+        return None
+    normalized_yaw = yaw % 360
+    if normalized_yaw > 337.5 or normalized_yaw <= 22.5:
+        return "南立面"
+    if normalized_yaw <= 67.5:
+        return "西南立面"
+    if normalized_yaw <= 112.5:
+        return "西立面"
+    if normalized_yaw <= 157.5:
+        return "西北立面"
+    if normalized_yaw <= 202.5:
+        return "北立面"
+    if normalized_yaw <= 247.5:
+        return "东北立面"
+    if normalized_yaw <= 292.5:
+        return "东立面"
+    return "东南立面"
 
 
 def _is_thermal_imaging_available(image_source: str | None, image_description: str | None) -> bool:
@@ -73,6 +139,14 @@ def _find_text_value(data: bytes, keys: tuple[str, ...]) -> str | None:
         if element_match:
             return _normalize(element_match.group(1))
     return None
+
+
+def _find_float_value(data: bytes, keys: tuple[str, ...]) -> float | None:
+    value = _find_text_value(data, keys)
+    try:
+        return float(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
 
 
 def _escape_regex(value: str) -> str:

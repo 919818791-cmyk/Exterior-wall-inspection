@@ -1,5 +1,8 @@
+from types import SimpleNamespace
 from uuid import uuid4
 
+from app.api.review import _detection_review_status
+from app.enums.status import DetectionTaskStatus, InspectionReportStatus
 from app.main import app
 from app.schemas.phase6 import ReviewResultCreateRequest, ReviewResultUpdateRequest
 
@@ -18,6 +21,13 @@ def test_phase6_review_routes_are_registered() -> None:
     assert "/api/review/detections/{task_id}/annotations" in paths
     assert "/api/review/detections/{task_id}/annotations/photos" in paths
     assert "/api/review/detections/{task_id}/complete" in paths
+
+
+def test_generated_review_result_is_immediately_complete() -> None:
+    task = SimpleNamespace(status=DetectionTaskStatus.SUCCESS.value)
+    report = SimpleNamespace(status=InspectionReportStatus.GENERATED.value)
+
+    assert _detection_review_status(task, report) == "completed"
 
 
 def test_review_result_create_payload_supports_manual_added_defect() -> None:

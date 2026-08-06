@@ -305,10 +305,16 @@ def delete_current_account(
     trial_results = list(
         db.scalars(select(TrialDetectionResult).where(TrialDetectionResult.generated_by == user.id))
     )
-    for bucket, object_key in {
-        (photo.storage_bucket, photo.storage_object_key)
+    stored_trial_objects = {
+        (photo.storage_bucket, object_key)
         for photo in trial_photos
-    }:
+        for object_key in (
+            photo.storage_object_key,
+            getattr(photo, "thumbnail_object_key", None),
+        )
+        if object_key
+    }
+    for bucket, object_key in stored_trial_objects:
         remove_object(bucket, object_key)
     for photo in trial_photos:
         db.delete(photo)

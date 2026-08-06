@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, ImageOff, RefreshCcw, Trash2, X, ZoomIn, ZoomOut } from "lucide-react";
+import { Check, RefreshCcw, X, ZoomIn, ZoomOut } from "lucide-react";
 import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
@@ -17,12 +17,17 @@ import {
   projectPhotosQueryOptions,
   uploadPhoto
 } from "@/api/projects";
+import { PhotoUploadThumbnail } from "@/components/project/PhotoUploadThumbnail";
 import { ProjectPhotoUploader } from "@/components/project/ProjectPhotoUploader";
 import type { Photo, ProjectDetail } from "@/types/projects";
 import { createAsyncLimiter } from "@/utils/asyncLimiter";
 import { createClientId } from "@/utils/id";
+import {
+  MAX_PROJECT_PHOTO_COUNT,
+  MAX_PROJECT_PHOTO_SIZE_BYTES,
+  validatePhotoUpload
+} from "@/utils/photoUpload";
 
-const ACCEPTED_PHOTO_TYPES = new Set(["image/jpeg", "image/png"]);
 const runFormalPhotoUpload = createAsyncLimiter(6);
 const PHOTO_PREVIEW_DEFAULT_ZOOM = 1;
 const PHOTO_PREVIEW_MIN_ZOOM = 1;
@@ -41,12 +46,6 @@ interface PendingUpload {
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "操作失败，请稍后重试。";
-}
-
-function validatePhoto(file: File) {
-  if (!ACCEPTED_PHOTO_TYPES.has(file.type)) return "图片格式不支持。";
-  if (!file.size) return "图片内容为空。";
-  return "";
 }
 
 export function ProjectPhotoActions({
@@ -219,7 +218,7 @@ export function ProjectPhotoActions({
 
     const rejectionMessages: string[] = [];
     const validFiles = files.filter((file) => {
-      const message = validatePhoto(file);
+      const message = validatePhotoUpload(file, { maxSizeBytes: MAX_PROJECT_PHOTO_SIZE_BYTES });
       if (!message) return true;
       rejectionMessages.push(`${file.name}：${message}`);
       return false;
@@ -229,7 +228,19 @@ export function ProjectPhotoActions({
       return;
     }
 
-    const entries = validFiles.map((file): PendingUpload => ({
+    const remainingSlots = MAX_PROJECT_PHOTO_COUNT - projectPhotos.length - pendingUploadsRef.current.length;
+    if (remainingSlots <= 0) {
+      setLocalError(`每个项目最多上传 ${MAX_PROJECT_PHOTO_COUNT} 张照片。`);
+      return;
+    }
+    const acceptedFiles = validFiles.slice(0, remainingSlots);
+    if (acceptedFiles.length < validFiles.length) {
+      rejectionMessages.unshift(
+        `每个项目最多上传 ${MAX_PROJECT_PHOTO_COUNT} 张照片，已添加前 ${remainingSlots} 张。`
+      );
+    }
+
+    const entries = acceptedFiles.map((file): PendingUpload => ({
       id: createClientId("project-photo"),
       file,
       previewUrl: URL.createObjectURL(file),
@@ -377,6 +388,7 @@ export function ProjectPhotoActions({
         </div>
       </header>
       <ProjectPhotoUploader
+        addDisabled={!isEditable || uploadMutation.isPending || visiblePhotoCount >= MAX_PROJECT_PHOTO_COUNT}
         containerRef={uploaderRef}
         disabled={!isEditable || uploadMutation.isPending}
         hasPhotos={hasPhotos}
@@ -385,53 +397,30 @@ export function ProjectPhotoActions({
       >
         {projectPhotos.map((photo) => {
           const previewUrl = photo.thumbnail_url ?? photo.preview_url;
-          const hasPrecheckIssue = photo.precheck_status === "rejected" || photo.precheck_status === "error";
-          const precheckDetail = photo.precheck_error ?? photo.precheck_reason
-            ?? (photo.precheck_status === "rejected" ? "建筑判断未通过" : "建筑判断异常");
           return (
-            <figure className={`project-photo-thumb is-uploaded precheck-${photo.precheck_status}`} key={photo.id}>
-              <div
-                className="project-photo-thumb-image"
-                aria-label={previewUrl ? `放大查看 ${photo.original_filename}` : undefined}
-                role={previewUrl ? "button" : undefined}
-                tabIndex={previewUrl ? 0 : undefined}
-                onClick={(event) => {
-                  if (!previewUrl || (event.target instanceof Element && event.target.closest("button"))) return;
-                  openPhotoPreview(photo.id);
-                }}
-                onKeyDown={(event) => {
-                  if (previewUrl && (event.key === "Enter" || event.key === " ")) {
-                    event.preventDefault();
-                    openPhotoPreview(photo.id);
-                  }
-                }}
-              >
-                {previewUrl
-                  ? <img alt={photo.original_filename} src={previewUrl} />
-                  : <span className="project-photo-missing"><ImageOff aria-hidden="true" /></span>}
-                {hasPrecheckIssue ? (
-                  <span
-                    aria-label={`${photo.original_filename}：${precheckDetail}`}
-                    className="project-photo-precheck-alert is-issue"
-                    title={precheckDetail}
-                  >
-                    !
-                  </span>
-                ) : null}
-                <div className="project-photo-thumb-actions">
-                  <button aria-label={`放大查看 ${photo.original_filename}`} disabled={!previewUrl} title="放大查看" type="button" onClick={() => openPhotoPreview(photo.id)}><ZoomIn aria-hidden="true" /></button>
-                  <button aria-label={`删除 ${photo.original_filename}`} className="danger" disabled={!isEditable || deleteMutation.isPending} title="删除" type="button" onClick={() => removePhoto(photo.id)}><Trash2 aria-hidden="true" /></button>
-                </div>
-              </div>
-              <figcaption>{photo.original_filename}</figcaption>
-            </figure>
+            <PhotoUploadThumbnail
+              badges={photo.photo_type === "thermal" ? <span className="trial-thermal-available-tag">热成像</span> : null}
+              fileName={photo.original_filename}
+              key={photo.id}
+              precheckReason={photo.precheck_reason}
+              precheckStatus={photo.precheck_status}
+              previewUrl={previewUrl}
+              removeDisabled={deleteMutation.isPending}
+              statusClassName="is-uploaded"
+              onPreview={previewUrl ? () => openPhotoPreview(photo.id) : undefined}
+              onRemove={isEditable ? () => removePhoto(photo.id) : undefined}
+            />
           );
         })}
         {pendingUploads.map((item) => (
-          <figure className={`project-photo-thumb is-${item.status}`} key={item.id}>
-            <div className="project-photo-thumb-image">
-              <img alt={item.file.name} src={item.previewUrl} />
-              {item.status === "uploading" ? (
+          <PhotoUploadThumbnail
+            fileName={item.file.name}
+            footer={item.status === "failed" ? <span className="project-photo-upload-status">上传失败</span> : null}
+            key={item.id}
+            previewUrl={item.previewUrl}
+            statusClassName={`is-${item.status}`}
+          >
+            {item.status === "uploading" ? (
                 <span
                   aria-label={`${item.file.name}正在上传`}
                   className="new-project-photo-upload-indicator"
@@ -440,13 +429,10 @@ export function ProjectPhotoActions({
                   <span aria-hidden="true" className="new-project-photo-upload-ring" />
                   <small>上传中</small>
                 </span>
-              ) : item.status === "uploaded" ? (
-                <span className="project-photo-check"><Check aria-hidden="true" /></span>
-              ) : null}
-            </div>
-            <figcaption>{item.file.name}</figcaption>
-            {item.status === "failed" ? <span className="project-photo-upload-status">上传失败</span> : null}
-          </figure>
+            ) : item.status === "uploaded" ? (
+              <span className="project-photo-check"><Check aria-hidden="true" /></span>
+            ) : null}
+          </PhotoUploadThumbnail>
         ))}
       </ProjectPhotoUploader>
 

@@ -11,25 +11,33 @@ export function ProjectPhotoUploader({
   addDisabled,
   children,
   disabled,
+  emptyHint,
   footer,
   hasPhotos,
   isLoading = false,
   loadingLabel = "正在加载照片",
   containerRef,
-  onFilesSelected
+  onFilesSelected,
+  variant = "project"
 }: {
   addDisabled?: boolean;
   children?: ReactNode;
   disabled: boolean;
+  emptyHint?: ReactNode;
   footer?: ReactNode;
   hasPhotos: boolean;
   isLoading?: boolean;
   loadingLabel?: string;
   containerRef?: Ref<HTMLDivElement>;
   onFilesSelected: (files: File[]) => void;
+  variant?: "project" | "trial";
 }) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const isAddDisabled = addDisabled ?? disabled;
+  const rootClassName = variant === "trial" ? "trial-photo-uploader" : "project-photo-uploader";
+  const gridClassName = variant === "trial" ? "trial-photo-grid" : "project-photo-grid";
+  const addButtonClassName = variant === "trial" ? "trial-photo-add-button" : "project-photo-add-button";
+  const emptyButtonClassName = variant === "trial" ? "trial-upload-empty" : "project-upload-empty";
 
   const openFilePicker = () => {
     if (disabled) return;
@@ -50,7 +58,7 @@ export function ProjectPhotoUploader({
   return (
     <div
       ref={containerRef}
-      className={`project-photo-uploader ${hasPhotos ? "has-photos" : "is-empty"}`}
+      className={`${rootClassName} ${hasPhotos ? "has-photos" : "is-empty"}`}
       aria-live="polite"
       onDragOver={(event) => event.preventDefault()}
       onDrop={dropFiles}
@@ -66,10 +74,10 @@ export function ProjectPhotoUploader({
       />
 
       {hasPhotos ? (
-        <div className="project-photo-grid">
+        <div className={gridClassName}>
           {children}
           <button
-            className="project-photo-add-button"
+            className={addButtonClassName}
             disabled={isAddDisabled}
             type="button"
             onClick={openFilePicker}
@@ -79,13 +87,14 @@ export function ProjectPhotoUploader({
         </div>
       ) : (
         <button
-          className="project-upload-empty"
+          className={emptyButtonClassName}
           disabled={disabled || isLoading}
           type="button"
           onClick={openFilePicker}
         >
           <ImageUp aria-hidden="true" />
           <strong>{isLoading ? loadingLabel : "点击或拖拽照片到此处上传"}</strong>
+          {!isLoading && emptyHint ? emptyHint : null}
         </button>
       )}
 

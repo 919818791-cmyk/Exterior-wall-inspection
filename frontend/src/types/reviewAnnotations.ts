@@ -1,6 +1,4 @@
-import type { ReportDetail, ReportListItem } from "@/types/reports";
-
-export type AnnotationSourceType = "formal" | "trial";
+import type { ReportDetail } from "@/types/reports";
 
 export interface AnnotationBBox {
   x: number;
@@ -19,7 +17,7 @@ export interface ManagedAnnotation {
 
 export interface AnnotationPhotoEdit {
   id: string;
-  source_type: AnnotationSourceType;
+  source_type: "formal";
   result_id: string;
   photo_key: string;
   annotations: ManagedAnnotation[];
@@ -28,16 +26,12 @@ export interface AnnotationPhotoEdit {
   updated_at: string;
 }
 
-export interface AnnotationResultListItem extends ReportListItem {
-  photo_count: number;
-}
-
-export interface AnnotationManagementDetail {
+export interface ReviewAnnotationDetail {
   result: ReportDetail;
   edits: AnnotationPhotoEdit[];
 }
 
-export interface SavePhotoAnnotationsPayload {
+export interface SaveReviewAnnotationsPayload {
   photo_key: string;
   annotations: ManagedAnnotation[];
 }

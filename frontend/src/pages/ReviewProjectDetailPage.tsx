@@ -4,7 +4,7 @@ import { ArrowLeft, ClipboardCheck, TriangleAlert } from "lucide-react";
 import { Link as RouterLink, useParams } from "react-router-dom";
 
 import { reviewDetectionQueryOptions } from "@/api/review";
-import { AnnotationResultWorkbench } from "@/pages/AnnotationManagementDetailPage";
+import { ReviewAnnotationWorkbench } from "@/components/ReviewAnnotationWorkbench";
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "审核详情加载失败，请稍后重试。";
@@ -76,14 +76,12 @@ export function ReviewProjectDetailPage() {
   }
 
   return (
-    <AnnotationResultWorkbench
+    <ReviewAnnotationWorkbench
       backLabel="返回列表"
       backTo="/review"
       pageTitle="审核工作台"
       projectName={detection.project_name}
-      resultId={detection.report_id}
       reviewTaskId={detection.id}
-      sourceType="formal"
     />
   );
 }

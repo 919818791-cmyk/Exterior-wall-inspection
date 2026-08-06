@@ -19,25 +19,25 @@ const defects = [
     key: "crack",
     title: "裂缝识别",
     description: "识别墙面细微裂缝与延伸走向，辅助快速判断风险位置。",
-    image: "/images/defects/defect-crack-hd.jpg"
+    image: "/images/optimized/defect-crack-card.webp"
   },
   {
     key: "spalling",
     title: "剥落识别",
     description: "定位饰面层空缺与脱落区域，降低高空坠物安全隐患。",
-    image: "/images/defects/defect-spalling-hd.JPG"
+    image: "/images/optimized/defect-spalling-card.webp"
   },
   {
     key: "corrosion",
     title: "锈蚀识别",
     description: "发现外露金属构件锈蚀迹象，辅助评估腐蚀范围与程度。",
-    image: "/images/defects/defect-corrosion-hd.png"
+    image: "/images/optimized/defect-corrosion-card.webp"
   },
   {
     key: "hollow",
     title: "空鼓识别",
     description: "结合热成像异常区域识别潜在空鼓，提升隐蔽缺陷筛查效率。",
-    image: "/images/defects/defect-hollow-hd.png"
+    image: "/images/optimized/defect-hollow-card.webp"
   }
 ];
 
@@ -129,7 +129,7 @@ export function DashboardPage() {
         <div className="defect-grid">
           {defects.map((defect) => (
             <Link key={defect.key} className="defect-card home-reveal-item" id={`defect-${defect.key}`} to={`/capabilities/${defect.key}`} aria-label={`查看${defect.title}详情`}>
-              <div className="defect-media"><img alt={`${defect.title}示意图`} src={defect.image} /></div>
+              <div className="defect-media"><img alt={`${defect.title}示意图`} decoding="async" loading="lazy" src={defect.image} /></div>
               <div className="defect-card-body">
                 <h3>{defect.title}</h3>
                 <p className="defect-description">{defect.description}</p>
@@ -150,7 +150,7 @@ export function DashboardPage() {
         <div className="capability-grid">
           <Link className="capability-card time-recommendation-card home-reveal-item" to="/capabilities/time">
             <span className="feature-icon feature-icon-image time-recommendation-mark">
-              <img alt="" src="/images/capabilities/time-recommendation.png" />
+              <img alt="" decoding="async" loading="lazy" src="/images/optimized/time-recommendation-icon.webp" />
             </span>
             <div>
               <h3>检测时段推荐</h3>
@@ -181,11 +181,11 @@ export function DashboardPage() {
               <h2>联合研发单位</h2>
               <ul className="home-contact-organization-list">
                 <li>
-                  <img className="home-contact-organization-logo" src="/images/国家.png" alt="" />
+                  <img className="home-contact-organization-logo" decoding="async" loading="lazy" src="/images/国家.png" alt="" />
                   <strong>国家城市安全发展科技研究院</strong>
                 </li>
                 <li>
-                  <img className="home-contact-organization-logo" src="/images/深圳.png" alt="" />
+                  <img className="home-contact-organization-logo" decoding="async" loading="lazy" src="/images/深圳.png" alt="" />
                   <strong>深圳市公共城市安全研究院有限公司</strong>
                 </li>
               </ul>
@@ -225,9 +225,8 @@ export function DashboardPage() {
               <Link to="/privacy">隐私政策</Link>
               <Link to="/terms">用户服务协议</Link>
             </nav>
-            <small className="home-contact-meta" aria-label="版权及备案信息">
+            <small className="home-contact-meta" aria-label="版权信息">
               <span>© 2026 国家城市安全发展科技研究院 版权所有</span>
-              <span>备案编号：粤ICP备XXXXXXXX号</span>
             </small>
           </div>
         </div>

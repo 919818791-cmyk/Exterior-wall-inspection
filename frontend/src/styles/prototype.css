@@ -26,7 +26,7 @@ body {
   margin: 0;
   color: var(--ink);
   background: #ffffff;
-  font-family: "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", Arial, sans-serif;
+  font-family: "HarmonyOS Sans", "HarmonyOS Sans SC", "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", Arial, sans-serif;
   letter-spacing: 0;
 }
 
@@ -533,7 +533,7 @@ body.auth-modal-open {
   padding: 72px var(--site-inline-inset) 62px;
   background:
     linear-gradient(90deg, rgba(247, 251, 255, 0.97) 0%, rgba(247, 251, 255, 0.9) 31%, rgba(247, 251, 255, 0.38) 57%, rgba(247, 251, 255, 0) 78%),
-    url("/hero-facade.png") 58% center / cover no-repeat;
+    url("/hero-facade.webp") 58% center / cover no-repeat;
 }
 
 .hero::after {
@@ -1370,7 +1370,7 @@ body.auth-modal-open {
   border-radius: 6px;
   background:
     linear-gradient(90deg, rgba(255, 255, 255, 0.08), rgba(9, 27, 55, 0.1)),
-    url("/hero-facade.png") center / cover,
+    url("/hero-facade.webp") center / cover,
     linear-gradient(90deg, rgba(255, 255, 255, 0.34) 0 2px, transparent 2px 54px),
     linear-gradient(180deg, rgba(255, 255, 255, 0.4) 0 2px, transparent 2px 42px),
     linear-gradient(120deg, #9fb4c3, #eef3f5 45%, #607c91);
@@ -1496,7 +1496,7 @@ body.auth-modal-open {
   padding: 44px clamp(24px, 5vw, 64px);
   background:
     linear-gradient(90deg, rgba(247, 251, 255, 0.98) 0%, rgba(247, 251, 255, 0.92) 34%, rgba(247, 251, 255, 0.34) 62%, rgba(247, 251, 255, 0.04) 78%),
-    var(--detail-hero-image, url("/hero-facade.png")) 60% center / cover no-repeat;
+    var(--detail-hero-image, url("/hero-facade.webp")) 60% center / cover no-repeat;
 }
 
 .detail-hero-copy {
@@ -1539,7 +1539,7 @@ body.auth-modal-open {
   min-height: 600px;
   background:
     linear-gradient(rgba(8, 18, 34, 0.42), rgba(8, 18, 34, 0.42)),
-    var(--detail-hero-image, url("/hero-facade.png")) center / cover no-repeat;
+    var(--detail-hero-image, url("/hero-facade.webp")) center / cover no-repeat;
 }
 
 .detail-hero.defect-detail-hero .detail-hero-copy {
@@ -1757,7 +1757,7 @@ body.auth-modal-open {
 .recommendation-hero {
   background:
     linear-gradient(90deg, rgba(247, 251, 255, 0.98) 0%, rgba(247, 251, 255, 0.92) 40%, rgba(247, 251, 255, 0.28) 72%, rgba(247, 251, 255, 0.08) 100%),
-    url("/hero-facade.png") 64% center / cover no-repeat;
+    url("/hero-facade.webp") 64% center / cover no-repeat;
 }
 
 .recommendation-example {
@@ -4550,7 +4550,7 @@ body.auth-modal-open {
   .hero {
     background:
       linear-gradient(90deg, rgba(247, 251, 255, 0.98) 0%, rgba(247, 251, 255, 0.92) 66%, rgba(247, 251, 255, 0.62) 100%),
-      url("/hero-facade.png") 68% center / cover no-repeat;
+      url("/hero-facade.webp") 68% center / cover no-repeat;
   }
 
   .hero h1 {
@@ -4565,7 +4565,7 @@ body.auth-modal-open {
     padding-left: 18px;
     background:
       linear-gradient(90deg, rgba(247, 251, 255, 0.98) 0%, rgba(247, 251, 255, 0.92) 68%, rgba(247, 251, 255, 0.68) 100%),
-      var(--detail-hero-image, url("/hero-facade.png")) 70% center / cover no-repeat;
+      var(--detail-hero-image, url("/hero-facade.webp")) 70% center / cover no-repeat;
   }
 
   .detail-hero h1 {

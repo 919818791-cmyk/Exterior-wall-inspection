@@ -1,7 +1,6 @@
-import { useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Send, X } from "lucide-react";
+﻿import { useQueryClient } from "@tanstack/react-query";
+import { ArrowLeft, Send } from "lucide-react";
 import {
-  type FormEvent,
   useEffect,
   useRef,
   useState
@@ -15,27 +14,34 @@ import {
   updateProject,
   uploadPhoto
 } from "@/api/projects";
+import { DetectionCreateWorkbench } from "@/components/project/DetectionCreateWorkbench";
+import { PhotoUploadThumbnail } from "@/components/project/PhotoUploadThumbnail";
 import { ProjectPhotoUploader } from "@/components/project/ProjectPhotoUploader";
-import { ProjectWorkbenchShell } from "@/components/project/ProjectWorkbenchShell";
-import type { ProjectCreatePayload, ProjectDetail } from "@/types/projects";
+import type {
+  PhotoType,
+  PhotoPrecheckStatus,
+  ProjectCreatePayload,
+  ProjectDetail
+} from "@/types/projects";
 import { createClientId } from "@/utils/id";
-import { PROJECT_STATUS_LABELS } from "@/utils/projectDisplay";
-
-const ACCEPTED_PHOTO_TYPES = new Set(["image/jpeg", "image/png"]);
+import {
+  MAX_PROJECT_PHOTO_COUNT,
+  MAX_PROJECT_PHOTO_SIZE_BYTES,
+  validatePhotoUpload
+} from "@/utils/photoUpload";
 
 interface PendingPhoto {
   localId: string;
   file: File;
   previewUrl: string;
   remoteId?: string;
+  photoType?: PhotoType;
+  precheckStatus?: PhotoPrecheckStatus;
   status: "pending" | "uploading" | "saved" | "failed";
 }
 
 interface ProjectDraft {
   name: string;
-  address: string;
-  longitude: string;
-  latitude: string;
   photos: PendingPhoto[];
 }
 
@@ -46,32 +52,22 @@ const PROJECT_AUTO_SAVE_DELAY_MS = 600;
 function createInitialProject(): ProjectDraft {
   return {
     name: "",
-    address: "",
-    longitude: "",
-    latitude: "",
     photos: []
   };
 }
 
 const cleanText = (value: string) => value.trim() || null;
-const cleanDecimal = (value: string) => value.trim() || null;
 
 function toPayload(form: ProjectDraft): { payload: ProjectCreatePayload | null; error: string } {
   return {
     error: "",
     payload: {
       name: cleanText(form.name),
-      address: cleanText(form.address),
-      longitude: cleanDecimal(form.longitude),
-      latitude: cleanDecimal(form.latitude)
+      address: null,
+      longitude: null,
+      latitude: null
     }
   };
-}
-
-function validatePhoto(file: File) {
-  if (!ACCEPTED_PHOTO_TYPES.has(file.type)) return "图片格式不支持。";
-  if (!file.size) return "图片内容为空。";
-  return "";
 }
 
 function getErrorMessage(error: unknown) {
@@ -95,7 +91,6 @@ export function NewProjectPage() {
   const [photoError, setPhotoError] = useState("");
   const [saveError, setSaveError] = useState("");
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
-  const [saveMessage, setSaveMessage] = useState("");
   const [startDetectionPending, setStartDetectionPending] = useState(false);
 
   useEffect(() => () => {
@@ -113,7 +108,7 @@ export function NewProjectPage() {
 
   const updatePhoto = (
     localId: string,
-    update: Partial<Pick<PendingPhoto, "remoteId" | "status">>
+    update: Partial<Pick<PendingPhoto, "photoType" | "precheckStatus" | "remoteId" | "status">>
   ) => {
     replaceForm({
       ...formRef.current,
@@ -132,16 +127,15 @@ export function NewProjectPage() {
     }
 
     setSaveStatus("saving");
-    setSaveMessage(savedProjectRef.current ? "正在自动保存…" : "正在创建项目…");
     setSaveError("");
 
     let project = savedProjectRef.current;
     if (project) {
       project = await updateProject(project.id, {
         name: result.payload.name,
-        address: result.payload.address,
-        longitude: result.payload.longitude,
-        latitude: result.payload.latitude
+        address: null,
+        longitude: null,
+        latitude: null
       });
     } else {
       project = await createProjectDraft({
@@ -155,7 +149,6 @@ export function NewProjectPage() {
       (photo) => !photo.remoteId && photo.status !== "uploading"
     );
     if (photosToUpload.length) {
-      setSaveMessage("正在上传照片…");
       photosToUpload.forEach((photo) => updatePhoto(photo.localId, { status: "uploading" }));
       let batch;
       try {
@@ -179,6 +172,8 @@ export function NewProjectPage() {
           photoPayload.append("file", photo.file);
           const uploadedPhoto = await uploadPhoto(photoPayload);
           updatePhoto(photo.localId, {
+            photoType: uploadedPhoto.photo_type,
+            precheckStatus: uploadedPhoto.precheck_status,
             remoteId: uploadedPhoto.id,
             status: "saved"
           });
@@ -204,7 +199,6 @@ export function NewProjectPage() {
 
     if (formRevisionRef.current === revisionAtStart) {
       setSaveStatus("saved");
-      setSaveMessage("已保存");
     }
     return project;
   };
@@ -229,7 +223,6 @@ export function NewProjectPage() {
       return await syncPromise;
     } catch (error) {
       setSaveStatus("error");
-      setSaveMessage("保存失败");
       setSaveError(getErrorMessage(error));
       throw error;
     } finally {
@@ -243,14 +236,13 @@ export function NewProjectPage() {
       window.clearTimeout(autoSaveTimerRef.current);
     }
     setSaveStatus("saving");
-    setSaveMessage("正在自动保存…");
     autoSaveTimerRef.current = window.setTimeout(() => {
       autoSaveTimerRef.current = null;
       void runDraftSync().catch(() => undefined);
     }, PROJECT_AUTO_SAVE_DELAY_MS);
   };
 
-  const field = (name: keyof Omit<ProjectDraft, "photos">, value: string) => {
+  const field = (name: "name", value: string) => {
     replaceForm({ ...formRef.current, [name]: value });
     formRevisionRef.current += 1;
     setFormError("");
@@ -259,7 +251,6 @@ export function NewProjectPage() {
       scheduleDraftSync();
     } else {
       setSaveStatus("idle");
-      setSaveMessage("");
     }
   };
 
@@ -268,7 +259,7 @@ export function NewProjectPage() {
 
     const rejectionMessages: string[] = [];
     const validFiles = files.filter((file) => {
-      const message = validatePhoto(file);
+      const message = validatePhotoUpload(file, { maxSizeBytes: MAX_PROJECT_PHOTO_SIZE_BYTES });
       if (!message) return true;
       rejectionMessages.push(`${file.name}：${message}`);
       return false;
@@ -278,7 +269,19 @@ export function NewProjectPage() {
       return;
     }
 
-    const pendingPhotos = validFiles.map((file): PendingPhoto => {
+    const remainingSlots = MAX_PROJECT_PHOTO_COUNT - formRef.current.photos.length;
+    if (remainingSlots <= 0) {
+      setPhotoError(`每个项目最多上传 ${MAX_PROJECT_PHOTO_COUNT} 张照片。`);
+      return;
+    }
+    const acceptedFiles = validFiles.slice(0, remainingSlots);
+    if (acceptedFiles.length < validFiles.length) {
+      rejectionMessages.unshift(
+        `每个项目最多上传 ${MAX_PROJECT_PHOTO_COUNT} 张照片，已添加前 ${remainingSlots} 张。`
+      );
+    }
+
+    const pendingPhotos = acceptedFiles.map((file): PendingPhoto => {
       const previewUrl = URL.createObjectURL(file);
       previewUrlsRef.current.add(previewUrl);
       return {
@@ -309,7 +312,6 @@ export function NewProjectPage() {
     if (!removedPhoto || saveStatus === "saving" || startDetectionPending) return;
 
     setSaveStatus("saving");
-    setSaveMessage("正在自动保存…");
     setSaveError("");
     try {
       if (removedPhoto.remoteId) {
@@ -331,14 +333,11 @@ export function NewProjectPage() {
           })
         ]);
         setSaveStatus("saved");
-        setSaveMessage("已保存");
       } else {
         setSaveStatus("idle");
-        setSaveMessage("");
       }
     } catch (error) {
       setSaveStatus("error");
-      setSaveMessage("保存失败");
       setSaveError(getErrorMessage(error));
     }
     setPhotoError("");
@@ -353,10 +352,6 @@ export function NewProjectPage() {
     }
     void runDraftSync().catch(() => undefined);
   };
-
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-  }
 
   const startDetection = async () => {
     if (!formRef.current.photos.length) {
@@ -399,137 +394,110 @@ export function NewProjectPage() {
   const allPhotosUploaded = totalPhotoCount > 0 && uploadedPhotoCount === totalPhotoCount;
 
   return (
-    <ProjectWorkbenchShell actionLabel="返回" hideHeader>
-      <form className="create-workspace" onSubmit={handleSubmit}>
-        <h1 className="sr-only">新增检测项目</h1>
-        <section className="project-editor-panel" aria-label="新建项目">
-          <div className="project-editor-block project-fields project-editor-basic-fields">
-            <Label label="项目编号">
-              <input readOnly value="自动生成" />
-            </Label>
-            <Label label="项目状态">
-              <input readOnly value={PROJECT_STATUS_LABELS.draft} />
-            </Label>
-            <Label label="项目名称">
-              <input
-                value={form.name}
-                placeholder="请输入项目名称"
-                onBlur={flushDraftSync}
-                onChange={(event) => field("name", event.target.value)}
-              />
-            </Label>
-            <Label label="项目位置">
-              <input
-                value={form.address}
-                placeholder="请输入详细地址"
-                onBlur={flushDraftSync}
-                onChange={(event) => field("address", event.target.value)}
-              />
-            </Label>
-          </div>
-
-          <div className="project-editor-block project-editor-photo-block">
-            <section className="project-photo-workspace" aria-labelledby="new-project-photo-title">
-              <header className="project-photo-workspace-heading">
-                <h2 id="new-project-photo-title">检测照片</h2>
-                <div className="new-project-photo-heading-status">
-                  {activePhotoUploadCount ? (
-                    <div className="new-project-upload-overview" role="status" aria-live="polite">
-                      <span>正在上传，已完成 {uploadedPhotoCount}/{totalPhotoCount}</span>
-                      <span
-                        aria-label={`照片上传进度 ${photoUploadProgress}%`}
-                        aria-valuemax={100}
-                        aria-valuemin={0}
-                        aria-valuenow={photoUploadProgress}
-                        className="new-project-upload-track"
-                        role="progressbar"
-                      >
-                        <i style={{ width: `${photoUploadProgress}%` }} />
-                      </span>
-                    </div>
-                  ) : failedPhotoCount ? (
-                    <span className="new-project-upload-summary is-error">{failedPhotoCount} 张上传失败</span>
-                  ) : allPhotosUploaded ? (
-                    <span className="new-project-upload-summary is-complete">上传完成</span>
-                  ) : null}
-                  <span className="new-project-photo-count">{totalPhotoCount} 张</span>
-                </div>
-              </header>
-              <ProjectPhotoUploader
-                addDisabled={startDetectionPending}
-                disabled={startDetectionPending}
-                hasPhotos={Boolean(form.photos.length)}
-                onFilesSelected={applyFiles}
+    <DetectionCreateWorkbench
+      ariaLabel="新建专业检测"
+      title="新增检测项目"
+      guideDescription={(
+        <>支持<span className="trial-defect-types">裂缝、剥落、空鼓</span>外墙缺陷识别</>
+      )}
+      nameField={(
+        <Label label="检测名称">
+          <input
+            value={form.name}
+            placeholder="请输入检测名称"
+            onBlur={flushDraftSync}
+            onChange={(event) => field("name", event.target.value)}
+          />
+        </Label>
+      )}
+      nameActions={(
+        <>
+          <Link
+            className="button secondary report-back-button project-workbench-nav-button new-project-back-button"
+            to="/projects"
+          >
+            <ArrowLeft aria-hidden="true" />
+            返回
+          </Link>
+          <button
+            className="button primary start-ai-detection-button"
+            disabled={startDetectionPending}
+            type="button"
+            onClick={() => void startDetection()}
+          >
+            <Send aria-hidden="true" />
+            {startDetectionPending ? "正在准备…" : "开始AI检测"}
+          </button>
+        </>
+      )}
+      photoHeadingStatus={(
+        <>
+          {activePhotoUploadCount ? (
+            <div className="new-project-upload-overview" role="status" aria-live="polite">
+              <span>正在上传，已完成 {uploadedPhotoCount}/{totalPhotoCount}</span>
+              <span
+                aria-label={`照片上传进度 ${photoUploadProgress}%`}
+                aria-valuemax={100}
+                aria-valuemin={0}
+                aria-valuenow={photoUploadProgress}
+                className="new-project-upload-track"
+                role="progressbar"
               >
-                {form.photos.map((photo) => (
-                  <figure className={`project-photo-thumb is-${photo.status}`} key={photo.localId}>
-                    <div className="project-photo-thumb-image">
-                      <img alt={photo.file.name} src={photo.previewUrl} />
-                      {photo.status === "pending" || photo.status === "uploading" ? (
-                        <span
-                          aria-label={`${photo.file.name}${photo.status === "pending" ? "等待上传" : "正在上传"}`}
-                          className="new-project-photo-upload-indicator"
-                          role="status"
-                        >
-                          <span aria-hidden="true" className="new-project-photo-upload-ring" />
-                          <small>{photo.status === "pending" ? "等待上传" : "上传中"}</small>
-                        </span>
-                      ) : null}
-                      <button
-                        aria-label={`移除 ${photo.file.name}`}
-                        className="new-project-photo-remove"
-                        disabled={isSaving || startDetectionPending}
-                        title="移除"
-                        type="button"
-                        onClick={() => void removePendingPhoto(photo.localId)}
-                      >
-                        <X aria-hidden="true" />
-                      </button>
-                    </div>
-                    <figcaption>{photo.file.name}</figcaption>
-                  </figure>
-                ))}
-              </ProjectPhotoUploader>
-              {photoError ? <p className="project-photo-error">{photoError}</p> : null}
-            </section>
-          </div>
-
-          <div className="create-action-bar new-project-action-bar">
-            {(formError || saveError) ? (
-              <p className="create-form-error">{formError || saveError}</p>
-            ) : null}
-            <div>
-              {saveMessage ? (
-                <span
-                  className={`new-project-save-status is-${saveStatus}`}
-                  role="status"
-                >
-                  {saveMessage}
-                </span>
-              ) : null}
-              <Link
-                className="button secondary report-back-button project-workbench-nav-button new-project-back-button"
-                to="/projects"
-              >
-                <ArrowLeft aria-hidden="true" />
-                返回
-              </Link>
-              <button
-                className="button primary start-ai-detection-button"
-                disabled={startDetectionPending}
-                type="button"
-                onClick={() => void startDetection()}
-              >
-                <Send aria-hidden="true" />
-                {startDetectionPending
-                  ? "正在准备…"
-                  : "开始AI检测"}
-              </button>
+                <i style={{ width: `${photoUploadProgress}%` }} />
+              </span>
             </div>
-          </div>
-        </section>
-      </form>
-    </ProjectWorkbenchShell>
+          ) : failedPhotoCount ? (
+            <span className="new-project-upload-summary is-error">{failedPhotoCount} 张上传失败</span>
+          ) : allPhotosUploaded ? (
+            <span className="new-project-upload-summary is-complete">上传完成</span>
+          ) : null}
+          <span className="new-project-photo-count">{totalPhotoCount} 张</span>
+        </>
+      )}
+      photoUploader={(
+        <>
+          <ProjectPhotoUploader
+            addDisabled={startDetectionPending || form.photos.length >= MAX_PROJECT_PHOTO_COUNT}
+            disabled={startDetectionPending}
+            hasPhotos={Boolean(form.photos.length)}
+            onFilesSelected={applyFiles}
+          >
+            {form.photos.map((photo) => {
+              const thermalAvailable = photo.status === "saved" && photo.photoType === "thermal";
+              return (
+                <PhotoUploadThumbnail
+                  badges={thermalAvailable ? <span className="trial-thermal-available-tag">热成像</span> : null}
+                  fileName={photo.file.name}
+                  key={photo.localId}
+                  precheckStatus={photo.precheckStatus}
+                  previewUrl={photo.previewUrl}
+                  removeDisabled={isSaving || startDetectionPending}
+                  statusClassName={`is-${photo.status}`}
+                  onRemove={() => void removePendingPhoto(photo.localId)}
+                >
+                  {photo.status === "pending" || photo.status === "uploading" ? (
+                    <span
+                      aria-label={`${photo.file.name}${photo.status === "pending" ? "等待上传" : "正在上传"}`}
+                      className="new-project-photo-upload-indicator"
+                      role="status"
+                    >
+                      <span aria-hidden="true" className="new-project-photo-upload-ring" />
+                      <small>{photo.status === "pending" ? "等待上传" : "上传中"}</small>
+                    </span>
+                  ) : null}
+                </PhotoUploadThumbnail>
+              );
+            })}
+          </ProjectPhotoUploader>
+          {photoError ? <p className="project-photo-error">{photoError}</p> : null}
+        </>
+      )}
+      feedback={(
+        <>
+          {(formError || saveError) ? <p className="create-form-error">{formError || saveError}</p> : null}
+        </>
+      )}
+    />
   );
 }
 

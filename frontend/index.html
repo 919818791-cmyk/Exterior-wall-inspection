@@ -28,7 +28,7 @@
   </head>
   <body>
     <div id="root"></div>
-    <main id="app-boot-loader" aria-label="正在加载页面资源" role="status"><span class="app-boot-spinner" aria-hidden="true"></span></main>
+    <main id="app-boot-loader" aria-label="正在启动应用" role="status"><span class="app-boot-spinner" aria-hidden="true"></span></main>
     <script>
       (function () {
         function removeBootLoader() {
@@ -50,7 +50,10 @@
           var reason = event.reason;
           showStartupError(reason && reason.message ? reason.message : String(reason || ""));
         });
-        window.addEventListener("load", removeBootLoader, { once: true });
+        // Module scripts finish evaluating before DOMContentLoaded. Releasing
+        // the boot screen here lets React render the shell without waiting for
+        // images, fonts, or other non-critical media.
+        window.addEventListener("DOMContentLoaded", removeBootLoader, { once: true });
       })();
     </script>
     <script type="module" src="/src/main.tsx"></script>

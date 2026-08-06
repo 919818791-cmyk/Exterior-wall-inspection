@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDownToLine, ArrowUpFromLine, BarChart3, Bot, Database, KeyRound, Pencil, RefreshCw, Save, ShieldCheck, UserPlus, UsersRound, X } from "lucide-react";
+import { ArrowDownToLine, ArrowLeft, ArrowUpFromLine, BarChart3, Bot, Database, KeyRound, Pencil, RefreshCw, Save, ShieldCheck, UserPlus, UsersRound, X } from "lucide-react";
 import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
+import { Link as RouterLink } from "react-router-dom";
 
 import {
   accountsQueryOptions,
@@ -223,8 +224,12 @@ export function AccountManagementPage() {
             <UsersRound aria-hidden="true" className="management-page-title-icon" />
             <h1>账号管理</h1>
           </div>
-          <div className="project-hero-action">
-            <button className="button primary new-project-button" type="button" onClick={openCreateEditor}>
+          <div className="project-hero-action standalone-management-actions">
+            <RouterLink className="button secondary report-back-button standalone-management-home-link" to="/">
+              <ArrowLeft aria-hidden="true" />
+              <span>返回首页</span>
+            </RouterLink>
+            <button className="button primary report-back-button" type="button" onClick={openCreateEditor}>
               <UserPlus aria-hidden="true" />新建账号
             </button>
           </div>
@@ -300,9 +305,6 @@ export function AccountManagementPage() {
             ) : (
               <div className="project-empty"><strong>暂无账号</strong><span>点击“新建账号”创建第一个账号</span></div>
             )}
-          </div>
-          <div className="project-pagination">
-            <span>共 <strong>{accounts.length}</strong> 个账号</span>
           </div>
         </section>
       </div>

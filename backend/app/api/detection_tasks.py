@@ -37,6 +37,7 @@ from app.models.tables import (
     Photo,
     Project,
     ReviewResult,
+    UploadBatch,
 )
 from app.schemas.phase5 import (
     AlgorithmFailedPayload,
@@ -173,6 +174,40 @@ def _set_task_photo_status(
     for task_photo, photo in task_photos:
         task_photo.status = photo_status.value
         photo.status = photo_status.value
+
+
+def _remove_rejected_project_photos(
+    db: Session,
+    photos: list[Photo],
+    *,
+    deleted_at: datetime,
+) -> list[Photo]:
+    """Remove rejected uploads from the project before creating a task.
+
+    Detection tasks and their reports must only retain building photos.  This
+    uses the same soft-delete convention as the project photo list, so the
+    rejected photos immediately disappear from every later project query.
+    """
+    rejected_photos = [
+        photo
+        for photo in photos
+        if getattr(photo, "precheck_status", None)
+        == PhotoPrecheckStatus.REJECTED.value
+    ]
+    removed_by_batch: dict[UUID, int] = {}
+    for photo in rejected_photos:
+        photo.deleted_at = deleted_at
+        photo.updated_at = deleted_at
+        removed_by_batch[photo.upload_batch_id] = (
+            removed_by_batch.get(photo.upload_batch_id, 0) + 1
+        )
+
+    for upload_batch_id, removed_count in removed_by_batch.items():
+        batch = db.get(UploadBatch, upload_batch_id)
+        if batch is not None:
+            batch.photo_count = max(0, batch.photo_count - removed_count)
+
+    return rejected_photos
 
 
 def _defect_type_value(value: object) -> str:
@@ -472,12 +507,13 @@ async def start_detection(
         if getattr(photo, "precheck_status", None)
         == PhotoPrecheckStatus.PASSED.value
     ]
-    rejected_photo_count = sum(
-        1
+    rejected_photos = [
+        photo
         for photo in all_photos
         if getattr(photo, "precheck_status", None)
         == PhotoPrecheckStatus.REJECTED.value
-    )
+    ]
+    rejected_photo_count = len(rejected_photos)
     if not qualified_photos:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -533,6 +569,7 @@ async def start_detection(
             )
 
     now = datetime.now(UTC)
+    _remove_rejected_project_photos(db, rejected_photos, deleted_at=now)
     inference_snapshot = {
         "source": "formal_project",
         "model_types": selected_model_types,

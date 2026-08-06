@@ -20,29 +20,29 @@ const details = {
   crack: {
     title: "裂缝识别",
     lead: "系统对无人机采集的外墙影像进行分区分析，识别细微裂缝及连续裂缝区域，并将检测结果映射到对应立面位置。",
-    images: ["/images/defects/crack2.jpg", "/images/defects/crack.jpg"]
+    images: ["/images/optimized/crack-detail-1.webp"]
   },
   spalling: {
     title: "剥落识别",
     lead: "系统从外墙纹理、颜色和边缘变化中定位面砖、饰面层及混凝土等材料的缺失、脱落和连续剥离区域，帮助工程师快速安排复核与修补。",
-    images: ["/images/defects/spalling.JPG", "/images/defects/spalling2.JPG"]
+    images: ["/images/optimized/spalling-detail-1.webp", "/images/optimized/spalling-detail-2.webp"]
   },
   moisture: {
     title: "潮湿识别",
     lead: "系统分析外墙颜色、纹理与水迹形态，区分局部污染和疑似潮湿痕迹，帮助工程师快速锁定需要排查的节点。",
-    images: ["/images/defects/leakage.jpg"],
+    images: ["/images/optimized/moisture-detail.webp"],
     comingSoon: true
   },
   corrosion: {
     title: "锈蚀识别",
     lead: "系统对金属构件和周边立面进行颜色与纹理分析，定位锈蚀区域及锈水流挂痕迹，便于持续跟踪缺陷变化。",
-    images: ["/images/defects/corrosion.jpg"],
+    images: ["/images/optimized/corrosion-detail.webp"],
     comingSoon: true
   },
   hollow: {
     title: "空鼓识别",
     lead: "系统对立面红外影像进行温度分布分析，并结合构造边界与可见光影像排除明显干扰，输出需要优先复核的疑似空鼓区域。",
-    images: ["/images/defects/hollow.JPG"]
+    images: ["/images/optimized/hollow-detail.webp"]
   }
 } as const;
 
@@ -164,7 +164,13 @@ function DefectDetail({ detail }: { detail: (typeof details)[keyof typeof detail
             }}
             className="defect-hero-slide"
           >
-            <img alt="" decoding="async" src={image} />
+            <img
+              alt=""
+              decoding="async"
+              fetchPriority={index === 0 ? "high" : "auto"}
+              loading={index === 0 ? "eager" : "lazy"}
+              src={image}
+            />
           </div>
         ))}
         <div className="defect-hero-shade" />

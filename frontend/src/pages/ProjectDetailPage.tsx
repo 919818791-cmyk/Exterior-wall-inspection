@@ -1,25 +1,23 @@
 import {
   Card,
   CardBody,
-  Modal,
-  ModalBody,
-  ModalContent,
-  ModalFooter,
-  ModalHeader,
   Skeleton
 } from "@heroui/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
   FileText,
-  Images,
-  ScanLine,
   Send,
-  Trash2,
-  X,
+  Trash2
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link as RouterLink, useLocation, useNavigate, useParams } from "react-router-dom";
+import {
+  Link as RouterLink,
+  useLocation,
+  useNavigate,
+  useOutletContext,
+  useParams
+} from "react-router-dom";
 
 import {
   deleteProject,
@@ -28,8 +26,10 @@ import {
   startDetection,
   updateProject
 } from "@/api/projects";
+import { DetectionCreateWorkspace } from "@/components/project/DetectionCreateWorkbench";
 import { ProjectPhotoActions } from "@/components/project/ProjectPhotoActions";
 import { ProjectWorkbenchShell } from "@/components/project/ProjectWorkbenchShell";
+import { StartDetectionModal } from "@/components/project/StartDetectionModal";
 import type {
   Photo,
   ProjectDetail,
@@ -37,7 +37,6 @@ import type {
   ProjectUpdatePayload,
   StartDetectionPayload
 } from "@/types/projects";
-import { PROJECT_STATUS_LABELS } from "@/utils/projectDisplay";
 
 interface ProjectBasicDraft {
   name: string;
@@ -72,15 +71,15 @@ function projectToDraft(project: ProjectDetail): ProjectBasicDraft {
 function getPrimaryAction(status: ProjectStatus) {
   switch (status) {
     case "draft":
-      return { label: "开始 AI 检测", note: "系统会统一检测预检通过的照片，并送入审核工作台。" };
+      return { label: "开始 AI 检测", note: "系统会统一检测预检通过的照片。" };
     case "detecting":
-      return { label: "AI检测中，不可点击", note: "算法任务完成前项目保持只读。" };
+      return { label: "检测中", note: "检测完成前项目保持只读。" };
     case "pending_review":
-      return { label: "结果审核中，不可点击", note: "普通用户侧不展示内部审核细节。" };
+      return { label: "检测中", note: "检测结果正在生成中。" };
     case "reviewed":
-      return { label: "审核完成", note: "审核结果已固化，等待最终报告推送。" };
+      return { label: "查看结果", note: "检测已完成，可查看检测结果。" };
     case "completed":
-      return { label: "查看结果", note: "最终结果已推送，可在线预览并下载 DOCX。" };
+      return { label: "查看结果", note: "检测已完成，可查看检测结果。" };
     default:
       return { label: "后续阶段接入", note: "当前状态暂无可执行操作。" };
   }
@@ -95,6 +94,10 @@ export function ProjectDetailPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const outletContext = useOutletContext<{
+    setProjectDetailListChrome: (enabled: boolean) => void;
+  } | undefined>();
+  const setProjectDetailListChrome = outletContext?.setProjectDetailListChrome;
   const projectQuery = useQuery(projectQueryOptions(id));
   const projectPhotosQuery = useQuery(projectPhotosQueryOptions(id));
   const project = projectQuery.data;
@@ -116,6 +119,9 @@ export function ProjectDetailPage() {
   const autoSaveQueueRunningRef = useRef(false);
 
   const isEditable = project?.status === "draft";
+  const usesNewProjectAppearance = project
+    ? ["draft", "detecting", "pending_review"].includes(project.status)
+    : false;
   const primaryAction = useMemo(
     () => getPrimaryAction(project?.status ?? "draft"),
     [project?.status]
@@ -131,6 +137,12 @@ export function ProjectDetailPage() {
     failedAutoSaveSignatureRef.current = "";
     setProjectDraft(projectToDraft(project));
   }, [project]);
+
+  useEffect(() => {
+    if (!setProjectDetailListChrome) return undefined;
+    setProjectDetailListChrome(usesNewProjectAppearance);
+    return () => setProjectDetailListChrome(false);
+  }, [setProjectDetailListChrome, usesNewProjectAppearance]);
 
   const updateProjectMutation = useMutation({
     mutationFn: ({
@@ -318,6 +330,7 @@ export function ProjectDetailPage() {
         isEditable={isEditable}
         primaryAction={primaryAction}
         project={project}
+        usesNewProjectAppearance={usesNewProjectAppearance}
         projectCreationNotice={projectCreationNotice}
         projectDraft={projectDraft}
         startDetectionPending={startDetectionMutation.isPending}
@@ -338,6 +351,7 @@ export function ProjectDetailPage() {
 
 function ProjectDetailPrototype({
   project,
+  usesNewProjectAppearance,
   isEditable,
   projectDraft,
   formError,
@@ -357,6 +371,7 @@ function ProjectDetailPrototype({
   onStartDetection
 }: {
   project: ProjectDetail;
+  usesNewProjectAppearance: boolean;
   isEditable: boolean;
   projectDraft: ProjectBasicDraft;
   formError: string;
@@ -375,6 +390,87 @@ function ProjectDetailPrototype({
   onDetectionModalOpenChange: (isOpen: boolean) => void;
   onStartDetection: (payload: StartDetectionPayload) => void;
 }) {
+  const qualifiedPhotos = photos.filter((photo) => photo.precheck_status === "passed");
+  const rejectedPhotoCount = photos.filter((photo) => photo.precheck_status === "rejected").length;
+  const thermalPhotoCount = qualifiedPhotos.filter((photo) => photo.photo_type === "thermal").length;
+
+  if (usesNewProjectAppearance) {
+    return (
+      <>
+        <DetectionCreateWorkspace
+          ariaLabel={`${project.name}项目详情`}
+          title={`${project.name}项目详情`}
+          nameField={(
+            <PrototypeField label="检测名称">
+              <input
+                disabled={!isEditable}
+                value={projectDraft.name}
+                placeholder="可不填，系统将自动生成"
+                onBlur={onProjectFieldBlur}
+                onChange={(event) => onProjectFieldChange("name", event.target.value)}
+              />
+            </PrototypeField>
+          )}
+          nameActions={(
+            <>
+              <RouterLink
+                className="button secondary report-back-button project-workbench-nav-button project-detail-back-button"
+                to="/projects"
+              >
+                <ArrowLeft aria-hidden="true" />返回
+              </RouterLink>
+              {project.status === "draft" ? (
+                <button
+                  className="button secondary report-back-button project-workbench-nav-button project-detail-delete-button"
+                  disabled={deleteProjectPending || updateProjectPending}
+                  type="button"
+                  onClick={onDeleteProject}
+                >
+                  <Trash2 aria-hidden="true" />
+                  {deleteProjectPending ? "删除中…" : "删除"}
+                </button>
+              ) : null}
+              <button
+                className="button primary start-ai-detection-button"
+                disabled={project.status !== "draft" || startDetectionPending}
+                type="button"
+                onClick={onPrimaryAction}
+              >
+                <Send aria-hidden="true" />
+                {startDetectionPending ? "检测中" : primaryAction.label}
+              </button>
+            </>
+          )}
+          photoWorkspaceContent={(
+            <section className="project-photo-workspace" aria-labelledby="project-photo-title">
+              <ProjectPhotoActions isEditable={isEditable} project={project} />
+            </section>
+          )}
+          feedback={(formError || activeError || projectCreationNotice) ? (
+            <>
+              {formError || activeError ? (
+                <p className="detail-feedback error">{formError || getErrorMessage(activeError)}</p>
+              ) : null}
+              {projectCreationNotice ? (
+                <p className="detail-feedback warning">{projectCreationNotice}</p>
+              ) : null}
+            </>
+          ) : undefined}
+        />
+        <StartDetectionModal
+          error={activeError}
+          isOpen={detectionModalOpen}
+          isPending={startDetectionPending}
+          qualifiedPhotoCount={qualifiedPhotos.length}
+          rejectedPhotoCount={rejectedPhotoCount}
+          thermalPhotoCount={thermalPhotoCount}
+          onOpenChange={onDetectionModalOpenChange}
+          onSubmit={onStartDetection}
+        />
+      </>
+    );
+  }
+
   return (
     <div className="create-workspace project-detail-prototype" id="project-detail-workspace">
       <section className="project-editor-panel" aria-label={`${project.name}项目详情`}>
@@ -382,10 +478,8 @@ function ProjectDetailPrototype({
         {projectCreationNotice ? <p className="detail-feedback warning">{projectCreationNotice}</p> : null}
 
         <div className="project-editor-block project-fields project-editor-basic-fields">
-          <PrototypeField label="项目编号"><input readOnly value={project.project_no} /></PrototypeField>
-          <PrototypeField label="项目状态"><input readOnly value={PROJECT_STATUS_LABELS[project.status]} /></PrototypeField>
-          <PrototypeField label="项目名称"><input disabled={!isEditable} value={projectDraft.name} placeholder="可不填，系统将自动生成" onBlur={onProjectFieldBlur} onChange={(event) => onProjectFieldChange("name", event.target.value)} /></PrototypeField>
-          <PrototypeField label="项目位置"><input disabled={!isEditable} value={projectDraft.address} onBlur={onProjectFieldBlur} onChange={(event) => onProjectFieldChange("address", event.target.value)} /></PrototypeField>
+          <PrototypeField label="检测名称"><input disabled={!isEditable} value={projectDraft.name} placeholder="可不填，系统将自动生成" onBlur={onProjectFieldBlur} onChange={(event) => onProjectFieldChange("name", event.target.value)} /></PrototypeField>
+          <PrototypeField label="检测位置"><input disabled={!isEditable} value={projectDraft.address} onBlur={onProjectFieldBlur} onChange={(event) => onProjectFieldChange("address", event.target.value)} /></PrototypeField>
         </div>
 
         <div className="project-editor-block project-editor-photo-block">
@@ -410,9 +504,9 @@ function ProjectDetailPrototype({
                 {deleteProjectPending ? "删除中…" : "删除"}
               </button>
             ) : null}
-            {project.status === "completed" && project.current_report_id
+            {(project.status === "reviewed" || project.status === "completed") && project.current_report_id
               ? <RouterLink className="button primary" to={`/reports/${project.current_report_id}`}><FileText aria-hidden="true" />查看结果</RouterLink>
-              : <button className="button primary start-ai-detection-button" disabled={project.status !== "draft" || startDetectionPending} type="button" onClick={onPrimaryAction}><Send aria-hidden="true" />{startDetectionPending ? "正在创建" : primaryAction.label}</button>}
+              : <button className="button primary start-ai-detection-button" disabled={project.status !== "draft" || startDetectionPending} type="button" onClick={onPrimaryAction}><Send aria-hidden="true" />{startDetectionPending ? "检测中" : primaryAction.label}</button>}
           </div>
         </div>
       </section>
@@ -420,211 +514,13 @@ function ProjectDetailPrototype({
         error={activeError}
         isOpen={detectionModalOpen}
         isPending={startDetectionPending}
-        photos={photos}
+        qualifiedPhotoCount={qualifiedPhotos.length}
+        rejectedPhotoCount={rejectedPhotoCount}
+        thermalPhotoCount={thermalPhotoCount}
         onOpenChange={onDetectionModalOpenChange}
         onSubmit={onStartDetection}
       />
     </div>
-  );
-}
-
-const DETECTION_TYPE_OPTIONS: Array<{
-  value: "crack" | "spalling" | "hollow";
-  label: string;
-  description: string;
-}> = [
-  { value: "crack", label: "裂缝", description: "分析可见光照片中的线状开裂" },
-  { value: "spalling", label: "剥落", description: "分析可见光照片中的面状材料缺失" },
-  { value: "hollow", label: "空鼓", description: "仅分析热成像照片中的疑似空鼓" }
-];
-
-function StartDetectionModal({
-  error,
-  isOpen,
-  isPending,
-  photos,
-  onOpenChange,
-  onSubmit
-}: {
-  error: unknown;
-  isOpen: boolean;
-  isPending: boolean;
-  photos: Photo[];
-  onOpenChange: (isOpen: boolean) => void;
-  onSubmit: (payload: StartDetectionPayload) => void;
-}) {
-  const [modelTypes, setModelTypes] = useState<Array<"crack" | "spalling" | "hollow">>([
-    "crack"
-  ]);
-  const [localError, setLocalError] = useState("");
-  const qualifiedPhotos = useMemo(
-    () => photos.filter((photo) => photo.precheck_status === "passed"),
-    [photos]
-  );
-  const thermalPhotoCount = qualifiedPhotos.filter(
-    (photo) => photo.photo_type === "thermal"
-  ).length;
-  const visiblePhotoCount = qualifiedPhotos.length - thermalPhotoCount;
-  const modelSelectionWarning =
-    thermalPhotoCount > 0
-    && visiblePhotoCount === 0
-    && modelTypes.some((model) => model === "crack" || model === "spalling")
-      ? "当前缺少可见光照片，裂缝和剥落检测不会执行。"
-      : "";
-
-  useEffect(() => {
-    if (!isOpen) return;
-    setModelTypes(
-      thermalPhotoCount > 0
-        ? visiblePhotoCount > 0
-          ? ["crack", "hollow"]
-          : ["hollow"]
-        : ["crack"]
-    );
-    setLocalError("");
-  }, [isOpen, thermalPhotoCount, visiblePhotoCount]);
-
-  const toggleModel = (model: "crack" | "spalling" | "hollow") => {
-    setModelTypes((current) => current.includes(model)
-      ? current.filter((value) => value !== model)
-      : [...current, model]);
-    setLocalError("");
-  };
-
-  const submit = () => {
-    if (!qualifiedPhotos.length) {
-      setLocalError("当前没有预检通过的照片，请先上传合格照片并等待预检完成。");
-      return;
-    }
-    if (!modelTypes.length) {
-      setLocalError("请至少勾选一种检测类型。");
-      return;
-    }
-    if (thermalPhotoCount && !modelTypes.includes("hollow")) {
-      setLocalError("热成像图片只执行空鼓检测，请勾选空鼓或移除热成像图片。");
-      return;
-    }
-    if (
-      visiblePhotoCount
-      && !modelTypes.some((model) => model === "crack" || model === "spalling")
-    ) {
-      setLocalError("可见光图片只执行裂缝或剥落检测，请至少勾选其中一项或移除可见光图片。");
-      return;
-    }
-    onSubmit({ model_types: modelTypes });
-  };
-
-  return (
-    <Modal
-      classNames={{
-        backdrop: "start-detection-modal-backdrop",
-        base: "start-detection-modal-content",
-        wrapper: "start-detection-modal-wrapper"
-      }}
-      hideCloseButton
-      isDismissable={!isPending}
-      isKeyboardDismissDisabled={isPending}
-      isOpen={isOpen}
-      placement="center"
-      scrollBehavior="inside"
-      size="2xl"
-      onOpenChange={onOpenChange}
-    >
-      <ModalContent>
-        {(onClose) => (
-          <>
-            <button
-              aria-label="关闭开始检测弹窗"
-              className="start-detection-modal-close"
-              disabled={isPending}
-              type="button"
-              onClick={onClose}
-            >
-              <X aria-hidden="true" />
-            </button>
-            <ModalHeader className="start-detection-modal-header">
-              <span className="start-detection-modal-title-icon" aria-hidden="true">
-                <ScanLine />
-              </span>
-              <span className="start-detection-modal-title-copy">开始 AI 检测</span>
-            </ModalHeader>
-            <ModalBody className="start-detection-modal-body gap-5">
-              <div className="start-detection-summary">
-                <span className="start-detection-summary-icon" aria-hidden="true">
-                  <Images />
-                </span>
-                <span className="start-detection-summary-copy">
-                  <strong>{qualifiedPhotos.length} 张照片将参与检测</strong>
-                  <span>仅统计已通过建筑照片预检的照片，系统会自动汇总提交。</span>
-                </span>
-                <span className="start-detection-ready-badge">已就绪</span>
-              </div>
-
-              <fieldset className="start-detection-types">
-                <legend>检测类型</legend>
-                <div className="start-detection-option-grid">
-                  {DETECTION_TYPE_OPTIONS.map((option) => (
-                    <label
-                      className={`start-detection-option ${
-                        modelTypes.includes(option.value) ? "is-selected" : ""
-                      }`}
-                      key={option.value}
-                    >
-                      <span className="start-detection-option-heading">
-                        <input
-                          checked={modelTypes.includes(option.value)}
-                          disabled={isPending}
-                          type="checkbox"
-                          onChange={() => toggleModel(option.value)}
-                        />
-                        <strong>
-                          {option.label}{option.value === "hollow" ? "（Beta）" : ""}
-                        </strong>
-                      </span>
-                      <small>{option.description}</small>
-                    </label>
-                  ))}
-                </div>
-                {thermalPhotoCount === 0 ? (
-                  <p className="start-detection-notice is-warning">
-                    当前未发现热成像照片；即使勾选空鼓，也不会触发空鼓分析。
-                  </p>
-                ) : null}
-                {visiblePhotoCount > 0 ? (
-                  <p className="start-detection-notice">
-                    {visiblePhotoCount} 张可见光照片只执行裂缝或剥落检测，空鼓选项不会应用于可见光图片。
-                  </p>
-                ) : null}
-              </fieldset>
-
-              {localError || modelSelectionWarning || error ? (
-                <p className="start-detection-error" role="alert">
-                  {localError || modelSelectionWarning || getErrorMessage(error)}
-                </p>
-              ) : null}
-            </ModalBody>
-            <ModalFooter className="start-detection-modal-footer">
-              <button
-                className="button secondary report-back-button start-detection-cancel-button"
-                disabled={isPending}
-                type="button"
-                onClick={onClose}
-              >
-                取消
-              </button>
-              <button
-                className="button primary"
-                disabled={isPending}
-                type="button"
-                onClick={submit}
-              >
-                {isPending ? "正在检测，请稍候…" : "确认并开始检测"}
-              </button>
-            </ModalFooter>
-          </>
-        )}
-      </ModalContent>
-    </Modal>
   );
 }
 

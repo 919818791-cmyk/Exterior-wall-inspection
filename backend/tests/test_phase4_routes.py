@@ -5,7 +5,9 @@ from uuid import uuid4
 import pytest
 
 from app.api.dependencies import AuthenticatedUser
-from app.api.photos import upload_photo
+from fastapi import HTTPException
+
+from app.api.photos import FORMAL_MAX_FILE_SIZE_BYTES, upload_photo
 from app.enums.status import PhotoType, ProjectStatus, UploadMode, UserRole
 from app.main import app
 from app.models.tables import Photo, Project, UploadBatch, UsageEvent
@@ -88,7 +90,7 @@ def test_upload_batch_has_no_building_dimension() -> None:
     assert "building_id" not in UploadBatchCreateRequest.model_fields
 
 
-def test_photo_upload_accepts_large_files_without_size_limit(monkeypatch) -> None:
+def test_photo_upload_rejects_files_larger_than_five_megabytes(monkeypatch) -> None:
     monkeypatch.setattr("app.api.photos.put_object", lambda **_: "test-bucket")
     monkeypatch.setattr("app.api.photos.presigned_get_url", lambda bucket, key: f"https://storage.local/{key}" if key else None)
 
@@ -109,7 +111,7 @@ def test_photo_upload_accepts_large_files_without_size_limit(monkeypatch) -> Non
         uploaded_by=owner_id,
     )
     file = SimpleNamespace(
-        file=SizedUploadStream(150 * 1024 * 1024),
+        file=SizedUploadStream(FORMAL_MAX_FILE_SIZE_BYTES + 1),
         filename="large.jpg",
         content_type="image/jpeg",
     )
@@ -122,20 +124,66 @@ def test_photo_upload_accepts_large_files_without_size_limit(monkeypatch) -> Non
     )
 
     fake_db = FakePhotoUploadDb(project, batch)
-    uploaded = upload_photo(
-        project_id=project.id,
-        upload_batch_id=batch.id,
-        photo_type=PhotoType.VISIBLE,
-        file=file,
-        db=fake_db,
-        current_user=current_user,
-    )
+    with pytest.raises(HTTPException) as raised:
+        upload_photo(
+            project_id=project.id,
+            upload_batch_id=batch.id,
+            photo_type=PhotoType.VISIBLE,
+            file=file,
+            db=fake_db,
+            current_user=current_user,
+        )
 
-    assert uploaded.original_filename == "large.jpg"
-    assert uploaded.file_size == 150 * 1024 * 1024
-    assert len(fake_db.usage_events) == 1
-    assert fake_db.usage_events[0].photo_count == 1
-    assert fake_db.usage_events[0].storage_bytes == 150 * 1024 * 1024
+    assert raised.value.status_code == 400
+    assert raised.value.detail == "单张图片最大 10MB。"
+    assert fake_db.usage_events == []
+
+
+def test_photo_upload_rejects_more_than_thirty_photos_per_project() -> None:
+    owner_id = uuid4()
+    project = Project(
+        id=uuid4(),
+        project_no="PRJ-PHOTO-COUNT-LIMIT",
+        name="照片数量限制项目",
+        status=ProjectStatus.DRAFT.value,
+        created_by=owner_id,
+    )
+    batch = UploadBatch(
+        id=uuid4(),
+        project_id=project.id,
+        batch_no="UP-PHOTO-COUNT-LIMIT",
+        upload_mode=UploadMode.VISIBLE.value,
+        photo_count=30,
+        uploaded_by=owner_id,
+    )
+    current_user = AuthenticatedUser(
+        id=owner_id,
+        username="admin",
+        real_name="平台管理员",
+        role=UserRole.ADMIN.value,
+        organization=None,
+    )
+    file = SimpleNamespace(
+        file=SizedUploadStream(1024),
+        filename="photo-031.jpg",
+        content_type="image/jpeg",
+    )
+    fake_db = FakePhotoUploadDb(project, batch)
+    fake_db.photos = [SimpleNamespace() for _ in range(30)]
+
+    with pytest.raises(HTTPException) as raised:
+        upload_photo(
+            project_id=project.id,
+            upload_batch_id=batch.id,
+            photo_type=PhotoType.VISIBLE,
+            file=file,
+            db=fake_db,
+            current_user=current_user,
+        )
+
+    assert raised.value.status_code == 400
+    assert raised.value.detail == "每个项目最多上传 30 张照片。"
+    assert fake_db.usage_events == []
 
 
 def test_formal_photo_precheck_rejection_keeps_stored_original(monkeypatch) -> None:

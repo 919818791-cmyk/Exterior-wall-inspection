@@ -23,11 +23,15 @@ from app.schemas.phase4 import (
     UploadBatchRead,
 )
 from app.services.object_storage import presigned_get_url, put_object, remove_object
-from app.services.photo_metadata import extract_photo_metadata
+from app.services.photo_metadata import extract_formal_photo_metadata, facade_orientation_from_yaw
 from app.services.photo_precheck import run_stored_photo_precheck
+from app.services.photo_thumbnails import build_thumbnail, store_thumbnail
 from app.services.usage_tracking import add_photo_upload_event
 
 router = APIRouter(tags=["photos"])
+
+FORMAL_MAX_PHOTO_COUNT = 30
+FORMAL_MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024
 
 
 def _enum_value(value: object) -> str:
@@ -55,6 +59,11 @@ def _photo_to_read(photo: Photo) -> PhotoRead:
         thumbnail_object_key=photo.thumbnail_object_key,
         image_width=photo.image_width,
         image_height=photo.image_height,
+        relative_altitude=photo.relative_altitude,
+        gimbal_yaw_degree=photo.gimbal_yaw_degree,
+        facade_orientation=facade_orientation_from_yaw(
+            float(photo.gimbal_yaw_degree) if photo.gimbal_yaw_degree is not None else None
+        ),
         photo_type=photo.photo_type,
         status=photo.status,
         precheck_status=photo.precheck_status,
@@ -77,6 +86,19 @@ def _count_active_batch_photos(db: Session, upload_batch_id: UUID) -> int:
             db.scalars(
                 select(Photo).where(
                     Photo.upload_batch_id == upload_batch_id,
+                    Photo.deleted_at.is_(None),
+                )
+            )
+        )
+    )
+
+
+def _count_active_project_photos(db: Session, project_id: UUID) -> int:
+    return len(
+        list(
+            db.scalars(
+                select(Photo).where(
+                    Photo.project_id == project_id,
                     Photo.deleted_at.is_(None),
                 )
             )
@@ -136,17 +158,39 @@ def upload_photo(
     file.file.seek(0)
     if file_size <= 0:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded file is empty.")
+    if file_size > FORMAL_MAX_FILE_SIZE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"单张图片最大 {FORMAL_MAX_FILE_SIZE_BYTES // (1024 * 1024)}MB。",
+        )
+    if _count_active_project_photos(db, project.id) >= FORMAL_MAX_PHOTO_COUNT:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"每个项目最多上传 {FORMAL_MAX_PHOTO_COUNT} 张照片。",
+        )
 
     suffix = Path(file.filename or "").suffix.lower()
     object_id = uuid4()
     object_key = f"projects/{project.id}/photos/{object_id}{suffix or '.bin'}"
-    metadata = extract_photo_metadata(file.file)
-    bucket = put_object(
-        object_key=object_key,
-        data=file.file,
-        length=file_size,
-        content_type=file.content_type,
-    )
+    metadata = extract_formal_photo_metadata(file.file)
+    thumbnail = build_thumbnail(file.file, object_key)
+    bucket: str | None = None
+    thumbnail_bucket: str | None = None
+    try:
+        bucket = put_object(
+            object_key=object_key,
+            data=file.file,
+            length=file_size,
+            content_type=file.content_type,
+        )
+        if thumbnail is not None:
+            thumbnail_bucket = store_thumbnail(thumbnail)
+    except Exception:
+        if bucket is not None:
+            remove_object(bucket, object_key)
+        if thumbnail_bucket is not None and thumbnail is not None:
+            remove_object(thumbnail_bucket, thumbnail.object_key)
+        raise
 
     photo = Photo(
         project_id=project.id,
@@ -157,9 +201,11 @@ def upload_photo(
         mime_type=file.content_type,
         storage_bucket=bucket,
         storage_object_key=object_key,
-        thumbnail_object_key=None,
-        image_width=None,
-        image_height=None,
+        thumbnail_object_key=thumbnail.object_key if thumbnail is not None else None,
+        image_width=thumbnail.source_width if thumbnail is not None else None,
+        image_height=thumbnail.source_height if thumbnail is not None else None,
+        relative_altitude=metadata["relative_altitude"],
+        gimbal_yaw_degree=metadata["gimbal_yaw_degree"],
         photo_type=(
             PhotoType.THERMAL.value
             if metadata["thermal_imaging_available"]

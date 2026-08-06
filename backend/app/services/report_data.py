@@ -17,6 +17,7 @@ from app.models.tables import (
     Project,
     ReviewResult,
 )
+from app.services.photo_metadata import facade_orientation_from_yaw
 
 
 def _json_safe(value: Any) -> Any:
@@ -92,6 +93,11 @@ def build_report_data(
             "image_width": photo.image_width,
             "image_height": photo.image_height,
             "photo_type": photo.photo_type,
+            "relative_altitude": photo.relative_altitude,
+            "gimbal_yaw_degree": photo.gimbal_yaw_degree,
+            "facade_orientation": facade_orientation_from_yaw(
+                float(photo.gimbal_yaw_degree) if photo.gimbal_yaw_degree is not None else None
+            ),
             "created_at": photo.created_at,
         }
         for photo in photos

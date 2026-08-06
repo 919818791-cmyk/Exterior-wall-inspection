@@ -6,34 +6,25 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { currentAccountUsageQueryOptions } from "@/api/accounts";
 import { logout } from "@/api/auth";
 import { AUTH_UNAUTHORIZED_EVENT } from "@/api/client";
-import { AppVisualLoader } from "@/components/AppVisualLoader";
 import { AuthModal } from "@/components/auth/AuthModal";
 import { ChangePasswordModal } from "@/components/auth/ChangePasswordModal";
 import { PersonalInfoModal } from "@/components/auth/PersonalInfoModal";
 import { useAuthStore } from "@/stores/useAuthStore";
 import type { CurrentAccountUsageResponse } from "@/types/accountUsage";
 
-const defectLinks = [
-  { label: "裂缝识别", to: "/capabilities/crack" },
-  { label: "剥落识别", to: "/capabilities/spalling" },
-  { label: "空鼓识别", to: "/capabilities/hollow" },
-  { label: "潮湿识别", to: "/capabilities/moisture" },
-  { label: "锈蚀识别", to: "/capabilities/corrosion" }
-];
-
 function pageClass(pathname: string) {
-  if (pathname === "/trial") return "detail-page trial-experience-page";
+  if (pathname === "/trial") return "project-page new-project-page project-list-chrome trial-route";
   if (pathname === "/reports") return "project-page project-list-route report-list-route";
-  if (pathname === "/annotation-management") return "project-page annotation-management-route";
   if (pathname === "/projects") return "project-page project-list-route";
   if (pathname === "/capabilities/time") return "detail-page recommendation-detail-page";
   if (pathname.startsWith("/accounts")) return "project-page account-management-route";
   if (pathname.startsWith("/data-management")) return "project-page data-management-route";
-  if (pathname === "/review") return "project-page review-workbench-route";
+  if (pathname === "/review") return "project-page review-workbench-route review-workbench-list-route";
   if (pathname.startsWith("/review")) return "project-page review-workbench-route";
-  if (pathname === "/projects/new") return "project-page new-project-page";
+  if (/^\/reports\/[^/]+$/.test(pathname)) return "project-page report-detail-route";
+  if (pathname === "/projects/new") return "project-page new-project-page project-list-chrome";
   if (/^\/projects\/[^/]+$/.test(pathname)) return "project-page project-detail-page";
-  if (pathname.startsWith("/projects") || pathname.startsWith("/accounts") || pathname.startsWith("/data-management") || pathname.startsWith("/annotation-management") || pathname.startsWith("/system-settings") || pathname.startsWith("/reports") || pathname.startsWith("/review")) {
+  if (pathname.startsWith("/projects") || pathname.startsWith("/accounts") || pathname.startsWith("/data-management") || pathname.startsWith("/system-settings") || pathname.startsWith("/reports") || pathname.startsWith("/review")) {
     return "project-page";
   }
   if (pathname.startsWith("/capabilities")) return "detail-page";
@@ -56,32 +47,34 @@ export function AppLayout() {
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [personalInfoModalOpen, setPersonalInfoModalOpen] = useState(false);
   const [changePasswordModalOpen, setChangePasswordModalOpen] = useState(false);
-  const [capabilityMenuOpen, setCapabilityMenuOpen] = useState(false);
   const [managementMenuOpen, setManagementMenuOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [headerScrolled, setHeaderScrolled] = useState(false);
+  const [projectDetailListChrome, setProjectDetailListChrome] = useState(false);
   const accountUsageQuery = useQuery({
     ...currentAccountUsageQueryOptions,
     enabled: Boolean(user && accountMenuOpen)
   });
   const accountMenuRef = useRef<HTMLDivElement>(null);
-  const capabilityMenuRef = useRef<HTMLDivElement>(null);
   const managementMenuRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLElement>(null);
   const pendingAuthenticationActionRef = useRef<(() => void) | null>(null);
   const isTrialRoute = location.pathname === "/trial";
   const defectKey = location.pathname.match(/^\/capabilities\/(crack|spalling|missing|moisture|corrosion|hollow)$/)?.[1];
-  const isCapabilityRoute = Boolean(defectKey);
-  const isAnnotationDetailRoute = (
-    /^\/annotation-management\/[^/]+$/.test(location.pathname)
-    || /^\/review\/projects\/[^/]+$/.test(location.pathname)
+  const isReviewDetailRoute = /^\/review\/projects\/[^/]+$/.test(location.pathname);
+  const isStandaloneManagementRoute = (
+    location.pathname === "/system-settings"
+    || location.pathname.startsWith("/accounts")
+    || location.pathname.startsWith("/data-management")
+    || location.pathname === "/review"
+    || /^\/reports\/[^/]+$/.test(location.pathname)
   );
-  const isSystemSettingsRoute = location.pathname === "/system-settings";
   const isProjectRoute = location.pathname.startsWith("/projects");
-  const isManagementRoute = location.pathname.startsWith("/accounts") || location.pathname.startsWith("/data-management") || location.pathname.startsWith("/annotation-management") || location.pathname.startsWith("/system-settings") || location.pathname.startsWith("/review");
+  const isManagementRoute = location.pathname.startsWith("/accounts") || location.pathname.startsWith("/data-management") || location.pathname.startsWith("/system-settings") || location.pathname.startsWith("/review");
   const isHomeRoute = location.pathname === "/";
   const isReportRoute = location.pathname === "/reports" || location.pathname.startsWith("/reports/");
   const currentPageClass = pageClass(location.pathname);
+  const resolvedPageClass = `${currentPageClass}${projectDetailListChrome ? " project-list-chrome" : ""}`;
   const isCapabilityDetailRoute = location.pathname.startsWith("/capabilities");
   const isThemeHeroRoute = isTrialRoute || isReportRoute || isProjectRoute || isManagementRoute;
   const usesPermanentDarkShell = isCapabilityDetailRoute || isThemeHeroRoute;
@@ -144,16 +137,15 @@ export function AppLayout() {
   }, [location.hash, location.pathname]);
 
   useEffect(() => {
-    setCapabilityMenuOpen(false);
     setManagementMenuOpen(false);
     setMobileNavOpen(false);
+    if (!/^\/projects\/[^/]+$/.test(location.pathname)) setProjectDetailListChrome(false);
   }, [location.pathname]);
 
   useEffect(() => {
     const desktopMedia = window.matchMedia("(min-width: 1301px)");
     const resetNavigationForLayoutChange = () => {
       setMobileNavOpen(false);
-      setCapabilityMenuOpen(false);
       setManagementMenuOpen(false);
       setAccountMenuOpen(false);
     };
@@ -196,20 +188,16 @@ export function AppLayout() {
   }, [accountMenuOpen]);
 
   useEffect(() => {
-    if (!capabilityMenuOpen && !managementMenuOpen) return;
+    if (!managementMenuOpen) return;
 
     const closeOnOutsidePointer = (event: PointerEvent) => {
       const target = event.target as Node;
-      if (capabilityMenuOpen && !capabilityMenuRef.current?.contains(target)) {
-        setCapabilityMenuOpen(false);
-      }
       if (managementMenuOpen && !managementMenuRef.current?.contains(target)) {
         setManagementMenuOpen(false);
       }
     };
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        setCapabilityMenuOpen(false);
         setManagementMenuOpen(false);
       }
     };
@@ -219,7 +207,7 @@ export function AppLayout() {
       document.removeEventListener("pointerdown", closeOnOutsidePointer);
       document.removeEventListener("keydown", closeOnEscape);
     };
-  }, [capabilityMenuOpen, managementMenuOpen]);
+  }, [managementMenuOpen]);
 
   async function handleLogout() {
     if (!window.confirm("确认退出当前账号？未保存的页面内容可能丢失。")) return;
@@ -275,19 +263,18 @@ export function AppLayout() {
 
   const displayName = user?.real_name?.trim() || user?.username || "";
   const managementLinks = [
-    ...(canAccessAdmin ? [{ label: "账号管理", to: "/accounts" }, { label: "数据管理", to: "/data-management" }, { label: "标注管理", to: "/annotation-management" }, { label: "推理设置", to: "/system-settings" }] : []),
+    ...(canAccessAdmin ? [{ label: "账号管理", to: "/accounts" }, { label: "数据管理", to: "/data-management" }, { label: "推理设置", to: "/system-settings" }] : []),
     ...(canAccessReview ? [{ label: "审核工作台", to: "/review" }] : [])
   ];
 
   return (
     <div
-      className={`${currentPageClass} ${usesDarkShell ? "site-dark-theme" : ""} ${isThemeHeroRoute ? "theme-hero-page" : ""} ${isTrialRoute ? "trial-fixed-light-panels" : ""}`.trim()}
+      className={`${resolvedPageClass} ${usesDarkShell ? "site-dark-theme" : ""} ${isThemeHeroRoute ? "theme-hero-page" : ""}`.trim()}
       data-defect={defectKey}
     >
-      <AppVisualLoader key={`${location.pathname}${location.search}`} />
       <header
         ref={headerRef}
-        hidden={isAnnotationDetailRoute || isSystemSettingsRoute}
+        hidden={isReviewDetailRoute || isStandaloneManagementRoute}
         className={`site-header centered-nav ${isHomeRoute ? "home-site-header" : ""} ${headerScrolled ? "is-scrolled" : ""} ${mobileNavOpen ? "mobile-nav-open" : ""}`}
         aria-label="顶部导航"
       >
@@ -305,7 +292,6 @@ export function AppLayout() {
           onClick={() => {
             setMobileNavOpen((open) => !open);
             setAccountMenuOpen(false);
-            setCapabilityMenuOpen(false);
             setManagementMenuOpen(false);
           }}
         >
@@ -315,36 +301,12 @@ export function AppLayout() {
         <div id="mobile-navigation-panel" className="mobile-nav-panel">
           <nav className="main-nav" aria-label="主导航">
           <NavLink className={({ isActive }) => (isActive ? "active" : "")} end to="/" onClick={() => setMobileNavOpen(false)}>首页</NavLink>
-          <div ref={capabilityMenuRef} className={`nav-menu ${capabilityMenuOpen ? "is-open" : ""}`}>
-            <button
-              aria-controls="ai-submenu"
-              aria-expanded={capabilityMenuOpen}
-              className={`nav-menu-trigger ${isCapabilityRoute ? "current" : ""}`}
-              type="button"
-              onClick={() => { setCapabilityMenuOpen((open) => !open); setManagementMenuOpen(false); }}
-            >
-              AI检测能力 <ChevronDown aria-hidden="true" />
-            </button>
-            <div id="ai-submenu" className="nav-submenu" role="menu" aria-label="AI检测能力">
-              {defectLinks.map((item) => (
-                <NavLink
-                  key={item.to}
-                  role="menuitem"
-                  to={item.to}
-                  onClick={() => { setCapabilityMenuOpen(false); setMobileNavOpen(false); }}
-                >
-                  {item.label}
-                </NavLink>
-              ))}
-            </div>
-          </div>
-          <NavLink className={({ isActive }) => (isActive ? "active" : "")} to="/projects" onClick={() => { setCapabilityMenuOpen(false); setManagementMenuOpen(false); setMobileNavOpen(false); }}>检测工作台</NavLink>
-          <NavLink className={({ isActive }) => (isActive ? "active" : "")} to="/trial" onClick={() => { setCapabilityMenuOpen(false); setManagementMenuOpen(false); setMobileNavOpen(false); }}>免费试用</NavLink>
-          <NavLink className={({ isActive }) => (isActive ? "active" : "")} to="/reports" onClick={() => { setCapabilityMenuOpen(false); setManagementMenuOpen(false); setMobileNavOpen(false); }}>试用记录</NavLink>
+          <NavLink className={({ isActive }) => (isActive ? "active" : "")} to="/projects" onClick={() => { setManagementMenuOpen(false); setMobileNavOpen(false); }}>专业检测</NavLink>
+          <NavLink className={({ isActive }) => (isActive ? "active" : "")} to="/reports" onClick={() => { setManagementMenuOpen(false); setMobileNavOpen(false); }}>免费试用</NavLink>
           <NavLink
             className={({ isActive }) => (isActive ? "active" : "")}
             to="/capabilities/time"
-            onClick={() => { setCapabilityMenuOpen(false); setManagementMenuOpen(false); setMobileNavOpen(false); }}
+            onClick={() => { setManagementMenuOpen(false); setMobileNavOpen(false); }}
           >
             检测时段推荐
           </NavLink>
@@ -355,7 +317,7 @@ export function AppLayout() {
                 aria-expanded={managementMenuOpen}
                 className={`nav-menu-trigger ${isManagementRoute ? "current" : ""}`}
                 type="button"
-                onClick={() => { setManagementMenuOpen((open) => !open); setCapabilityMenuOpen(false); }}
+                onClick={() => setManagementMenuOpen((open) => !open)}
               >
                 管理中心 <ChevronDown aria-hidden="true" />
               </button>
@@ -365,7 +327,7 @@ export function AppLayout() {
                     key={item.to}
                     role="menuitem"
                     to={item.to}
-                    onClick={() => { setCapabilityMenuOpen(false); setManagementMenuOpen(false); setMobileNavOpen(false); }}
+                    onClick={() => { setManagementMenuOpen(false); setMobileNavOpen(false); }}
                   >
                     {item.label}
                   </NavLink>
@@ -414,7 +376,9 @@ export function AppLayout() {
         </div>
       </header>
 
-      <main className="app-main"><Outlet context={{ requestAuthentication }} /></main>
+      <main className="app-main">
+        <Outlet context={{ requestAuthentication, setProjectDetailListChrome }} />
+      </main>
       <AuthModal
         isOpen={authModalOpen}
         notice={authNotice}

@@ -18,6 +18,7 @@ from app.api.reports import (
     _append_trial_detection_result,
     _enforce_trial_upload_limit,
     _project_reviewed_result_visible,
+    _report_access_filter,
     _reserve_trial_usage,
     create_trial_result,
     list_reports,
@@ -197,6 +198,8 @@ class TrackingUploadedPhoto:
         self.storage_object_key = f"quick-detection/{photo_id}.jpg"
         self.metadata_json = {"thermal_imaging_available": False}
         self.thermal_imaging_available = False
+        self.precheck_status = "passed"
+        self.precheck_category = "BUILDING"
         self.uploaded_by = _trial_customer().id
         self._db = db
         self._generated_result_id = None
@@ -357,7 +360,7 @@ def test_phase7_report_routes_are_registered() -> None:
     assert "/api/reports" in paths
     assert "/api/projects/{project_id}/reviewed-result" in paths
     assert "/api/reports/{report_id}" in paths
-    assert "/api/reports/{report_id}/push" in paths
+    assert "/api/reports/{report_id}/push" not in paths
     assert "/api/reports/{report_id}/docx" in paths
     assert "/api/trial/photos" in paths
     assert "/api/trial/photos/{photo_id}" in paths
@@ -367,6 +370,18 @@ def test_phase7_report_routes_are_registered() -> None:
     assert "/api/trial/report/docx" not in paths
     assert "DELETE" in report_detail_methods
     assert "PATCH" in report_detail_methods
+
+
+def test_generated_reports_are_visible_without_a_push_step() -> None:
+    params = _report_access_filter(False).compile().params
+    allowed_values = {
+        value
+        for values in params.values()
+        for value in (values if isinstance(values, list) else [values])
+    }
+
+    assert InspectionReportStatus.GENERATED.value in allowed_values
+    assert "reviewed" in allowed_values
 
 
 @pytest.mark.parametrize(
@@ -479,19 +494,22 @@ def test_trial_photo_precheck_rejection_keeps_stored_original(monkeypatch) -> No
     assert len(fake_db.photos) == 1
 
 
-def test_trial_detection_uses_only_precheck_passed_photos() -> None:
+def test_trial_detection_rejects_request_containing_non_building_photo() -> None:
     passed = _uploaded_photo(UUID(int=30_001), filename="building.jpg")
     rejected = _uploaded_photo(UUID(int=30_002), filename="cat.jpg")
     rejected.precheck_status = "rejected"
     rejected.precheck_category = "OTHER"
 
-    selected = reports._quick_detection_photos_for_user(
-        UploadedPhotoDb([passed, rejected]),
-        _trial_customer(),
-        [passed.id, rejected.id],
-    )
+    with pytest.raises(HTTPException) as raised:
+        reports._quick_detection_photos_for_user(
+            UploadedPhotoDb([passed, rejected]),
+            _trial_customer(),
+            [passed.id, rejected.id],
+        )
 
-    assert [photo.id for photo in selected] == [passed.id]
+    assert raised.value.status_code == 422
+    assert "未执行检测" in raised.value.detail
+    assert "cat.jpg" in raised.value.detail
 
 
 def test_trial_detection_blocks_precheck_errors() -> None:
@@ -634,25 +652,27 @@ def test_report_list_item_accepts_trial_result_contract() -> None:
     assert payload.photo_count == 2
 
 
-def test_customer_report_list_is_limited_to_own_formal_and_trial_results() -> None:
+def test_customer_trial_report_list_is_limited_to_own_results() -> None:
     fake_db = CapturingReportDb()
 
     list_reports(db=fake_db, current_user=_trial_customer())
 
-    formal_report_query, trial_result_query = [str(statement) for statement in fake_db.statements]
-    assert "project.created_by = :created_by_1" in formal_report_query
+    assert len(fake_db.statements) == 1
+    trial_result_query = str(fake_db.statements[0])
     assert "trial_detection_result.generated_by = :generated_by_1" in trial_result_query
+    assert "inspection_report" not in trial_result_query
 
 
-def test_reviewer_and_admin_report_list_can_include_cross_user_results() -> None:
+def test_reviewer_and_admin_trial_report_list_can_include_cross_user_results() -> None:
     for user in (_reviewer(), _admin()):
         fake_db = CapturingReportDb()
 
         list_reports(db=fake_db, current_user=user)
 
-        formal_report_query, trial_result_query = [str(statement) for statement in fake_db.statements]
-        assert "project.created_by =" not in formal_report_query
+        assert len(fake_db.statements) == 1
+        trial_result_query = str(fake_db.statements[0])
         assert "trial_detection_result.generated_by =" not in trial_result_query
+        assert "inspection_report" not in trial_result_query
 
 
 def test_trial_report_request_accepts_optional_report_name() -> None:
@@ -1299,19 +1319,19 @@ def test_trial_generate_rejects_mismatched_image_content() -> None:
     assert response.json()["message"] == "图片格式与文件内容不匹配。"
 
 
-def test_trial_generate_rejects_more_than_ten_files() -> None:
+def test_trial_generate_rejects_more_than_thirty_files() -> None:
     response = _post_trial_generate(
         [
             ("files", (f"trial-{index:03d}.png", TRIAL_PNG_BYTES, "image/png"))
-            for index in range(11)
+            for index in range(31)
         ]
     )
 
     assert response.status_code == 400
-    assert response.json()["message"] == "单次最多上传 10 张照片。"
+    assert response.json()["message"] == "单次最多上传 30 张照片。"
 
 
-def test_trial_generate_rejects_more_than_ten_uploaded_photo_ids() -> None:
+def test_trial_generate_rejects_more_than_thirty_uploaded_photo_ids() -> None:
     app.dependency_overrides[get_current_user] = _trial_customer
     app.dependency_overrides[get_db] = lambda: UploadedPhotoDb([])
     try:
@@ -1319,14 +1339,14 @@ def test_trial_generate_rejects_more_than_ten_uploaded_photo_ids() -> None:
             "/api/trial/generate",
             json={
                 "models": ["裂缝", "剥落"],
-                "photo_ids": [str(UUID(int=index + 1)) for index in range(11)],
+                "photo_ids": [str(UUID(int=index + 1)) for index in range(31)],
             },
         )
     finally:
         app.dependency_overrides.clear()
 
     assert response.status_code == 400
-    assert response.json()["message"] == "单次最多上传 10 张照片。"
+    assert response.json()["message"] == "单次最多上传 30 张照片。"
 
 
 def test_trial_upload_rate_limit_allows_thirty_per_ten_minutes(monkeypatch) -> None:
@@ -1368,7 +1388,7 @@ def test_trial_generate_rate_limit_allows_five_per_ten_minutes(monkeypatch) -> N
         _reserve_trial_usage(_trial_customer(), api_request_count=1)
 
     assert raised.value.status_code == 429
-    assert raised.value.detail == "简易检测请求过于频繁，请稍后重试。"
+    assert raised.value.detail == "免费版每 10 分钟最多可试用 3 次，请 10 分钟后再试。"
 
 
 def test_trial_daily_api_request_limit_is_reserved_and_reconciled() -> None:
@@ -1443,12 +1463,17 @@ def test_docx_report_builder_creates_valid_package() -> None:
     with ZipFile(BytesIO(content)) as package:
         assert "[Content_Types].xml" in package.namelist()
         assert "word/document.xml" in package.namelist()
+        assert "word/media/image1.png" in package.namelist()
         document = package.read("word/document.xml").decode("utf-8")
+        core_properties = package.read("docProps/core.xml").decode("utf-8")
 
     assert "示例外墙检测报告" in document
-    assert "RPT-202606260001" in document
+    assert "RPT-202606260001" in core_properties
+    assert "经对巡检结果进行空间定位与尺度估算" in document
+    assert "可见光图像" in document
+    assert "热红外图像" in document
     assert "facade-001.jpg" in document
-    assert "锈蚀" in document
+    assert "疑似裂缝: 1处" in document
 
 
 def _jpeg_with_metadata(*, image_source: str, image_description: str) -> bytes:

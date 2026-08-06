@@ -6,10 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.schemas.phase7 import ReportDetailRead, ReportListItem
-
-
-AnnotationSourceType = Literal["formal", "trial"]
+from app.schemas.phase7 import ReportDetailRead
 
 
 class ApiSchema(BaseModel):
@@ -38,7 +35,7 @@ class AnnotationPhotoEditRequest(ApiSchema):
 
 class AnnotationPhotoEditRead(ApiSchema):
     id: UUID
-    source_type: AnnotationSourceType
+    source_type: Literal["formal"]
     result_id: UUID
     photo_key: str
     annotations: list[AnnotationBox]
@@ -47,10 +44,6 @@ class AnnotationPhotoEditRead(ApiSchema):
     updated_at: datetime
 
 
-class AnnotationResultListItem(ReportListItem):
-    photo_count: int = 0
-
-
-class AnnotationManagementDetail(ApiSchema):
+class ReviewAnnotationDetail(ApiSchema):
     result: ReportDetailRead
     edits: list[AnnotationPhotoEditRead]

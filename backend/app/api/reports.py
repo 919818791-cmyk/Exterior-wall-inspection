@@ -26,7 +26,6 @@ from app.api.dependencies import (
     AuthenticatedUser,
     ensure_project_access,
     get_current_user,
-    require_roles,
 )
 from app.core.config import get_settings
 from app.db.session import get_db
@@ -34,11 +33,15 @@ from app.enums.status import (
     InspectionReportStatus,
     PhotoPrecheckStatus,
     ProjectStatus,
-    ReportPushMethod,
-    ReportPushStatus,
     UserRole,
 )
-from app.models.tables import InspectionReport, Project, QuickDetectionPhoto, ReportPushLog, TrialDetectionResult
+from app.models.tables import (
+    DetectionTask,
+    InspectionReport,
+    Project,
+    QuickDetectionPhoto,
+    TrialDetectionResult,
+)
 from app.schemas.phase7 import (
     ReportDetailRead,
     ReportListItem,
@@ -49,7 +52,7 @@ from app.schemas.phase7 import (
     TrialUploadedPhotoRead,
 )
 from app.schemas.projects import DeleteResponse
-from app.services.docx_report import build_report_docx
+from app.services.docx_report import DocxReportExportError, build_report_docx
 from app.services.inference_scheduling import (
     InferenceUsageReservation,
     reserve_inference_usage,
@@ -58,6 +61,7 @@ from app.services.local_qwen_lifecycle import start_local_qwen
 from app.services.object_storage import get_object_bytes, presigned_get_url, put_object, remove_object, signed_object_url
 from app.services.photo_metadata import extract_photo_metadata
 from app.services.photo_precheck import run_stored_photo_precheck
+from app.services.photo_thumbnails import build_thumbnail, store_thumbnail
 from app.services.report_data import build_report_data
 from app.services.trial_qwen_inference import (
     DEFAULT_MAX_IMAGE_PIXELS,
@@ -117,7 +121,7 @@ TRIAL_DEFECT_TYPE_TO_MODEL = {
 TRIAL_DEFAULT_MODELS = ["裂缝", "剥落", "空鼓"]
 TRIAL_RESULT_CONFIDENCE_THRESHOLD = 0.6
 TRIAL_ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/png"}
-TRIAL_MAX_FILE_COUNT = 10
+TRIAL_MAX_FILE_COUNT = 30
 TRIAL_MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024
 TRIAL_REQUEST_CACHE_TTL_SECONDS = 24 * 60 * 60
 TRIAL_RESULT_TIMEZONE = ZoneInfo("Asia/Shanghai")
@@ -141,7 +145,7 @@ def _reserve_trial_usage(
     api_request_count: int,
     *,
     db: Session | None = None,
-    generate_limit_detail: str = "简易检测请求过于频繁，请稍后重试。",
+    generate_limit_detail: str = "免费版每 10 分钟最多可试用 3 次，请 10 分钟后再试。",
 ) -> InferenceUsageReservation:
     return reserve_inference_usage(
         current_user.id,
@@ -264,11 +268,16 @@ def _trial_generated_at(value: str) -> datetime:
 
 
 def _report_access_filter(include_generated: bool) -> object:
-    allowed_report_statuses = [InspectionReportStatus.PUSHED.value]
-    allowed_project_statuses = [ProjectStatus.COMPLETED.value]
-    if include_generated:
-        allowed_report_statuses.append(InspectionReportStatus.GENERATED.value)
-        allowed_project_statuses.append(ProjectStatus.REVIEWED.value)
+    # Review completion is the delivery boundary. Keep legacy pushed/completed
+    # records readable, but do not require a separate push step for new results.
+    allowed_report_statuses = [
+        InspectionReportStatus.GENERATED.value,
+        InspectionReportStatus.PUSHED.value,
+    ]
+    allowed_project_statuses = [
+        ProjectStatus.REVIEWED.value,
+        ProjectStatus.COMPLETED.value,
+    ]
     return or_(
         InspectionReport.status.in_(allowed_report_statuses),
         Project.status.in_(allowed_project_statuses),
@@ -362,11 +371,10 @@ def _first_photo_url(data: dict[str, Any], request: Request | None = None) -> st
     if not photos or not isinstance(photos[0], dict):
         return None
     photo = photos[0]
-    return (
-        _safe_photo_url(request, photo.get("storage_bucket"), photo.get("thumbnail_object_key"))
-        or _safe_photo_url(request, photo.get("storage_bucket"), photo.get("storage_object_key"))
-        or photo.get("thumbnail_url")
-        or photo.get("preview_url")
+    return _safe_photo_url(
+        request,
+        photo.get("storage_bucket"),
+        photo.get("thumbnail_object_key") or photo.get("storage_object_key"),
     )
 
 
@@ -406,12 +414,17 @@ def _trial_data_with_photo_urls(data: dict[str, Any], request: Request | None = 
         if not isinstance(photo, dict):
             continue
         preview_url = _safe_photo_url(request, photo.get("storage_bucket"), photo.get("storage_object_key"))
+        thumbnail_url = _safe_photo_url(
+            request,
+            photo.get("storage_bucket"),
+            photo.get("thumbnail_object_key"),
+        ) or preview_url
         photo["preview_url"] = preview_url
-        photo["thumbnail_url"] = preview_url
+        photo["thumbnail_url"] = thumbnail_url
         if photo.get("id"):
             photo_urls[str(photo["id"])] = {
                 "preview_url": preview_url,
-                "thumbnail_url": preview_url,
+                "thumbnail_url": thumbnail_url,
             }
 
     for defect in enriched.get("defects") or []:
@@ -524,6 +537,7 @@ def _list_item(
         client_name=project_snapshot.get("client_name") or project.client_name,
         address=project_snapshot.get("address") or project.address,
         total_defects=int(summary.get("total_review_results") or 0),
+        by_defect_type=summary.get("by_defect_type") or {},
         photo_count=int(summary.get("photo_count") or len(data.get("photos") or [])),
         first_photo_url=_first_photo_url(data, request),
         generated_at=report.generated_at,
@@ -551,6 +565,7 @@ def _trial_list_item(
         client_name=project_snapshot.get("client_name"),
         address=TRIAL_RESULT_ARCHIVE_ADDRESS,
         total_defects=int(summary.get("total_review_results") or result.finding_count or 0),
+        by_defect_type=summary.get("by_defect_type") or {},
         photo_count=int(summary.get("photo_count") or len(data.get("photos") or [])),
         first_photo_url=_first_photo_url(data, request),
         generated_at=result.generated_at,
@@ -622,17 +637,9 @@ def list_reports(
     db: Session = Depends(get_db),
     current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> list[ReportListItem]:
-    can_manage = _can_manage_reports(current_user)
-    criteria: list[object] = [Project.deleted_at.is_(None), _report_access_filter(include_generated and can_manage)]
-    if current_user.role == UserRole.CUSTOMER.value:
-        criteria.append(Project.created_by == current_user.id)
-    rows = db.execute(
-        select(InspectionReport, Project)
-        .join(Project, Project.id == InspectionReport.project_id)
-        .where(*criteria)
-        .order_by(InspectionReport.generated_at.desc(), InspectionReport.created_at.desc())
-    )
-    items = [_list_item(report, project, request) for report, project in rows.all()]
+    # This endpoint powers the “免费试用/试用记录” surface. Formal project
+    # results remain available from their project and review detail routes and
+    # must never be mixed into the trial history.
     trial_results = db.scalars(
         select(TrialDetectionResult)
         .where(
@@ -641,8 +648,7 @@ def list_reports(
         )
         .order_by(TrialDetectionResult.generated_at.desc(), TrialDetectionResult.created_at.desc())
     )
-    items.extend(_trial_list_item(result, request) for result in trial_results)
-    return sorted(items, key=lambda item: (item.generated_at, item.updated_at), reverse=True)
+    return [_trial_list_item(result, request) for result in trial_results]
 
 
 @router.get(
@@ -824,12 +830,13 @@ def _quick_detection_photos_for_user(
     incomplete = [
         photo
         for photo in ordered_photos
-        if (getattr(photo, "precheck_status", None) or PhotoPrecheckStatus.PASSED.value)
+        if getattr(photo, "precheck_status", None)
         in {
             PhotoPrecheckStatus.PENDING.value,
             PhotoPrecheckStatus.RUNNING.value,
             PhotoPrecheckStatus.ERROR.value,
         }
+        or getattr(photo, "precheck_status", None) is None
     ]
     if incomplete:
         status_counts = {
@@ -854,18 +861,24 @@ def _quick_detection_photos_for_user(
                 "请等待正在处理的照片；预检失败照片请删除后重新上传。"
             ),
         )
-    qualified = [
+    rejected = [
         photo
         for photo in ordered_photos
-        if (getattr(photo, "precheck_status", None) or PhotoPrecheckStatus.PASSED.value)
-        == PhotoPrecheckStatus.PASSED.value
+        if getattr(photo, "precheck_status", None) != PhotoPrecheckStatus.PASSED.value
+        or getattr(photo, "precheck_category", None) != "BUILDING"
     ]
-    if not qualified:
+    if rejected:
+        rejected_names = "、".join(photo.original_filename for photo in rejected[:3])
+        if len(rejected) > 3:
+            rejected_names += f"等 {len(rejected)} 张"
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="没有通过建筑照片预检的照片，无法开始检测。",
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=(
+                f"{len(rejected)} 张照片未通过建筑照片预检，未执行检测：{rejected_names}。"
+                "请移除后再开始检测。"
+            ),
         )
-    return qualified
+    return ordered_photos
 
 
 def _trial_file_entries_for_quick_photos(photos: list[QuickDetectionPhoto]) -> list[dict[str, Any]]:
@@ -1182,12 +1195,15 @@ def _stored_trial_photos(result_id: UUID, uploaded_files: list[UploadFile], file
         object_id = uuid4()
         object_key = f"trial-results/{result_id}/photos/{index + 1:03d}-{object_id}{suffix or '.bin'}"
         metadata = extract_photo_metadata(uploaded_file.file)
+        thumbnail = build_thumbnail(uploaded_file.file, object_key)
         bucket = put_object(
             object_key=object_key,
             data=uploaded_file.file,
             length=int(entry["size"]),
             content_type=uploaded_file.content_type,
         )
+        if thumbnail is not None:
+            store_thumbnail(thumbnail)
         stored_photos.append(
             {
                 "id": str(uuid4()),
@@ -1199,6 +1215,7 @@ def _stored_trial_photos(result_id: UUID, uploaded_files: list[UploadFile], file
                 "thermal_imaging_available": metadata["thermal_imaging_available"],
                 "storage_bucket": bucket,
                 "storage_object_key": object_key,
+                "thumbnail_object_key": thumbnail.object_key if thumbnail is not None else None,
             }
         )
     return stored_photos
@@ -1216,6 +1233,7 @@ def _stored_quick_detection_photos(photos: list[QuickDetectionPhoto]) -> list[di
             "thermal_imaging_available": photo.thermal_imaging_available,
             "storage_bucket": photo.storage_bucket,
             "storage_object_key": photo.storage_object_key,
+            "thumbnail_object_key": getattr(photo, "thumbnail_object_key", None),
         }
         for photo in photos
     ]
@@ -1364,15 +1382,20 @@ def upload_trial_photo(
     suffix = Path(file.filename or "").suffix.lower()
     object_key = f"quick-detection/{current_user.id}/photos/{photo_id}{suffix or '.bin'}"
     bucket: str | None = None
+    thumbnail_bucket: str | None = None
+    thumbnail = None
     committed = False
     try:
         metadata: dict[str, Any] = dict(extract_photo_metadata(file.file))
+        thumbnail = build_thumbnail(file.file, object_key)
         bucket = put_object(
             object_key=object_key,
             data=file.file,
             length=int(file_entry["size"]),
             content_type=file.content_type,
         )
+        if thumbnail is not None:
+            thumbnail_bucket = store_thumbnail(thumbnail)
         photo = QuickDetectionPhoto(
             id=photo_id,
             original_filename=str(file_entry["filename"]),
@@ -1380,6 +1403,7 @@ def upload_trial_photo(
             mime_type=file.content_type,
             storage_bucket=bucket,
             storage_object_key=object_key,
+            thumbnail_object_key=thumbnail.object_key if thumbnail is not None else None,
             metadata_json=metadata,
             thermal_imaging_available=metadata["thermal_imaging_available"],
             precheck_status=PhotoPrecheckStatus.PENDING.value,
@@ -1400,6 +1424,8 @@ def upload_trial_photo(
     except Exception:
         if bucket is not None and not committed:
             remove_object(bucket, object_key)
+        if thumbnail_bucket is not None and thumbnail is not None and not committed:
+            remove_object(thumbnail_bucket, thumbnail.object_key)
         raise
     run_stored_photo_precheck(db, photo)
     return TrialUploadedPhotoRead.model_validate(photo)
@@ -1422,6 +1448,8 @@ def delete_trial_photo(
     if photo.generated_result_id is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="已归档的照片不能删除。")
     remove_object(photo.storage_bucket, photo.storage_object_key)
+    if photo.thumbnail_object_key:
+        remove_object(photo.storage_bucket, photo.thumbnail_object_key)
     db.delete(photo)
     db.commit()
     return DeleteResponse()
@@ -1694,46 +1722,6 @@ def update_trial_report_title(
     return _trial_detail_item(result, request)
 
 
-@router.post("/reports/{report_id}/push", response_model=ReportDetailRead)
-def push_report(
-    request: Request,
-    report_id: UUID,
-    db: Session = Depends(get_db),
-    current_user: AuthenticatedUser = Depends(require_roles(UserRole.REVIEWER, UserRole.ADMIN)),
-) -> ReportDetailRead:
-    report, project = _get_report_or_404(db, report_id, current_user=current_user, include_generated=True)
-    if report.status != InspectionReportStatus.GENERATED.value:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Only generated reports can be pushed.",
-        )
-
-    now = datetime.now(UTC)
-    report.status = InspectionReportStatus.PUSHED.value
-    report.pushed_at = now
-    db.flush()
-
-    project.status = ProjectStatus.COMPLETED.value
-    project.completed_at = now
-    project.current_report_id = report.id
-    project.updated_at = now
-
-    push_log = ReportPushLog(
-        project_id=project.id,
-        report_id=report.id,
-        pushed_by=current_user.id,
-        push_target_user_id=project.created_by,
-        push_method=ReportPushMethod.PLATFORM.value,
-        status=ReportPushStatus.SUCCESS.value,
-        pushed_at=now,
-    )
-    db.add(push_log)
-    db.commit()
-    db.refresh(report)
-    db.refresh(project)
-    return _detail_item(db, report, project, request)
-
-
 @router.delete("/reports/{report_id}", response_model=DeleteResponse)
 def delete_report(
     report_id: UUID,
@@ -1755,17 +1743,28 @@ def delete_report(
         db.commit()
         return DeleteResponse()
 
-    if current_user.role == UserRole.CUSTOMER.value:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="正式检测报告属于项目交付记录，普通用户不能删除。",
-        )
+    task = (
+        db.get(DetectionTask, report.detection_task_id)
+        if report.detection_task_id is not None
+        else None
+    )
     if report.docx_bucket and report.docx_object_key:
         remove_object(report.docx_bucket, report.docx_object_key)
+    deleted_at = datetime.now(UTC)
     if project.current_report_id == report.id:
         project.current_report_id = None
-        project.updated_at = datetime.now(UTC)
+    if (
+        report.detection_task_id is not None
+        and project.current_task_id == report.detection_task_id
+    ):
+        project.current_task_id = None
+    # Formal results belong to one professional detection project. Deleting
+    # the result removes that project from normal lists as well as its task.
+    project.deleted_at = deleted_at
+    project.updated_at = deleted_at
     db.delete(report)
+    if task is not None:
+        db.delete(task)
     db.commit()
     return DeleteResponse()
 
@@ -1806,7 +1805,18 @@ def download_report_docx(
     )
 
     data = _report_data(db, report, project)
-    docx_bytes = build_report_docx(report.title, report.report_no, data)
+    try:
+        docx_bytes = build_report_docx(
+            report.title,
+            report.report_no,
+            data,
+            read_object=get_object_bytes,
+        )
+    except DocxReportExportError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        ) from exc
     filename = f"{_safe_filename(report.report_no)}-{_safe_filename(report.title)}.docx"
     object_key = f"projects/{report.project_id}/reports/{report.id}/{filename}"
     bucket = put_object(

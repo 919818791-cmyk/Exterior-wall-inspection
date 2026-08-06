@@ -34,12 +34,6 @@ export function reportQueryOptions(reportId: string, includeGenerated = false, v
   });
 }
 
-export function pushReport(reportId: string) {
-  return apiRequest<ReportDetail>(`/reports/${reportId}/push`, {
-    method: "POST"
-  });
-}
-
 export function deleteReport(reportId: string) {
   return apiRequest<{ ok: boolean }>(`/reports/${reportId}`, {
     method: "DELETE"
