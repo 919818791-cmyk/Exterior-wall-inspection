@@ -34,7 +34,19 @@ def synchronize_local_qwen_on_startup() -> None:
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     synchronize_local_qwen_on_startup()
-    yield
+    from app.api.detection_tasks import (
+        schedule_queued_formal_detections,
+        stop_formal_detection_jobs,
+    )
+
+    try:
+        schedule_queued_formal_detections()
+    except Exception:
+        logger.exception("formal_detection_queue_startup_resume_failed")
+    try:
+        yield
+    finally:
+        await stop_formal_detection_jobs()
 
 
 app = FastAPI(

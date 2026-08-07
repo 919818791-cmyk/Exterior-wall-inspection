@@ -87,6 +87,9 @@ DEFECT_TYPE_NAMES = {
     "hollow": "空鼓",
 }
 FORMAL_VISIBLE_DEFECT_TYPES = frozenset({"crack", "spalling"})
+FORMAL_DETECTION_QUEUE_SECONDS = 60 * 60
+FORMAL_BACKEND_WORKER_ID = "formal-backend-queue"
+_formal_detection_jobs: set[asyncio.Task[None]] = set()
 
 
 @dataclass(frozen=True)
@@ -648,44 +651,139 @@ async def start_detection(
         )
         db.add(task)
     task.detection_config_id = detection_config.id
-    task.status = DetectionTaskStatus.RUNNING.value
+    task.status = DetectionTaskStatus.PENDING.value
     task.photo_count = len(qualified_photos)
     task.result_summary = {"detection_config": inference_snapshot}
-    task.started_at = now
+    task.started_at = None
     task.finished_at = None
     task.failed_reason = None
     task.model_version = runtime.model
-    task.worker_id = None
+    task.worker_id = FORMAL_BACKEND_WORKER_ID
     task.locked_at = None
     task.worker_heartbeat_at = None
     task.lease_expires_at = None
     db.flush()
     for photo in qualified_photos:
-        photo.status = PhotoStatus.DETECTING.value
+        photo.status = PhotoStatus.UPLOADED.value
         db.add(
             DetectionTaskPhoto(
                 detection_task_id=task.id,
                 photo_id=photo.id,
-                status=PhotoStatus.DETECTING.value,
+                status=PhotoStatus.UPLOADED.value,
             )
         )
 
-    project.status = ProjectStatus.DETECTING.value
+    project.status = ProjectStatus.QUEUED.value
     project.current_task_id = task.id
     project.started_at = now
     project.updated_at = now
 
     db.commit()
 
-    task_started_at = perf_counter()
-    usage_reservation: InferenceUsageReservation | None = None
+    _schedule_formal_project_inference(
+        project_id=project.id,
+        task_id=task.id,
+        actor_id=current_user.id,
+        photo_ids=[photo.id for photo in all_photos],
+        selected_model_types=selected_model_types,
+        runtime=runtime,
+        prompts=prompts,
+        inference_snapshot=inference_snapshot,
+    )
+    db.refresh(task)
+    return _task_read(task)
+
+
+async def _run_formal_project_inference(
+    *,
+    project_id: UUID,
+    task_id: UUID,
+    actor_id: UUID,
+    photo_ids: list[UUID],
+    selected_model_types: list[str],
+    runtime: Any,
+    prompts: Any,
+    inference_snapshot: dict[str, Any],
+) -> None:
+    """Run a formal task after its persisted one-hour queue window."""
+    from app.db.session import SessionLocal
+
+    queue_db = SessionLocal()
     try:
+        queued_project = queue_db.get(Project, project_id)
+        queued_task = queue_db.get(DetectionTask, task_id)
+        if (
+            queued_project is None
+            or queued_project.deleted_at is not None
+            or queued_task is None
+            or queued_task.status != DetectionTaskStatus.PENDING.value
+            or queued_project.status != ProjectStatus.QUEUED.value
+        ):
+            return
+        queued_at = queued_project.started_at or queued_task.created_at
+    finally:
+        queue_db.close()
+
+    remaining_seconds = max(
+        0.0,
+        (
+            queued_at + timedelta(seconds=FORMAL_DETECTION_QUEUE_SECONDS)
+            - datetime.now(UTC)
+        ).total_seconds(),
+    )
+    if remaining_seconds:
+        await asyncio.sleep(remaining_seconds)
+
+    db = SessionLocal()
+    usage_reservation: InferenceUsageReservation | None = None
+    project: Project | None = None
+    task: DetectionTask | None = None
+    try:
+        project = db.scalar(
+            select(Project)
+            .where(Project.id == project_id)
+            .with_for_update()
+        )
+        task = db.scalar(
+            select(DetectionTask)
+            .where(DetectionTask.id == task_id)
+            .with_for_update()
+        )
+        if (
+            project is None
+            or project.deleted_at is not None
+            or task is None
+            or task.status != DetectionTaskStatus.PENDING.value
+            or project.status != ProjectStatus.QUEUED.value
+        ):
+            return
+
+        now = datetime.now(UTC)
         task.status = DetectionTaskStatus.RUNNING.value
         task.started_at = now
         task.model_version = runtime.model
+        task.locked_at = now
+        task.worker_heartbeat_at = now
         task.updated_at = now
+        project.status = ProjectStatus.DETECTING.value
+        project.updated_at = now
+        task_photo_rows = _task_photos(db, task.id)
+        _set_task_photo_status(task_photo_rows, PhotoStatus.DETECTING)
         db.commit()
 
+        all_photos = list(
+            db.scalars(
+                select(Photo)
+                .where(Photo.id.in_(photo_ids), Photo.deleted_at.is_(None))
+                .order_by(Photo.created_at.asc())
+            )
+        )
+        visible_model_labels = [
+            DEFECT_TYPE_NAMES[value]
+            for value in selected_model_types
+            if value in FORMAL_VISIBLE_DEFECT_TYPES
+        ]
+        task_started_at = perf_counter()
         image_pairs = [
             (photo, await _formal_image_input(photo))
             for photo in all_photos
@@ -729,7 +827,7 @@ async def start_detection(
         # The formal and TRIAL paths intentionally share the scheduler's
         # semaphore and per-account counters configured in 推理设置.
         usage_reservation = reserve_inference_usage(
-            current_user.id,
+            actor_id,
             estimated_api_requests,
             db=db,
             generate_limit_detail="检测请求过于频繁，请稍后重试。",
@@ -873,7 +971,7 @@ async def start_detection(
                 db.add(
                     _initial_review_result(
                         ai_result=ai_result,
-                        reviewer_id=current_user.id,
+                        reviewer_id=actor_id,
                         reviewed_at=finished_at,
                     )
                 )
@@ -908,7 +1006,7 @@ async def start_detection(
             title=f"{project.name}外墙检测报告",
             status=InspectionReportStatus.DRAFT.value,
             report_data_json=build_report_data(db, project, task.id),
-            generated_by=current_user.id,
+            generated_by=actor_id,
             generated_at=finished_at,
         )
         db.add(report)
@@ -916,7 +1014,7 @@ async def start_detection(
             db,
             source_type="formal",
             source_id=task.id,
-            actor_id=current_user.id,
+            actor_id=actor_id,
             report_data=task.result_summary,
             occurred_at=finished_at,
         )
@@ -924,10 +1022,15 @@ async def start_detection(
         project.status = ProjectStatus.PENDING_REVIEW.value
         project.updated_at = finished_at
         db.commit()
+        usage_reservation.release(
+            successful=True,
+            actual_api_request_count=actual_api_requests,
+        )
+        usage_reservation = None
     except (Exception, asyncio.CancelledError) as exc:
         logger.exception(
             "formal_project_inference_failed project_id=%s error_type=%s",
-            project.id,
+            project_id,
             type(exc).__name__,
         )
         if usage_reservation is not None:
@@ -935,7 +1038,7 @@ async def start_detection(
             usage_reservation = None
         db.rollback()
         failed_at = datetime.now(UTC)
-        persisted_task = db.get(DetectionTask, task.id)
+        persisted_task = db.get(DetectionTask, task.id) if task is not None else None
         if persisted_task is not None:
             _set_task_photo_status(
                 _task_photos(db, persisted_task.id),
@@ -949,7 +1052,7 @@ async def start_detection(
                 "failed_reason": str(exc),
             }
             persisted_task.updated_at = failed_at
-        persisted_project = db.get(Project, project.id)
+        persisted_project = db.get(Project, project.id) if project is not None else None
         if persisted_project is not None:
             persisted_project.status = ProjectStatus.DRAFT.value
             persisted_project.updated_at = failed_at
@@ -963,14 +1066,75 @@ async def start_detection(
             detail="视觉检测服务暂时不可用，请稍后重试。",
         ) from exc
 
-    usage_reservation.release(
-        successful=True,
-        actual_api_request_count=actual_api_requests,
-    )
-    usage_reservation = None
+    finally:
+        db.close()
 
-    db.refresh(task)
-    return _task_read(task)
+
+def _schedule_formal_project_inference(
+    **job: Any,
+) -> None:
+    task = asyncio.create_task(_run_formal_project_inference(**job))
+    _formal_detection_jobs.add(task)
+    task.add_done_callback(_formal_detection_jobs.discard)
+
+
+def schedule_queued_formal_detections() -> None:
+    """Resume queued formal jobs after an application restart."""
+    from app.db.session import SessionLocal
+
+    db = SessionLocal()
+    try:
+        queued_tasks = list(
+            db.scalars(
+                select(DetectionTask).where(
+                    DetectionTask.status == DetectionTaskStatus.PENDING.value,
+                    DetectionTask.worker_id == FORMAL_BACKEND_WORKER_ID,
+                )
+            )
+        )
+        for task in queued_tasks:
+            project = db.get(Project, task.project_id)
+            detection_config = (
+                db.get(DetectionConfig, task.detection_config_id)
+                if task.detection_config_id
+                else None
+            )
+            if project is None or detection_config is None:
+                continue
+            summary = task.result_summary if isinstance(task.result_summary, dict) else {}
+            snapshot = (
+                summary.get("detection_config")
+                if isinstance(summary.get("detection_config"), dict)
+                else {}
+            )
+            _schedule_formal_project_inference(
+                project_id=project.id,
+                task_id=task.id,
+                actor_id=task.created_by,
+                photo_ids=[
+                    photo_id
+                    for photo_id in db.scalars(
+                        select(DetectionTaskPhoto.photo_id).where(
+                            DetectionTaskPhoto.detection_task_id == task.id
+                        )
+                    )
+                ],
+                selected_model_types=list(detection_config.model_types),
+                runtime=active_trial_inference_runtime(db),
+                prompts=trial_prompts(db),
+                inference_snapshot=snapshot,
+            )
+    finally:
+        db.close()
+
+
+async def stop_formal_detection_jobs() -> None:
+    jobs = list(_formal_detection_jobs)
+    for job in jobs:
+        job.cancel()
+    if jobs:
+        await asyncio.gather(*jobs, return_exceptions=True)
+    _formal_detection_jobs.clear()
 
 
 @router.get("/algorithm/tasks/next", response_model=AlgorithmTaskLease | None)
@@ -981,7 +1145,10 @@ def claim_next_task(
 ) -> AlgorithmTaskLease | None:
     task = db.scalar(
         select(DetectionTask)
-        .where(DetectionTask.status == DetectionTaskStatus.PENDING.value)
+        .where(
+            DetectionTask.status == DetectionTaskStatus.PENDING.value,
+            DetectionTask.worker_id.is_(None),
+        )
         .order_by(DetectionTask.priority.desc(), DetectionTask.created_at.asc())
         .with_for_update(skip_locked=True)
     )

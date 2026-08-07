@@ -16,6 +16,7 @@ interface WorkbenchResultTableProps<T extends WorkbenchResultListItem> {
   getKey: (item: T) => string;
   items: T[];
   onOpen: (item: T) => void;
+  renderDetectionProgress?: (item: T) => ReactNode;
   renderDetectionDescription?: (item: T) => ReactNode;
   renderTitleAccessory?: (item: T) => ReactNode;
 }
@@ -26,6 +27,7 @@ export function WorkbenchResultTable<T extends WorkbenchResultListItem>({
   getKey,
   items,
   onOpen,
+  renderDetectionProgress,
   renderDetectionDescription,
   renderTitleAccessory
 }: WorkbenchResultTableProps<T>) {
@@ -34,9 +36,23 @@ export function WorkbenchResultTable<T extends WorkbenchResultListItem>({
       <colgroup>
         <col className="project-folder-col" />
         <col className="workbench-result-name-col" />
+        <col className="workbench-result-created-at-col" />
+        <col className="workbench-result-photo-count-col" />
+        {renderDetectionProgress ? <col className="workbench-result-progress-col" /> : null}
         {renderTitleAccessory ? <col className="workbench-result-status-col" /> : null}
         {renderDetectionDescription ? <col className="workbench-result-description-col" /> : null}
       </colgroup>
+      <thead>
+        <tr>
+          <th aria-label="照片" scope="col" />
+          <th className="workbench-result-name-heading" scope="col">{columnLabel}</th>
+          <th scope="col">创建时间</th>
+          <th scope="col">照片数量</th>
+          {renderDetectionProgress ? <th scope="col">检测进度</th> : null}
+          {renderTitleAccessory ? <th scope="col">状态</th> : null}
+          {renderDetectionDescription ? <th scope="col">缺陷摘要</th> : null}
+        </tr>
+      </thead>
       <tbody>
         {items.map((item) => (
           <tr
@@ -55,7 +71,7 @@ export function WorkbenchResultTable<T extends WorkbenchResultListItem>({
             <td className="result-folder-column">
               <ResultFolderThumbnail
                 firstPhotoUrl={item.first_photo_url}
-                folderImageSrc="/bg-folder.png"
+                folderImageSrc="/images/WJJ.png"
                 title={item.title}
               />
             </td>
@@ -64,11 +80,19 @@ export function WorkbenchResultTable<T extends WorkbenchResultListItem>({
                 <span className="project-name-line workbench-list-title-line">
                   <strong className="project-name workbench-list-title">{item.title}</strong>
                 </span>
-                <small className="result-generated-time workbench-list-meta">
-                  {formatDateTime(item.generated_at)} · {item.photo_count}张照片
-                </small>
               </span>
             </td>
+            <td className="workbench-result-created-at-column result-generated-time" data-label="创建时间">
+              <time dateTime={item.generated_at}>{formatDateTime(item.generated_at)}</time>
+            </td>
+            <td className="workbench-result-photo-count-column" data-label="照片数量">
+              {item.photo_count} 张
+            </td>
+            {renderDetectionProgress ? (
+              <td className="workbench-result-progress-column" data-label="检测进度">
+                {renderDetectionProgress(item)}
+              </td>
+            ) : null}
             {renderTitleAccessory ? (
               <td className="workbench-result-status-column">
                 {renderTitleAccessory(item)}
@@ -86,7 +110,9 @@ export function WorkbenchResultTable<T extends WorkbenchResultListItem>({
   );
 }
 
-export function WorkbenchDefectSummary({ counts }: { counts: Record<string, number> }) {
+export function WorkbenchDefectSummary({ counts, placeholder }: { counts: Record<string, number>; placeholder?: string }) {
+  if (placeholder) return <p>{placeholder}</p>;
+
   const total = Object.values(counts).reduce((sum, count) => sum + Math.max(0, count), 0);
-  return <p>共{total}处缺陷</p>;
+  return <p>共{total}处</p>;
 }

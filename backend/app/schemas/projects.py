@@ -53,9 +53,11 @@ class ProjectListItem(ApiSchema):
     status: ProjectStatus
     current_report_id: UUID | None
     photo_count: int
+    valid_photo_count: int
     total_defects: int = 0
     by_defect_type: dict[str, int] = Field(default_factory=dict)
     first_photo_url: str | None = None
+    started_at: datetime | None
     created_at: datetime
     updated_at: datetime
 
@@ -64,7 +66,6 @@ class ProjectDetailRead(ProjectListItem):
     current_task_id: UUID | None
     current_report_id: UUID | None
     current_task_status: DetectionTaskStatus | None = None
-    started_at: datetime | None
     completed_at: datetime | None
 
 

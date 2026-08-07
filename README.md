@@ -22,7 +22,7 @@
 Copy-Item .env.example .env
 ```
 
-前端 Vite 已配置 `envDir: ".."`，会读取根目录 `.env` 中的 `VITE_API_BASE_URL`。
+前端 Vite 已配置 `envDir: ".."`，会读取根目录 `.env` 中的 `VITE_API_BASE_URL`。开发环境默认使用同源 `/api`，由 Vite 转发到 `BACKEND_DEV_SERVER_URL`（默认 `http://127.0.0.1:8000`），避免浏览器从局域网地址访问时把后端误解析为客户端自己的 `127.0.0.1`。
 
 ## 2. 启动基础服务
 
@@ -152,7 +152,7 @@ npm run dev
 
 - `http://localhost:5175`
 
-首次访问业务页面会跳转到登录页。开发环境默认启用以下测试账号；生产环境请修改 `AUTH_SECRET_KEY` 并设置 `AUTH_SEED_DEMO_USERS=false`：
+首页、专业检测列表和免费试用记录页无需登录即可访问；进入新增专业检测或免费试用体验页时会跳转到登录页。开发环境默认启用以下测试账号；生产环境请修改 `AUTH_SECRET_KEY` 并设置 `AUTH_SEED_DEMO_USERS=false`：
 
 | 角色 | 用户名 / 手机号 | 密码 | 可用范围 |
 | --- | --- | --- | --- |
@@ -185,6 +185,7 @@ npm run dev -- --host 127.0.0.1 --port 5174
 - 项目 CRUD 闭环
 - 项目照片统一上传、MinIO 图片存储、照片列表与删除
 - 启动检测时多选裂缝、剥落、空鼓（默认全选）
+- 专业检测提交后先进入“排队中”，固定 1 小时后切换为“检测中”并开始推理
 - `POST /api/projects/{project_id}/start-detection` 为项目启动唯一的 AI 检测任务；无热成像照片时不触发空鼓分析
 - 正式照片复用 TRIAL 的 `1280 x 960`、25% 重叠切片、跨 TILE 融合和 NMS 坐标回写流程
 - 正式项目与简易检测共用推理模型、检测提示词、全局/单任务并发和账号切片请求额度
@@ -201,7 +202,7 @@ npm run dev -- --host 127.0.0.1 --port 5174
 - `backend/templates/reports/正式报告示例.docx` 作为正式报告 DOCX 模板
 - AI 检测体验归档保存上传照片和简易识别结果，不生成 DOCX 文件
 - `POST /api/auth/login`、`GET /api/auth/me`、`POST /api/auth/logout` 基础登录会话
-- Bearer 登录态刷新恢复、未登录业务路由跳转登录页
+- Bearer 登录态刷新恢复；专业检测和免费试用列表页公开访问，新增页及其他业务路由跳转登录页
 - 客户用户仅看到自己的项目、项目审核完成后固化的检测结果、已推送正式报告和自己的体验归档，且无法访问审核接口或审核菜单
 - 内部审核人员和管理员可访问审核工作台；报告推送仅限内部审核人员和管理员
 

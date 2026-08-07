@@ -877,11 +877,12 @@
 
 .project-list-route .project-row-status-icon.project-status-draft {
   color: #fff;
-  border-color: #5f6f86;
-  background: #5f6f86;
+  border-color: #7C8FA6;
+  background: #7C8FA6;
 }
 
 .project-list-route .project-row-status-icon:is(
+  .project-status-queued,
   .project-status-detecting,
   .project-status-processing,
   .project-status-generating
@@ -889,6 +890,16 @@
   color: #fff;
   border-color: #2563eb;
   background: #2563eb;
+}
+
+.project-list-route .project-row-status-icon.project-status-queued {
+  border-color: #7C8FA6;
+  background: #7C8FA6;
+}
+
+.project-list-route .project-row-status-icon.project-status-generating {
+  border-color: #2563EB;
+  background: #2563EB;
 }
 
 .project-list-route .project-row-status-icon.project-status-completed {
@@ -5099,7 +5110,7 @@ body.auth-modal-open {
 }
 
 .brand-name {
-  font-size: 20px;
+  font-size: 22px;
 }
 
 .main-nav {
@@ -12006,6 +12017,15 @@ a {
   background: transparent;
 }
 
+/* Projects list + Trial pages: light #F9FAFD background instead of dark hero */
+:is(.project-list-route, .trial-route):is(.site-dark-theme, .theme-hero-page) {
+  background: #F9FAFD;
+}
+
+:is(.project-list-route, .trial-route):is(.site-dark-theme, .theme-hero-page)::before {
+  display: none;
+}
+
 .site-dark-theme.report-detail-route {
   background: #f2f2f7;
 }
@@ -14160,16 +14180,16 @@ a {
 
 /* Trial experience keeps the standard light navigation over its fixed-light workspace. */
 .site-dark-theme.trial-experience-page .site-header:not(.home-site-header) {
-  border-bottom-color: rgba(209, 224, 245, 0.82);
-  background: #fff;
-  box-shadow: 0 10px 30px rgba(20, 55, 110, 0.06);
-  backdrop-filter: blur(18px);
+  border-bottom-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
 }
 
 .site-dark-theme.trial-experience-page .site-header :is(
   .brand-name
 ) {
-  color: var(--blue);
+  color: #000;
   text-shadow: none;
 }
 
@@ -14180,7 +14200,7 @@ a {
   .account-trigger,
   .auth-trigger
 ) {
-  color: #101b36;
+  color: #000;
   text-shadow: none;
 }
 
@@ -14215,7 +14235,7 @@ a {
   .nav-menu-trigger[aria-expanded="true"],
   .nav-menu-trigger.current
 ) {
-  color: var(--blue);
+  color: #000;
 }
 
 .site-dark-theme.trial-experience-page .site-header .mobile-nav-toggle {
@@ -14246,7 +14266,8 @@ a {
     .nav-menu-trigger.current,
     .nav-menu-trigger[aria-expanded="true"]
   ) {
-    background: #edf3ff;
+    color: #000;
+    background: transparent;
   }
 
   .site-dark-theme.trial-experience-page .site-header .mobile-nav-panel > :is(
@@ -14289,15 +14310,15 @@ a {
 }
 
 .site-dark-theme:is(.project-list-route, .project-list-chrome) .site-header:not(.home-site-header) {
-  border-bottom-color: rgba(133, 171, 224, 0.18);
-  background: #141414;
-  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.24);
-  backdrop-filter: blur(18px);
+  border-bottom-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
 }
 
 .site-dark-theme:is(.project-list-route, .project-list-chrome) .site-header .brand-name {
-  color: #fff;
-  text-shadow: 0 1px 5px rgba(0, 0, 0, 0.58);
+  color: #000;
+  text-shadow: none;
 }
 
 .site-dark-theme:is(.project-list-route, .project-list-chrome) .site-header :is(
@@ -14305,8 +14326,8 @@ a {
   .nav-menu-trigger,
   .account-trigger
 ) {
-  color: #fff;
-  text-shadow: 0 1px 5px rgba(0, 0, 0, 0.58);
+  color: #000;
+  text-shadow: none;
 }
 
 .site-dark-theme:is(.project-list-route, .project-list-chrome) .site-header :is(
@@ -14316,41 +14337,41 @@ a {
   .nav-menu-trigger[aria-expanded="true"],
   .nav-menu-trigger.current
 ) {
-  color: #fff;
+  color: #000;
 }
 
 .site-dark-theme:is(.project-list-route, .project-list-chrome) .site-header .mobile-nav-toggle {
-  color: #e4eeff;
-  border-color: rgba(144, 184, 239, 0.24);
-  background: rgba(26, 47, 76, 0.78);
+  color: #122341;
+  border-color: #d8e3f2;
+  background: #f6f9fe;
 }
 
 .site-dark-theme:is(.project-list-route, .project-list-chrome) .site-header .mobile-nav-toggle:hover,
 .site-dark-theme:is(.project-list-route, .project-list-chrome) .site-header .mobile-nav-toggle:focus-visible,
 .site-dark-theme:is(.project-list-route, .project-list-chrome) .site-header .mobile-nav-toggle[aria-expanded="true"] {
-  color: #8fbdff;
-  border-color: rgba(144, 184, 239, 0.5);
-  background: #1c3556;
+  color: #245cff;
+  border-color: #b9cbff;
+  background: #edf3ff;
 }
 
 @media (min-width: 1301px) {
   .site-dark-theme:is(.project-list-route, .project-list-chrome) .site-header .main-nav > a.active::after {
-    background: #fff;
+    background: #000;
   }
 }
 
 @media (max-width: 1300px) {
   .site-dark-theme:is(.project-list-route, .project-list-chrome) .site-header .mobile-nav-panel {
-    border-color: rgba(132, 169, 218, 0.2);
-    background: rgba(20, 20, 20, 0.98);
-    box-shadow: 0 20px 44px rgba(0, 0, 0, 0.32);
+    border-color: #dce6f2;
+    background: rgba(255, 255, 255, 0.98);
+    box-shadow: 0 20px 44px rgba(18, 45, 88, 0.16);
   }
 
   .site-dark-theme:is(.project-list-route, .project-list-chrome) .site-header .mobile-nav-panel > :is(
     .account-menu,
     .auth-trigger
   ) {
-    border-top-color: rgba(132, 169, 218, 0.16);
+    border-top-color: #e2e9f2;
   }
 }
 
@@ -14786,7 +14807,15 @@ a {
 }
 
 .project-list-route .project-workbench-table .status-tag.project-status-draft {
-  background: #5f6f86;
+  background: #7C8FA6;
+}
+
+.project-list-route .project-workbench-table .status-tag.project-status-queued {
+  background: #7C8FA6;
+}
+
+.project-list-route .project-workbench-table .status-tag.project-status-generating {
+  background: #2563EB;
 }
 
 .project-list-route .project-workbench-table .status-tag.project-status-detecting {
@@ -14798,7 +14827,7 @@ a {
 }
 
 .project-list-route .project-workbench-table .status-tag.project-status-generating {
-  background: #b45309;
+  background: #2563EB;
 }
 
 .project-list-route .project-workbench-table .status-tag.project-status-completed {
@@ -14896,6 +14925,74 @@ a {
   backdrop-filter: none;
 }
 
+/* Projects page: white content panel with border and shadow */
+.project-list-route .project-management-page .project-workbench-layout > .project-workbench-content-panel {
+  background: #fff;
+  border: 1px solid rgba(30, 78, 147, 0.08);
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(9, 31, 75, 0.06);
+  min-height: 0;
+  overflow: visible;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .project-list-route .project-management-page .project-workbench-layout > .project-workbench-content-panel {
+    background: #fff;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+/* Allow content to overflow so pagination follows last row instead of fixed bottom */
+.project-list-route > .app-main {
+  height: auto;
+  min-height: calc(100svh - var(--site-header-height, 74px));
+  overflow: visible;
+}
+
+.project-list-route .project-management-page,
+.project-list-route .report-list-page {
+  height: auto;
+  min-height: 100%;
+  overflow: visible;
+}
+
+.project-list-route .project-management-page .project-workspace,
+.project-list-route .report-list-page .project-workspace {
+  height: auto;
+  min-height: calc(100svh - var(--site-header-height, 74px));
+  overflow: visible;
+}
+
+.project-list-route .project-workspace {
+  overflow: visible;
+}
+
+.project-list-route .project-workbench-layout {
+  overflow: visible;
+}
+
+.project-list-route .project-workbench-content-panel {
+  overflow: visible;
+  flex: none;
+}
+
+.project-list-route .project-workbench-content-panel > .project-list-panel {
+  overflow: visible;
+  flex: none;
+}
+
+.project-list-route .workbench-result-list-panel {
+  flex: none;
+}
+
+.project-list-route .workbench-result-list-panel .project-workbench-table-wrap {
+  overflow: visible;
+  flex: none;
+}
+
 .project-list-route .project-workbench-sidebar::before {
   display: none;
 }
@@ -14903,7 +15000,7 @@ a {
 .project-list-route .project-list-search-toolbar {
   display: flex;
   width: min(1100px, 100%);
-  margin: 20px auto 20px;
+  margin: 0 auto 20px;
   padding: 0;
   flex: none;
   align-items: center;
@@ -14912,14 +15009,14 @@ a {
 }
 
 .project-list-route .project-list-search-toolbar input {
-  width: min(700px, 100%);
+  width: min(420px, 100%);
   min-width: 0;
   height: 46px;
   padding: 0 16px;
-  flex: 0 1 700px;
+  flex: 0 1 420px;
   color: #111827;
   border: 1px solid #cbd5e1;
-  border-radius: 8px;
+  border-radius: 999px;
   background: #fff;
   outline: none;
   font-size: 15px;
@@ -14985,6 +15082,10 @@ a {
   width: 200px;
 }
 
+.project-list-route .project-workbench-table.workbench-result-table .workbench-result-progress-col {
+  width: 160px;
+}
+
 .project-list-route .project-workbench-table.workbench-result-table .workbench-result-description-col {
   width: 190px;
 }
@@ -15011,14 +15112,23 @@ a {
   white-space: nowrap;
 }
 
+.project-list-route .project-workbench-table.workbench-result-table .workbench-result-progress-column {
+  width: 160px;
+  color: #475569;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+  white-space: nowrap;
+}
+
 .project-list-route .project-workbench-table.workbench-result-table tbody tr,
 .project-list-route .project-workbench-table.workbench-result-table td {
-  height: 120px;
+  height: 100px;
 }
 
 .project-list-route .project-workbench-table.workbench-result-table tbody tr:not(.report-delete-row) {
   background-color: transparent;
-  background-image: linear-gradient(90deg, rgba(71, 85, 105, 0.32), rgba(71, 85, 105, 0.32));
+  background-image: linear-gradient(90deg, #E1E5EE, #E1E5EE);
   background-position: right bottom;
   background-repeat: no-repeat;
   background-size: calc(100% - 112px) 1px;
@@ -15026,10 +15136,16 @@ a {
 }
 
 .project-list-route .project-workbench-content-panel .project-workbench-table.workbench-result-table tbody tr:not(.report-delete-row):hover {
-  background-color: transparent;
-  background-image: linear-gradient(90deg, #111827, #111827);
+  background-color: #F1F3F8;
+  background-image: linear-gradient(90deg, #E1E5EE, #E1E5EE);
+  background-position: right bottom;
+  background-repeat: no-repeat;
   background-size: calc(100% - 112px) 1px;
   transform: none;
+}
+
+.project-list-route .project-workbench-content-panel .project-workbench-table.workbench-result-table tbody tr:not(.report-delete-row):hover .workbench-list-title {
+  font-weight: 700;
 }
 
 .project-list-route .project-workbench-content-panel .project-workbench-table.workbench-result-table tbody tr:last-child:not(.report-delete-row),
@@ -15047,8 +15163,8 @@ a {
 }
 
 .project-list-route .project-workbench-table.workbench-result-table .result-folder-thumbnail {
-  width: 82px;
-  height: 82px;
+  width: 70px;
+  height: 70px;
 }
 
 .project-list-route .project-workbench-table.workbench-result-table .result-folder-thumbnail::before {
@@ -15061,10 +15177,10 @@ a {
 }
 
 .project-list-route .project-workbench-table.workbench-result-table .result-folder-thumbnail-photo {
-  right: 23px;
-  bottom: 16px;
-  width: 35px;
-  height: 35px;
+  right: 20px;
+  bottom: 14px;
+  width: 30px;
+  height: 30px;
 }
 
 .project-list-route .workbench-result-list-page .project-workbench-content-panel :is(
@@ -15122,24 +15238,6 @@ a {
   white-space: nowrap;
 }
 
-.project-list-route .project-workbench-table.workbench-result-table .workbench-list-meta {
-  display: block;
-  min-width: 0;
-  margin: 6px 0 0;
-  overflow: hidden;
-  color: rgba(17, 24, 39, 0.62);
-  font-family: "HarmonyOS Sans SC", "HarmonyOS Sans", "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
-  font-size: 14px;
-  font-style: normal;
-  font-weight: 400;
-  line-height: 20px;
-  letter-spacing: normal;
-  font-variant-numeric: tabular-nums;
-  text-overflow: ellipsis;
-  text-shadow: none;
-  white-space: nowrap;
-}
-
 /* Keep identical column geometry across the project, trial and annotation queues. */
 @media (min-width: 561px) {
   .project-list-route .project-workbench-table.workbench-result-table {
@@ -15164,6 +15262,21 @@ a {
   .project-list-route .project-workbench-table.workbench-result-table .workbench-result-status-col,
   .project-list-route .project-workbench-table.workbench-result-table .workbench-result-status-column {
     width: 160px;
+  }
+
+  .project-list-route .project-workbench-table.workbench-result-table .workbench-result-progress-col,
+  .project-list-route .project-workbench-table.workbench-result-table .workbench-result-progress-column {
+    width: 160px;
+  }
+
+  .project-list-route .project-workbench-table.workbench-result-table .workbench-result-created-at-col,
+  .project-list-route .project-workbench-table.workbench-result-table .workbench-result-created-at-column {
+    width: 220px;
+  }
+
+  .project-list-route .project-workbench-table.workbench-result-table .workbench-result-photo-count-col,
+  .project-list-route .project-workbench-table.workbench-result-table .workbench-result-photo-count-column {
+    width: 140px;
   }
 
   .project-list-route .project-workbench-table.workbench-result-table .workbench-result-description-col,
@@ -15473,7 +15586,7 @@ a {
   min-height: 0;
   margin: 30px 0;
   padding: 20px;
-  border-color: rgba(255, 255, 255, 0.68);
+  border-color: #e0e7f1;
   border-radius: 12px;
   background: #fff;
   box-shadow: none;
@@ -15538,5 +15651,239 @@ a {
   .trial-new-project-layout .project-editor-basic-fields .trial-name-actions {
     justify-content: flex-start;
     flex-wrap: wrap;
+  }
+}
+
+/* Trial page: white report panel and table backgrounds */
+.trial-route .management-list-page {
+  background: transparent;
+}
+
+.trial-route .trial-report-panel {
+  background: #fff;
+}
+
+.trial-route .trial-report-table-wrap {
+  background: #fff;
+}
+
+/* Trial page: allow natural scrolling instead of viewport clipping */
+.trial-route > .app-main {
+  height: auto;
+  min-height: calc(100svh - var(--site-header-height, 74px));
+  overflow: visible;
+}
+
+.trial-route .project-editor-management-page .project-workspace {
+  height: auto;
+  min-height: calc(100svh - var(--site-header-height, 74px));
+  overflow: visible;
+}
+
+/* New-project and project-detail workspaces share the public list-page backdrop. */
+:is(.new-project-page, .project-detail-page, .report-detail-route):is(.site-dark-theme, .theme-hero-page) {
+  background: #F9FAFD;
+}
+
+:is(.new-project-page, .project-detail-page, .report-detail-route):is(.site-dark-theme, .theme-hero-page)::before {
+  display: none;
+}
+
+:is(.new-project-page, .project-detail-page, .report-detail-route) > .app-main {
+  background: transparent;
+}
+
+:is(.new-project-page, .project-detail-page) .project-editor-management-page {
+  background: #F9FAFD;
+}
+
+/* Public list pages use a wider light workspace with a clear page heading. */
+:is(.project-list-route, .report-list-route):is(.site-dark-theme, .theme-hero-page) {
+  background: #F9FAFD;
+}
+
+:is(.project-list-route, .report-list-route) .project-workbench-layout {
+  width: min(calc(100% - clamp(24px, 4.4vw, 64px)), 1600px);
+}
+
+:is(.project-list-route, .report-list-route) .project-workbench-content-panel {
+  width: 100%;
+  max-width: 1600px;
+  margin-bottom: 20px;
+}
+
+:is(.project-list-route, .report-list-route) .project-management-page .project-workbench-layout > .project-workbench-content-panel {
+  border: 0;
+  border-radius: 20px;
+  box-shadow: none;
+  margin-bottom: 20px;
+}
+
+:is(.project-list-route, .report-list-route) .project-workbench-layout > .project-workbench-content-panel,
+:is(.project-list-route, .report-list-route) .project-workbench-content-panel > .project-list-panel,
+:is(.project-list-route, .report-list-route) .project-workbench-table-wrap,
+:is(.project-list-route, .report-list-route) .project-workbench-table.workbench-result-table {
+  background: #fff;
+}
+
+:is(.project-list-route, .report-list-route) .project-list-search-toolbar,
+:is(.project-list-route, .report-list-route) .workbench-list-pagination,
+:is(.project-list-route, .report-list-route) .workbench-result-list-panel {
+  width: min(calc(100% - 68px), 1600px);
+  margin-right: auto;
+  margin-left: auto;
+}
+
+:is(.project-list-route, .report-list-route) .project-workbench-content-panel > .project-list-panel.workbench-result-list-panel {
+  width: min(calc(100% - 68px), 1600px);
+  margin-right: auto;
+  margin-left: auto;
+}
+
+:is(.project-list-route, .report-list-route) .list-page-heading {
+  width: 100%;
+  margin: 0;
+  padding: 10px 34px 18px;
+  text-align: left;
+}
+
+:is(.project-list-route, .report-list-route) .list-page-heading h1 {
+  margin: 0;
+  color: #111827;
+  font-size: clamp(24px, 1.6vw, 30px);
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+:is(.project-list-route, .report-list-route) .list-page-heading-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+:is(.project-list-route, .report-list-route) .list-page-heading-action {
+  display: inline-flex;
+  position: relative;
+  top: 40px;
+  width: 160px;
+  height: 58px;
+  min-height: 58px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 0 20px;
+  color: #fff;
+  border: 0;
+  border-radius: 999px;
+  background: #000;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  transition: background-color 160ms ease, box-shadow 160ms ease;
+}
+
+:is(.project-list-route, .report-list-route) .list-page-heading-action:hover,
+:is(.project-list-route, .report-list-route) .list-page-heading-action:focus-visible {
+  color: #fff;
+  background: #245cff;
+  box-shadow: 0 6px 14px rgba(36, 92, 255, 0.2);
+}
+
+:is(.project-list-route, .report-list-route) .list-page-heading-action svg {
+  width: 22px;
+  height: 22px;
+  flex: none;
+}
+
+:is(.project-list-route, .report-list-route) .list-page-heading p {
+  margin: 4px 0 0;
+  color: #64748b;
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+:is(.project-list-route, .report-list-route) .project-workbench-table.workbench-result-table {
+  width: 100%;
+  min-width: 680px;
+}
+
+:is(.project-list-route, .report-list-route) .project-workbench-table.workbench-result-table .workbench-result-created-at-column,
+:is(.project-list-route, .report-list-route) .project-workbench-table.workbench-result-table .workbench-result-photo-count-column {
+  color: #475569;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+:is(.project-list-route, .report-list-route) .project-workbench-table.workbench-result-table thead th {
+  color: #475569;
+  border: 0;
+  background-color: #F9FAFD;
+  background-image: none;
+  font-weight: 500;
+  opacity: 1;
+}
+
+:is(.project-list-route, .report-list-route) .project-workbench-table.workbench-result-table :is(
+  .workbench-result-name-heading,
+  .report-name-column
+) {
+  padding-left: 20px;
+  text-align: left;
+}
+
+:is(.project-list-route, .report-list-route) .project-workbench-table.workbench-result-table .result-folder-thumbnail {
+  transform: translateX(20px);
+}
+
+:is(.project-list-route, .report-list-route) .project-workbench-table.workbench-result-table thead th + th::before {
+  display: none;
+}
+
+@media (min-width: 561px) {
+  :is(.project-list-route, .report-list-route) .project-workbench-table.workbench-result-table .workbench-result-created-at-col,
+  :is(.project-list-route, .report-list-route) .project-workbench-table.workbench-result-table .workbench-result-created-at-column {
+    width: 220px;
+  }
+
+  :is(.project-list-route, .report-list-route) .project-workbench-table.workbench-result-table .workbench-result-photo-count-col,
+  :is(.project-list-route, .report-list-route) .project-workbench-table.workbench-result-table .workbench-result-photo-count-column {
+    width: 140px;
+  }
+}
+
+@media (max-width: 560px) {
+  :is(.project-list-route, .report-list-route) .project-list-search-toolbar,
+  :is(.project-list-route, .report-list-route) .workbench-list-pagination,
+  :is(.project-list-route, .report-list-route) .workbench-result-list-panel {
+    width: calc(100% - 40px);
+  }
+
+  :is(.project-list-route, .report-list-route) .project-workbench-content-panel > .project-list-panel.workbench-result-list-panel {
+    width: calc(100% - 40px);
+  }
+
+  :is(.project-list-route, .report-list-route) .list-page-heading {
+    padding: 10px 20px 14px;
+  }
+
+  :is(.project-list-route, .report-list-route) .list-page-heading-row {
+    gap: 12px;
+  }
+
+  :is(.project-list-route, .report-list-route) .list-page-heading-action {
+    width: 136px;
+    height: 58px;
+    min-height: 58px;
+    padding: 0 14px;
+    font-size: 16px;
+  }
+
+  :is(.project-list-route, .report-list-route) .list-page-heading h1 {
+    font-size: 24px;
   }
 }

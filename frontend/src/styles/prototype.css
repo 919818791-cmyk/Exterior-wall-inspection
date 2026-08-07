@@ -113,7 +113,7 @@ a {
   justify-content: center;
   gap: clamp(22px, 4vw, 54px);
   flex: 1;
-  font-weight: 700;
+  font-weight: 500;
   font-size: 15px;
 }
 
@@ -4078,8 +4078,8 @@ body.auth-modal-open {
 
 .project-pagination .current-page {
   color: #fff;
-  border-color: #245cff;
-  background: #245cff;
+  border-color: #000;
+  background: #000;
 }
 
 .project-pagination svg,

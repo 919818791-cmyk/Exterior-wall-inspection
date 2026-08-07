@@ -13,6 +13,8 @@ export function ListPagination({
   pageSize,
   totalItems
 }: ListPaginationProps) {
+  if (totalItems <= pageSize) return null;
+
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
   const pages = visiblePages(currentPage, totalPages);
 

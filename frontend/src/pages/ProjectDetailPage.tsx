@@ -72,6 +72,8 @@ function getPrimaryAction(status: ProjectStatus) {
   switch (status) {
     case "draft":
       return { label: "开始 AI 检测", note: "系统会统一检测预检通过的照片。" };
+    case "queued":
+      return { label: "排队中", note: "检测任务已提交，预计排队 1 小时后开始检测。" };
     case "detecting":
       return { label: "检测中", note: "检测完成前项目保持只读。" };
     case "pending_review":
@@ -120,7 +122,7 @@ export function ProjectDetailPage() {
 
   const isEditable = project?.status === "draft";
   const usesNewProjectAppearance = project
-    ? ["draft", "detecting", "pending_review"].includes(project.status)
+    ? ["draft", "queued", "detecting", "pending_review"].includes(project.status)
     : false;
   const primaryAction = useMemo(
     () => getPrimaryAction(project?.status ?? "draft"),

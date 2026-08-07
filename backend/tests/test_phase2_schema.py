@@ -34,6 +34,7 @@ def test_phase2_tables_are_registered() -> None:
 def test_phase2_required_status_values_are_centralized() -> None:
     assert {item.value for item in ProjectStatus} == {
         "draft",
+        "queued",
         "detecting",
         "pending_review",
         "reviewed",

@@ -33,6 +33,7 @@ const PHOTO_PREVIEW_DEFAULT_ZOOM = 1;
 const PHOTO_PREVIEW_MIN_ZOOM = 1;
 const PHOTO_PREVIEW_MAX_ZOOM = 4;
 const PHOTO_PREVIEW_ZOOM_STEP = 0.25;
+const PHOTO_DELETE_UNDO_MILLISECONDS = 6000;
 
 type PendingUploadStatus = "uploading" | "uploaded" | "failed";
 
@@ -42,6 +43,11 @@ interface PendingUpload {
   previewUrl: string;
   status: PendingUploadStatus;
   error?: string;
+}
+
+interface RemovedProjectPhoto {
+  index: number;
+  photo: Photo;
 }
 
 function getErrorMessage(error: unknown) {
@@ -60,6 +66,8 @@ export function ProjectPhotoActions({
   const previewViewportRef = useRef<HTMLDivElement | null>(null);
   const previewDragRef = useRef<{ pointerId: number; x: number; y: number; distance: number } | null>(null);
   const previewDragMovedRef = useRef(false);
+  const photoDeleteTimerRef = useRef<number | null>(null);
+  const removedPhotoRef = useRef<RemovedProjectPhoto | null>(null);
   const queryClient = useQueryClient();
   const photosQuery = useQuery({
     ...projectPhotosQueryOptions(project.id),
@@ -82,14 +90,22 @@ export function ProjectPhotoActions({
   const [previewZoom, setPreviewZoom] = useState(PHOTO_PREVIEW_DEFAULT_ZOOM);
   const [previewPan, setPreviewPan] = useState({ x: 0, y: 0 });
   const [localError, setLocalError] = useState("");
+  const [recentlyRemovedPhoto, setRecentlyRemovedPhoto] = useState<RemovedProjectPhoto | null>(null);
+  const [deletingPhotoId, setDeletingPhotoId] = useState<string | null>(null);
 
   const previewPhoto = projectPhotos.find((photo) => photo.id === previewPhotoId) ?? null;
   const previewPhotoUrl = previewPhoto?.preview_url ?? previewPhoto?.thumbnail_url ?? "";
-  const hasPhotos = Boolean(projectPhotos.length || pendingUploads.length);
+  const visibleProjectPhotos = useMemo(
+    () => projectPhotos.filter((photo) => (
+      photo.id !== recentlyRemovedPhoto?.photo.id && photo.id !== deletingPhotoId
+    )),
+    [projectPhotos, recentlyRemovedPhoto, deletingPhotoId]
+  );
+  const hasPhotos = Boolean(visibleProjectPhotos.length || pendingUploads.length);
   const uploadedPendingCount = pendingUploads.filter((item) => item.status === "uploaded").length;
   const failedPendingCount = pendingUploads.filter((item) => item.status === "failed").length;
   const activePendingCount = pendingUploads.filter((item) => item.status === "uploading").length;
-  const visiblePhotoCount = projectPhotos.length + pendingUploads.length;
+  const visiblePhotoCount = visibleProjectPhotos.length + pendingUploads.length;
   const uploadPercent = pendingUploads.length
     ? Math.round((uploadedPendingCount / pendingUploads.length) * 100)
     : 0;
@@ -196,6 +212,13 @@ export function ProjectPhotoActions({
   }, [previewPhotoId]);
 
   useEffect(() => () => {
+    if (photoDeleteTimerRef.current !== null) {
+      window.clearTimeout(photoDeleteTimerRef.current);
+    }
+    const removed = removedPhotoRef.current;
+    if (removed) {
+      void deletePhoto(removed.photo.id);
+    }
     pendingUploadsRef.current.forEach((item) => URL.revokeObjectURL(item.previewUrl));
   }, []);
 
@@ -205,7 +228,7 @@ export function ProjectPhotoActions({
       if (uploader) uploader.scrollTop = uploader.scrollHeight;
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [pendingUploads.length, projectPhotos.length]);
+  }, [pendingUploads.length, visibleProjectPhotos.length]);
 
   const startUploads = (entries: PendingUpload[]) => {
     if (!entries.length || !isEditable || uploadMutation.isPending) return;
@@ -345,9 +368,50 @@ export function ProjectPhotoActions({
     startUploads(pendingUploads.filter((item) => item.status === "failed"));
   };
 
+  const finalizePendingPhotoRemoval = async () => {
+    const removal = removedPhotoRef.current;
+    if (!removal) return;
+    if (photoDeleteTimerRef.current !== null) {
+      window.clearTimeout(photoDeleteTimerRef.current);
+      photoDeleteTimerRef.current = null;
+    }
+    removedPhotoRef.current = null;
+    setRecentlyRemovedPhoto(null);
+    setDeletingPhotoId(removal.photo.id);
+    try {
+      await deleteMutation.mutateAsync(removal.photo.id);
+      setDeletingPhotoId(null);
+    } catch (error) {
+      setDeletingPhotoId(null);
+      setLocalError(getErrorMessage(error));
+    }
+  };
+
   const removePhoto = (photoId: string) => {
     if (!isEditable || deleteMutation.isPending) return;
-    deleteMutation.mutate(photoId);
+    const photoIndex = projectPhotos.findIndex((photo) => photo.id === photoId);
+    const photo = projectPhotos[photoIndex];
+    if (!photo) return;
+
+    void finalizePendingPhotoRemoval();
+    const removal = { index: photoIndex, photo };
+    removedPhotoRef.current = removal;
+    setRecentlyRemovedPhoto(removal);
+    if (previewPhotoId === photoId) closePhotoPreview();
+    setLocalError("");
+    photoDeleteTimerRef.current = window.setTimeout(() => {
+      void finalizePendingPhotoRemoval();
+    }, PHOTO_DELETE_UNDO_MILLISECONDS);
+  };
+
+  const undoPhotoRemoval = () => {
+    if (!removedPhotoRef.current) return;
+    if (photoDeleteTimerRef.current !== null) {
+      window.clearTimeout(photoDeleteTimerRef.current);
+      photoDeleteTimerRef.current = null;
+    }
+    removedPhotoRef.current = null;
+    setRecentlyRemovedPhoto(null);
   };
 
   const activeError = localError
@@ -395,7 +459,7 @@ export function ProjectPhotoActions({
         isLoading={photosQuery.isLoading}
         onFilesSelected={applyFiles}
       >
-        {projectPhotos.map((photo) => {
+        {visibleProjectPhotos.map((photo) => {
           const previewUrl = photo.thumbnail_url ?? photo.preview_url;
           return (
             <PhotoUploadThumbnail
@@ -437,6 +501,12 @@ export function ProjectPhotoActions({
       </ProjectPhotoUploader>
 
       {activeError ? <p className="project-photo-error">{activeError}</p> : null}
+      {recentlyRemovedPhoto ? (
+        <p className="trial-undo-message" role="status">
+          已移除“{recentlyRemovedPhoto.photo.original_filename}”
+          <button type="button" onClick={undoPhotoRemoval}>撤销</button>
+        </p>
+      ) : null}
 
       {previewPhoto && previewPhotoUrl ? createPortal(
         <div

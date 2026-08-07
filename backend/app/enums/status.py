@@ -14,6 +14,7 @@ class UserStatus(StrEnum):
 
 class ProjectStatus(StrEnum):
     DRAFT = "draft"
+    QUEUED = "queued"
     DETECTING = "detecting"
     PENDING_REVIEW = "pending_review"
     REVIEWED = "reviewed"

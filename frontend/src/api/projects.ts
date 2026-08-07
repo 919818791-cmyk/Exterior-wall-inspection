@@ -2,6 +2,7 @@ import { queryOptions } from "@tanstack/react-query";
 
 import { ApiError, apiFetch, apiRequest } from "@/api/client";
 import type { ReportDetail } from "@/types/reports";
+import type { AuthUser } from "@/types/auth";
 import type {
   DetectionConfig,
   DetectionConfigPayload,
@@ -17,16 +18,30 @@ import type {
   UploadBatchPayload
 } from "@/types/projects";
 
-export const projectsQueryOptions = queryOptions({
-  queryKey: ["projects"],
-  queryFn: () => apiRequest<ProjectListItem[]>("/projects")
-});
+type ProjectViewer = Pick<AuthUser, "id" | "role"> | null | undefined;
+
+function viewerQueryKey(viewer: ProjectViewer) {
+  return {
+    role: viewer?.role ?? "anonymous",
+    userId: viewer?.id ?? "anonymous"
+  };
+}
+
+export function projectsQueryOptions(viewer: ProjectViewer) {
+  return queryOptions({
+    queryKey: ["projects", "list", viewerQueryKey(viewer)],
+    queryFn: () => apiRequest<ProjectListItem[]>("/projects"),
+    enabled: Boolean(viewer?.id),
+    refetchInterval: 30_000
+  });
+}
 
 export function projectQueryOptions(projectId: string) {
   return queryOptions({
     queryKey: ["projects", projectId],
     queryFn: () => apiRequest<ProjectDetail>(`/projects/${projectId}`),
-    enabled: Boolean(projectId)
+    enabled: Boolean(projectId),
+    refetchInterval: 30_000
   });
 }
 

@@ -45,9 +45,15 @@ interface ProjectDraft {
   photos: PendingPhoto[];
 }
 
+interface RemovedPendingPhoto {
+  index: number;
+  photo: PendingPhoto;
+}
+
 type SaveStatus = "idle" | "saving" | "saved" | "error";
 
 const PROJECT_AUTO_SAVE_DELAY_MS = 600;
+const PHOTO_DELETE_UNDO_MILLISECONDS = 6000;
 
 function createInitialProject(): ProjectDraft {
   return {
@@ -87,15 +93,29 @@ export function NewProjectPage() {
   const syncQueuedRef = useRef(false);
   const syncPromiseRef = useRef<Promise<ProjectDetail | null> | null>(null);
   const formRevisionRef = useRef(0);
+  const photoDeleteTimerRef = useRef<number | null>(null);
+  const removedPhotoRef = useRef<RemovedPendingPhoto | null>(null);
   const [formError, setFormError] = useState("");
   const [photoError, setPhotoError] = useState("");
   const [saveError, setSaveError] = useState("");
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [startDetectionPending, setStartDetectionPending] = useState(false);
+  const [recentlyRemovedPhoto, setRecentlyRemovedPhoto] = useState<RemovedPendingPhoto | null>(null);
 
   useEffect(() => () => {
     if (autoSaveTimerRef.current !== null) {
       window.clearTimeout(autoSaveTimerRef.current);
+    }
+    if (photoDeleteTimerRef.current !== null) {
+      window.clearTimeout(photoDeleteTimerRef.current);
+    }
+    const removed = removedPhotoRef.current;
+    if (removed?.photo.remoteId) {
+      void deletePhoto(removed.photo.remoteId);
+    }
+    if (removed) {
+      URL.revokeObjectURL(removed.photo.previewUrl);
+      previewUrlsRef.current.delete(removed.photo.previewUrl);
     }
     previewUrlsRef.current.forEach((previewUrl) => URL.revokeObjectURL(previewUrl));
     previewUrlsRef.current.clear();
@@ -307,40 +327,85 @@ export function NewProjectPage() {
     void runDraftSync().catch(() => undefined);
   };
 
-  const removePendingPhoto = async (photoId: string) => {
-    const removedPhoto = formRef.current.photos.find((photo) => photo.localId === photoId);
-    if (!removedPhoto || saveStatus === "saving" || startDetectionPending) return;
+  const finalizePendingPhotoRemoval = async (): Promise<boolean> => {
+    const removal = removedPhotoRef.current;
+    if (!removal) return true;
+    if (photoDeleteTimerRef.current !== null) {
+      window.clearTimeout(photoDeleteTimerRef.current);
+      photoDeleteTimerRef.current = null;
+    }
+    removedPhotoRef.current = null;
+    setRecentlyRemovedPhoto(null);
+    if (!removal.photo.remoteId) {
+      URL.revokeObjectURL(removal.photo.previewUrl);
+      previewUrlsRef.current.delete(removal.photo.previewUrl);
+      return true;
+    }
 
     setSaveStatus("saving");
     setSaveError("");
     try {
-      if (removedPhoto.remoteId) {
-        await deletePhoto(removedPhoto.remoteId);
-      }
-      URL.revokeObjectURL(removedPhoto.previewUrl);
-      previewUrlsRef.current.delete(removedPhoto.previewUrl);
-      replaceForm({
-        ...formRef.current,
-        photos: formRef.current.photos.filter((photo) => photo.localId !== photoId)
-      });
-      formRevisionRef.current += 1;
-      if (savedProjectRef.current) {
-        await Promise.all([
-          queryClient.invalidateQueries({ queryKey: ["projects"], exact: true }),
+      await deletePhoto(removal.photo.remoteId);
+      URL.revokeObjectURL(removal.photo.previewUrl);
+      previewUrlsRef.current.delete(removal.photo.previewUrl);
+      const projectId = savedProjectRef.current?.id;
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["projects"], exact: true }),
+        ...(projectId ? [
           queryClient.invalidateQueries({
-            queryKey: ["projects", savedProjectRef.current.id, "photos"],
+            queryKey: ["projects", projectId, "photos"],
             exact: true
           })
-        ]);
-        setSaveStatus("saved");
-      } else {
-        setSaveStatus("idle");
-      }
+        ] : [])
+      ]);
+      setSaveStatus("saved");
+      return true;
     } catch (error) {
+      const nextPhotos = [...formRef.current.photos];
+      nextPhotos.splice(Math.min(removal.index, nextPhotos.length), 0, removal.photo);
+      replaceForm({ ...formRef.current, photos: nextPhotos });
+      formRevisionRef.current += 1;
       setSaveStatus("error");
-      setSaveError(getErrorMessage(error));
+      setSaveError(`${getErrorMessage(error)}，照片已恢复。`);
+      return false;
     }
+  };
+
+  const removePendingPhoto = (photoId: string) => {
+    const removedPhoto = formRef.current.photos.find((photo) => photo.localId === photoId);
+    if (!removedPhoto || saveStatus === "saving" || startDetectionPending) return;
+
+    const index = formRef.current.photos.findIndex((photo) => photo.localId === photoId);
+    if (index < 0) return;
+    void finalizePendingPhotoRemoval();
+    const removal = { index, photo: removedPhoto };
+    removedPhotoRef.current = removal;
+    setRecentlyRemovedPhoto(removal);
+    replaceForm({
+      ...formRef.current,
+      photos: formRef.current.photos.filter((photo) => photo.localId !== photoId)
+    });
+    formRevisionRef.current += 1;
+    setSaveError("");
     setPhotoError("");
+    photoDeleteTimerRef.current = window.setTimeout(() => {
+      void finalizePendingPhotoRemoval();
+    }, PHOTO_DELETE_UNDO_MILLISECONDS);
+  };
+
+  const undoPhotoRemoval = () => {
+    const removal = removedPhotoRef.current;
+    if (!removal) return;
+    if (photoDeleteTimerRef.current !== null) {
+      window.clearTimeout(photoDeleteTimerRef.current);
+      photoDeleteTimerRef.current = null;
+    }
+    removedPhotoRef.current = null;
+    setRecentlyRemovedPhoto(null);
+    const nextPhotos = [...formRef.current.photos];
+    nextPhotos.splice(Math.min(removal.index, nextPhotos.length), 0, removal.photo);
+    replaceForm({ ...formRef.current, photos: nextPhotos });
+    formRevisionRef.current += 1;
   };
 
   const flushDraftSync = () => {
@@ -366,6 +431,7 @@ export function NewProjectPage() {
     setFormError("");
     setStartDetectionPending(true);
     try {
+      if (!(await finalizePendingPhotoRemoval())) return;
       const project = await runDraftSync();
       const uploadedPhotoCount = formRef.current.photos.filter((photo) => photo.remoteId).length;
       if (!project || !uploadedPhotoCount) {
@@ -495,6 +561,12 @@ export function NewProjectPage() {
       feedback={(
         <>
           {(formError || saveError) ? <p className="create-form-error">{formError || saveError}</p> : null}
+          {recentlyRemovedPhoto ? (
+            <p className="trial-undo-message" role="status">
+              已移除“{recentlyRemovedPhoto.photo.file.name}”
+              <button type="button" onClick={undoPhotoRemoval}>撤销</button>
+            </p>
+          ) : null}
         </>
       )}
     />

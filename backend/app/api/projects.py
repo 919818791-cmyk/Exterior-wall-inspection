@@ -89,6 +89,18 @@ def _count_photos(db: Session, project_id: UUID) -> int:
     ) or 0
 
 
+def _count_valid_photos(db: Session, project_id: UUID) -> int:
+    return db.scalar(
+        select(func.count())
+        .select_from(Photo)
+        .where(
+            Photo.project_id == project_id,
+            Photo.deleted_at.is_(None),
+            Photo.precheck_status == "passed",
+        )
+    ) or 0
+
+
 def _api_base_url(request: Request) -> str:
     headers = getattr(request, "headers", {})
     request_url = getattr(request, "url", None)
@@ -120,6 +132,7 @@ def _project_list_item(
         status=project.status,
         current_report_id=project.current_report_id,
         photo_count=_count_photos(db, project.id) if photo_count is None else photo_count,
+        valid_photo_count=_count_valid_photos(db, project.id),
         total_defects=(
             db.scalar(
                 select(func.count())
@@ -131,6 +144,7 @@ def _project_list_item(
             ) or 0
         ) if total_defects is None else total_defects,
         by_defect_type=by_defect_type or {},
+        started_at=project.started_at,
         created_at=project.created_at,
         updated_at=project.updated_at,
     )
@@ -142,7 +156,6 @@ def _project_detail(db: Session, project: Project) -> ProjectDetailRead:
         **_project_list_item(db, project).model_dump(),
         current_task_id=project.current_task_id,
         current_task_status=current_task.status if current_task else None,
-        started_at=project.started_at,
         completed_at=project.completed_at,
     )
 

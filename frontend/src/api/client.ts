@@ -16,10 +16,13 @@ export class ApiError extends Error {
   }
 }
 
-const DEFAULT_API_BASE_URL = "http://127.0.0.1:8000/api";
+// Use the current origin by default. Vite/Nginx proxies /api to the backend,
+// which keeps local-network and production access from targeting the browser's
+// own 127.0.0.1 by accident.
+const DEFAULT_API_BASE_URL = "/api";
 
 export const API_BASE_URL = (
-  import.meta.env.VITE_API_BASE_URL ?? DEFAULT_API_BASE_URL
+  import.meta.env.VITE_API_BASE_URL?.trim() || DEFAULT_API_BASE_URL
 ).replace(/\/$/, "");
 
 export interface ApiUploadProgress {

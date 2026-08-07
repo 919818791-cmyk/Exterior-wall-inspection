@@ -39,13 +39,13 @@ export const router = createBrowserRouter([
       { index: true, element: deferred(<DashboardPage />) },
       { path: "capabilities", element: <Navigate replace to="/capabilities/crack" /> },
       { path: "capabilities/:type", element: deferred(<CapabilityDetailPage />) },
+      { path: "reports", element: deferred(<ReportListPage />) },
+      { path: "projects", element: deferred(<ProjectListPage />) },
       {
         element: <RequireAuth />,
         children: [
           { path: "trial", element: deferred(<TrialExperiencePage />) },
-          { path: "reports", element: deferred(<ReportListPage />) },
           { path: "reports/:id", element: deferred(<ReportDetailPage />) },
-          { path: "projects", element: deferred(<ProjectListPage />) },
           { path: "projects/new", element: deferred(<NewProjectPage />) },
           { path: "projects/:id", element: deferred(<ProjectDetailPage />) },
           {
