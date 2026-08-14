@@ -18196,7 +18196,7 @@ a {
   align-items: flex-start;
   justify-content: space-between;
   color: #fff;
-  border: 0;
+  border: 1px solid rgba(144, 185, 229, 0.46);
   border-radius: 30px;
   background:
     radial-gradient(85% 130% at -8% 8%, rgba(42, 104, 153, 0.55) 0%, rgba(16, 54, 91, 0.26) 42%, transparent 72%),

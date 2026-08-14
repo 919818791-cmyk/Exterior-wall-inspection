@@ -226,11 +226,11 @@ export function DashboardPage() {
             </p>
             <div className="hero-actions">
               <div className="hero-primary-action">
-                <Link className="button primary" to="/trials/new">
+                <Link className="button primary" to="/trials">
                   <Sparkles aria-hidden="true" />上传照片免费体验<ArrowRight className="hero-action-arrow" aria-hidden="true" />
                 </Link>
               </div>
-              <Link className="button secondary" to="/detections/new">
+              <Link className="button secondary" to="/detections">
                 <ScanSearch aria-hidden="true" />开始专业检测<ArrowRight className="hero-action-arrow" aria-hidden="true" />
               </Link>
               <Link className="button secondary" to="/capabilities/time">
