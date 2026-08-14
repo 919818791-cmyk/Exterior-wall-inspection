@@ -4,25 +4,9 @@ import { useMemo } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 import { deleteReport, reportsQueryOptions, updateTrialReportTitle } from "@/api/reports";
-import { WorkbenchStatusBadge, type WorkbenchStatusVariant } from "@/components/WorkbenchStatusBadge";
-import { WorkbenchDefectSummary, WorkbenchDetectionTypes, WorkbenchResultTable } from "@/components/WorkbenchResultTable";
+import { WorkbenchDefectSummary, WorkbenchResultTable } from "@/components/WorkbenchResultTable";
 import { useAuthStore } from "@/stores/useAuthStore";
 import type { ReportListItem } from "@/types/reports";
-import type { InspectionReportStatus } from "@/types/review";
-
-const reportStatusLabels: Record<InspectionReportStatus, string> = {
-  draft: "草稿",
-  generated: "已完成",
-  pushed: "已完成",
-  revoked: "已撤销"
-};
-
-const reportStatusVariants: Record<InspectionReportStatus, WorkbenchStatusVariant> = {
-  draft: "draft",
-  generated: "completed",
-  pushed: "completed",
-  revoked: "draft"
-};
 
 export function ReportListPage() {
   const navigate = useNavigate();
@@ -88,12 +72,6 @@ export function ReportListPage() {
             onOpen={(report) => navigate(`/trials/${report.id}`)}
             onRename={handleRenameReport}
             renderDetectionDescription={(report) => <WorkbenchDefectSummary counts={report.by_defect_type} variant="compact" />}
-            renderDetectionType={(report) => <WorkbenchDetectionTypes types={report.model_types} />}
-            renderTitleAccessory={(report) => <WorkbenchStatusBadge
-              className="project-name-status-icon"
-              label={reportStatusLabels[report.status]}
-              variant={reportStatusVariants[report.status]}
-            />}
           /> : <ReportEmptyState />}
         </div>
         </section>

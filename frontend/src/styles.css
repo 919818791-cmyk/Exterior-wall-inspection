@@ -15444,7 +15444,7 @@ a {
   display: none;
 }
 
-:is(.project-list-route, .report-list-route) .project-list-search-toolbar {
+:is(.project-list-route, .report-list-route) .project-list-controls {
   display: flex;
   width: min(1100px, 100%);
   margin: 0 auto 20px;
@@ -15473,7 +15473,7 @@ a {
   transform: translateY(-50%);
 }
 
-:is(.project-list-route, .report-list-route) .project-list-search-toolbar input {
+:is(.project-list-route, .report-list-route) .project-list-controls input {
   width: min(320px, 100%);
   min-width: 0;
   height: 46px;
@@ -15525,7 +15525,7 @@ a {
   transform: translateY(-50%);
 }
 
-:is(.project-list-route, .report-list-route) .project-list-search-toolbar input:focus,
+:is(.project-list-route, .report-list-route) .project-list-controls input:focus,
 .project-list-route .project-list-status-filter select:focus {
   border-color: #245cff;
   box-shadow: 0 0 0 3px rgba(36, 92, 255, 0.12);
@@ -15561,7 +15561,7 @@ a {
 }
 
 @media (max-width: 560px) {
-  :is(.project-list-route, .report-list-route) .project-list-search-toolbar {
+  :is(.project-list-route, .report-list-route) .project-list-controls {
     width: calc(100% - 40px);
     padding-left: 0;
     gap: 12px;
@@ -15593,16 +15593,16 @@ a {
 }
 
 .project-list-route .project-workbench-table.workbench-result-table .workbench-result-completion-time-col {
-  width: 230px;
+  width: 290px;
 }
 
 .project-list-route .project-workbench-table.workbench-result-table .workbench-result-description-col {
-  width: 190px;
+  width: 250px;
 }
 
 .project-list-route .project-workbench-table.workbench-result-table .workbench-result-action-col,
 .project-list-route .project-workbench-table.workbench-result-table .workbench-result-action-column {
-  width: 170px;
+  width: 230px;
 }
 
 .project-list-route .project-workbench-table.workbench-result-table .workbench-result-action-column {
@@ -15751,7 +15751,7 @@ a {
 }
 
 .project-list-route .project-workbench-table.workbench-result-table .workbench-result-description-column {
-  width: 190px;
+  width: 250px;
   padding: 0 12px;
   color: #111827;
   text-align: left;
@@ -15833,7 +15833,7 @@ a {
 }
 
 .project-list-route .project-workbench-table.workbench-result-table .workbench-result-completion-time-column {
-  width: 230px;
+  width: 290px;
   color: #475467;
   font-size: 16px;
   font-variant-numeric: tabular-nums;
@@ -15987,7 +15987,7 @@ a {
 
   .project-list-route .project-workbench-table.workbench-result-table .workbench-result-completion-time-col,
   .project-list-route .project-workbench-table.workbench-result-table .workbench-result-completion-time-column {
-    width: 230px;
+    width: 290px;
   }
 
   .project-list-route .project-workbench-table.workbench-result-table .workbench-result-created-at-col,
@@ -16002,7 +16002,7 @@ a {
 
   .project-list-route .project-workbench-table.workbench-result-table .workbench-result-description-col,
   .project-list-route .project-workbench-table.workbench-result-table .workbench-result-description-column {
-    width: 180px;
+    width: 240px;
   }
 
   .project-list-route .project-workbench-table.workbench-result-table .workbench-result-status-column {
@@ -16429,13 +16429,13 @@ a {
 
 :is(.project-list-route, .report-list-route) .project-workbench-layout {
   width: calc(100% - 96px);
-  max-width: 1840px;
+  max-width: 1700px;
   margin: 0 auto;
 }
 
 :is(.project-list-route, .report-list-route) .project-workbench-content-panel {
   width: 100%;
-  max-width: 1840px;
+  max-width: 1700px;
   margin-bottom: 20px;
 }
 
@@ -16463,7 +16463,6 @@ a {
   background: #fff;
 }
 
-:is(.project-list-route, .report-list-route) .project-list-search-toolbar,
 :is(.project-list-route, .report-list-route) .workbench-list-pagination,
 :is(.project-list-route, .report-list-route) .workbench-result-list-panel {
   width: min(calc(100% - 68px), 1760px);
@@ -16471,12 +16470,13 @@ a {
   margin-left: auto;
 }
 
-:is(.project-list-route, .report-list-route) .project-list-search-toolbar {
+:is(.project-list-route, .report-list-route) .project-list-controls {
   width: 100%;
   margin: 0;
   padding: 20px 34px;
-  border-radius: 20px 20px 0 0;
-  background: #fff;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 :is(.project-list-route, .report-list-route) .project-workbench-content-panel > .project-list-panel.workbench-result-list-panel {
@@ -16486,8 +16486,8 @@ a {
   border-radius: 16px;
 }
 
-.project-list-route .project-workbench-content-panel > .project-list-panel.project-list-panel-with-toolbar {
-  border-radius: 0 0 16px 16px;
+.project-list-route .project-workbench-content-panel > .project-list-panel.project-list-panel-with-controls {
+  border-radius: 20px;
 }
 
 .report-list-route .project-workbench-content-panel > .project-list-panel.workbench-result-list-panel {
@@ -16513,7 +16513,7 @@ a {
   width: 100%;
   min-height: 100px;
   margin: 0;
-  padding: 10px 34px 18px;
+  padding: 10px 34px 18px 20px;
   text-align: left;
 }
 
@@ -16537,7 +16537,7 @@ a {
   display: inline-flex;
   position: absolute;
   top: 12px;
-  right: 104px;
+  right: 110px;
   width: 160px;
   height: 58px;
   min-height: 58px;
@@ -16653,7 +16653,6 @@ a {
 }
 
 @media (max-width: 560px) {
-  :is(.project-list-route, .report-list-route) .project-list-search-toolbar,
   :is(.project-list-route, .report-list-route) .workbench-list-pagination,
   :is(.project-list-route, .report-list-route) .workbench-result-list-panel {
     width: calc(100% - 40px);
@@ -16975,14 +16974,14 @@ a {
 @media (min-width: 721px) {
   .project-list-route .project-workbench-table.workbench-result-table {
     width: 100%;
-    min-width: 1350px;
+    min-width: 1530px;
     max-width: none;
     table-layout: fixed;
   }
 
   .report-list-route .trial-records-page .project-workbench-table.workbench-result-table {
     width: 100%;
-    min-width: 1126px;
+    min-width: 1246px;
     max-width: none;
   }
 
@@ -17003,7 +17002,7 @@ a {
 
   .project-list-route .project-workbench-table.workbench-result-table .workbench-result-completion-time-col,
   .project-list-route .project-workbench-table.workbench-result-table .workbench-result-completion-time-column {
-    width: 270px;
+    width: 330px;
   }
 
   .project-list-route .project-workbench-table.workbench-result-table .workbench-result-status-col,
@@ -17014,9 +17013,9 @@ a {
   .project-list-route .project-workbench-table.workbench-result-table .workbench-result-description-col,
   .project-list-route .project-workbench-table.workbench-result-table .workbench-result-description-heading,
   .project-list-route .project-workbench-table.workbench-result-table .workbench-result-description-column {
-    width: 240px;
-    min-width: 240px;
-    max-width: 240px;
+    width: 300px;
+    min-width: 300px;
+    max-width: 300px;
     padding-right: 12px;
     padding-left: 12px;
     text-align: left;
@@ -17024,7 +17023,7 @@ a {
 
   .project-list-route .project-workbench-table.workbench-result-table .workbench-result-action-col,
   .project-list-route .project-workbench-table.workbench-result-table .workbench-result-action-column {
-    width: 180px;
+    width: 240px;
   }
 
   .project-list-route .project-workbench-table.workbench-result-table .workbench-defect-summary {
@@ -17127,7 +17126,7 @@ a {
   }
 
   :is(.project-list-route, .report-list-route) .list-page-heading p,
-  :is(.project-list-route, .report-list-route) .project-list-search-toolbar {
+  :is(.project-list-route, .report-list-route) .project-list-controls {
     display: none;
   }
 
@@ -18327,6 +18326,253 @@ a {
     bottom: 10px;
     left: 14px;
   }
+}
+
+/* Apple-inspired liquid-glass treatment for populated detection lists. */
+:is(.project-list-route, .report-list-route) .project-workbench-content-panel
+  > .project-list-panel.workbench-result-list-panel:not(.project-list-empty-surface) {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    radial-gradient(130% 170% at -12% -28%, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0.05) 28%, transparent 52%),
+    radial-gradient(100% 120% at 112% 118%, rgba(255, 255, 255, 0.07) 0%, transparent 48%),
+    linear-gradient(135deg, rgba(0, 0, 0, 0.52) 0%, rgba(0, 0, 0, 0.3) 48%, rgba(0, 0, 0, 0.44) 100%),
+    rgba(0, 0, 0, 0.24);
+  box-shadow:
+    0 22px 58px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    inset 1px 0 0 rgba(255, 255, 255, 0.06),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.28);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  backdrop-filter: blur(28px) saturate(180%);
+}
+
+:is(.project-list-route, .report-list-route) .workbench-result-list-panel:not(.project-list-empty-surface) :is(
+  .project-workbench-table-wrap,
+  .project-workbench-table.workbench-result-table
+) {
+  background: transparent;
+}
+
+:is(.project-list-route, .report-list-route) .workbench-result-list-panel:not(.project-list-empty-surface)
+  .project-workbench-table.workbench-result-table thead th {
+  color: #c7c7cc;
+  border-bottom-color: rgba(255, 255, 255, 0.2);
+  background: #151619;
+}
+
+:is(.project-list-route, .report-list-route) .workbench-result-list-panel:not(.project-list-empty-surface)
+  .project-workbench-table.workbench-result-table tbody tr:not(.report-delete-row) {
+  background-image: linear-gradient(90deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.18));
+  transition:
+    background-color 180ms ease,
+    box-shadow 180ms ease;
+}
+
+:is(.project-list-route, .report-list-route) .project-workbench-content-panel
+  .workbench-result-list-panel:not(.project-list-empty-surface)
+  .project-workbench-table.workbench-result-table tbody tr:not(.report-delete-row):hover {
+  background-color: rgba(255, 255, 255, 0.08);
+  background-image:
+    linear-gradient(90deg, rgba(36, 92, 255, 0.22) 0%, rgba(36, 92, 255, 0.07) 24%, rgba(255, 255, 255, 0.04) 100%),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.22));
+  background-position: left top, left bottom;
+  background-repeat: no-repeat;
+  background-size: 100% 100%, 100% 1px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+:is(.project-list-route, .report-list-route) .workbench-result-list-panel:not(.project-list-empty-surface)
+  .project-workbench-table .report-name-column .workbench-list-title {
+  color: #fff;
+  text-shadow: 0 1px 5px rgba(0, 0, 0, 0.42);
+}
+
+:is(.project-list-route, .report-list-route) .workbench-result-list-panel:not(.project-list-empty-surface)
+  .project-workbench-table .workbench-result-completion-time-column {
+  color: #fff;
+}
+
+/* Dark-glass actions for populated detection lists. */
+.project-list-route .workbench-result-list-panel:not(.project-list-empty-surface)
+  .workbench-result-action-button {
+  min-height: 36px;
+  padding: 0 12px;
+  color: #fff;
+  border: 1px solid var(--button-primary-background);
+  border-radius: 999px;
+  background: var(--button-primary-background);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  font-size: 15px;
+  transition:
+    color 160ms ease,
+    border-color 160ms ease,
+    background-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.project-list-route .workbench-result-list-panel:not(.project-list-empty-surface)
+  .workbench-result-action-button:hover {
+  color: #fff;
+  border-color: var(--button-primary-background-hover);
+  background: var(--button-primary-background-hover);
+  box-shadow:
+    0 7px 18px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+.project-list-route .workbench-result-list-panel:not(.project-list-empty-surface)
+  .workbench-result-action-button:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.42);
+  outline-offset: 2px;
+}
+
+.project-list-route .workbench-result-list-panel:not(.project-list-empty-surface)
+  .workbench-result-more > summary {
+  color: rgba(255, 255, 255, 0.68);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  transition:
+    color 160ms ease,
+    border-color 160ms ease,
+    background-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.project-list-route .workbench-result-list-panel:not(.project-list-empty-surface)
+  :is(.workbench-result-more > summary:hover, .workbench-result-more[open] > summary) {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.24);
+  background: rgba(255, 255, 255, 0.15);
+  box-shadow:
+    0 7px 18px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+
+.project-list-route .workbench-result-list-panel:not(.project-list-empty-surface)
+  .workbench-result-more > summary:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.42);
+  outline-offset: 2px;
+}
+
+.project-list-route .workbench-result-list-panel:not(.project-list-empty-surface)
+  .workbench-result-more-menu {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(22, 23, 26, 0.96);
+  box-shadow:
+    0 16px 36px rgba(0, 0, 0, 0.38),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  backdrop-filter: blur(20px) saturate(150%);
+}
+
+.project-list-route .workbench-result-list-panel:not(.project-list-empty-surface)
+  .workbench-result-more-menu button {
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.project-list-route .workbench-result-list-panel:not(.project-list-empty-surface)
+  .workbench-result-more-menu button:hover:not(:disabled),
+.project-list-route .workbench-result-list-panel:not(.project-list-empty-surface)
+  .workbench-result-more-menu button:focus-visible:not(:disabled) {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.project-list-route .workbench-result-list-panel:not(.project-list-empty-surface)
+  .workbench-result-more-menu button:focus-visible {
+  outline-color: rgba(255, 255, 255, 0.3);
+}
+
+.project-list-route .workbench-result-list-panel:not(.project-list-empty-surface)
+  .workbench-result-more-menu button.danger {
+  color: #ff7777;
+}
+
+.project-list-route .workbench-result-list-panel:not(.project-list-empty-surface)
+  .workbench-result-more-menu button:disabled {
+  color: rgba(255, 255, 255, 0.34);
+}
+
+/* Defect summaries use restrained glass pills on the dark list surface. */
+.project-list-route .workbench-result-list-panel:not(.project-list-empty-surface)
+  .workbench-result-description-column,
+.project-list-route .workbench-result-list-panel:not(.project-list-empty-surface)
+  .workbench-result-description-column p,
+.project-list-route .workbench-result-list-panel:not(.project-list-empty-surface)
+  .workbench-defect-summary,
+.project-list-route .workbench-result-list-panel:not(.project-list-empty-surface)
+  :is(.workbench-defect-summary-total, .workbench-defect-summary-details) {
+  color: #fff;
+}
+
+.project-list-route .workbench-result-list-panel:not(.project-list-empty-surface)
+  .workbench-defect-summary-detail-pill {
+  min-height: 36px;
+  padding: 0 12px;
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  font-size: 16px;
+  line-height: 1;
+}
+
+.project-list-route .workbench-result-list-panel:not(.project-list-empty-surface)
+  .workbench-defect-summary-empty {
+  color: #fff;
+}
+
+/* Search and status controls blend into the dark liquid-glass toolbar. */
+:is(.project-list-route, .report-list-route) .project-list-controls input,
+.project-list-route .project-list-controls .project-list-status-filter select {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 6px 18px rgba(0, 0, 0, 0.12);
+  caret-color: #fff;
+  color-scheme: dark;
+  font-weight: 500;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+:is(.project-list-route, .report-list-route) .project-list-controls input::placeholder {
+  color: rgba(255, 255, 255, 0.72);
+  opacity: 1;
+}
+
+:is(.project-list-route, .report-list-route) .project-list-controls :is(
+  .list-page-search-field > svg,
+  .project-list-status-filter > svg
+) {
+  color: rgba(255, 255, 255, 0.88);
+}
+
+:is(.project-list-route, .report-list-route) .project-list-controls input:hover,
+.project-list-route .project-list-controls .project-list-status-filter select:hover {
+  border-color: rgba(255, 255, 255, 0.24);
+  background: rgba(255, 255, 255, 0.15);
+}
+
+:is(.project-list-route, .report-list-route) .project-list-controls input:focus,
+.project-list-route .project-list-controls .project-list-status-filter select:focus {
+  border-color: var(--button-primary-background);
+  background: rgba(255, 255, 255, 0.14);
+  box-shadow:
+    0 0 0 3px rgba(36, 92, 255, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.project-list-route .project-list-controls .project-list-status-filter select option {
+  color: #fff;
+  background: #1b1c1f;
 }
 
 /* The shared homepage header is fixed, so list content needs an explicit header-height offset. */

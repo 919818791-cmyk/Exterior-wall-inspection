@@ -4,8 +4,7 @@ import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 import { deleteProject, projectsQueryOptions, updateProject } from "@/api/projects";
-import { WorkbenchStatusBadge, type WorkbenchStatusVariant } from "@/components/WorkbenchStatusBadge";
-import { WorkbenchDefectSummary, WorkbenchDetectionTypes, WorkbenchResultTable } from "@/components/WorkbenchResultTable";
+import { WorkbenchDefectSummary, WorkbenchResultTable } from "@/components/WorkbenchResultTable";
 import { useAuthStore } from "@/stores/useAuthStore";
 import type { ProjectListItem } from "@/types/projects";
 import {
@@ -15,12 +14,6 @@ import {
   getProfessionalEstimatedCompletionAt,
   type ProfessionalDisplayStatus
 } from "@/utils/projectDisplay";
-
-const projectStatusVariants: Record<ProfessionalDisplayStatus, WorkbenchStatusVariant> = {
-  draft: "draft",
-  detecting: "detecting",
-  completed: "completed"
-};
 
 type ProfessionalStatusFilter = "all" | ProfessionalDisplayStatus;
 
@@ -108,39 +101,37 @@ export function ProjectListPage() {
           <p>相比普通检测，提供更准确的检测结果，并增加可见光与热红外图像对照、立面朝向和拍摄高度等信息。</p>
           {visibleProjects.length ? <Link className="list-page-heading-action" to="/detections/new"><Plus aria-hidden="true" />开始检测</Link> : null}
         </header>
-        {visibleProjects.length ? <div
-          className="project-list-search-toolbar"
-          role="search"
-        >
-          <div className="list-page-search-field">
-            <Search aria-hidden="true" />
-            <input
-              aria-label="搜索检测项目"
-              placeholder="输入检测名称"
-              type="search"
-              value={searchKeyword}
-              onChange={(event) => setSearchKeyword(event.target.value)}
-            />
-          </div>
-          <div className="project-list-status-filter">
-            <select
-              aria-label="按检测状态筛选"
-              value={statusFilter}
-              onChange={(event) => setStatusFilter(event.target.value as ProfessionalStatusFilter)}
-            >
-              {professionalStatusOptions.map((option) => <option key={option.value} value={option.value}>
-                {option.label}
-              </option>)}
-            </select>
-            <ChevronDown aria-hidden="true" />
-          </div>
-        </div> : null}
         {projectsQuery.isError ? <p className="project-list-error">项目列表加载失败，请稍后重试。</p> : null}
         {renameProjectMutation.isError || deleteProjectMutation.isError ? <p className="project-list-error" role="alert">操作失败，请稍后重试。</p> : null}
         <section
-          className={`project-list-panel workbench-result-list-panel${visibleProjects.length ? " project-list-panel-with-toolbar" : ""}${showProjectEmptyState ? " project-list-empty-surface" : ""}`}
+          className={`project-list-panel workbench-result-list-panel${visibleProjects.length ? " project-list-panel-with-controls" : ""}${showProjectEmptyState ? " project-list-empty-surface" : ""}`}
           aria-label="项目列表"
-        ><div className="project-table-wrap project-workbench-table-wrap">
+        >
+          {visibleProjects.length ? <div className="project-list-controls" role="search">
+            <div className="list-page-search-field">
+              <Search aria-hidden="true" />
+              <input
+                aria-label="搜索检测项目"
+                placeholder="输入检测名称"
+                type="search"
+                value={searchKeyword}
+                onChange={(event) => setSearchKeyword(event.target.value)}
+              />
+            </div>
+            <div className="project-list-status-filter">
+              <select
+                aria-label="按检测状态筛选"
+                value={statusFilter}
+                onChange={(event) => setStatusFilter(event.target.value as ProfessionalStatusFilter)}
+              >
+                {professionalStatusOptions.map((option) => <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>)}
+              </select>
+              <ChevronDown aria-hidden="true" />
+            </div>
+          </div> : null}
+          <div className="project-table-wrap project-workbench-table-wrap">
           {projectsQuery.isLoading ? <div className="project-empty"><strong>正在加载项目…</strong></div> : workbenchProjects.length ? <WorkbenchResultTable
             canDelete={(project) => canManageProject(project) && ["draft", "reviewed", "completed"].includes(project.status)}
             canRename={canManageProject}
@@ -172,12 +163,6 @@ export function ProjectListPage() {
               counts={project.by_defect_type}
               placeholder={project.professionalState.status === "completed" ? undefined : "--"}
               variant="compact"
-            />}
-            renderDetectionType={(project) => <WorkbenchDetectionTypes types={project.model_types} />}
-            renderTitleAccessory={(project) => <WorkbenchStatusBadge
-              className="project-name-status-icon"
-              label={project.professionalState.statusLabel}
-              variant={projectStatusVariants[project.professionalState.status]}
             />}
           /> : visibleProjects.length && hasActiveFilters ? <div className="project-empty"><strong>未找到符合条件的检测项目</strong></div> : <ProjectEmptyState />}
         </div>
