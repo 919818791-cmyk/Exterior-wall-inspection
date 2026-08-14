@@ -14,7 +14,11 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from app.api.dependencies import AuthenticatedUser, ensure_project_access, get_current_user
+from app.api.dependencies import (
+    AuthenticatedUser,
+    ensure_project_write_access,
+    get_current_user,
+)
 from app.api.projects import _get_project_or_404
 from app.core.config import get_settings
 from app.db.session import get_db
@@ -87,7 +91,6 @@ DEFECT_TYPE_NAMES = {
     "hollow": "空鼓",
 }
 FORMAL_VISIBLE_DEFECT_TYPES = frozenset({"crack", "spalling"})
-FORMAL_DETECTION_QUEUE_SECONDS = 60 * 60
 FORMAL_BACKEND_WORKER_ID = "formal-backend-queue"
 _formal_detection_jobs: set[asyncio.Task[None]] = set()
 
@@ -449,7 +452,7 @@ async def start_detection(
     current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> DetectionTaskRead:
     project = _get_project_or_404(db, project_id)
-    ensure_project_access(project, current_user)
+    ensure_project_write_access(project, current_user)
     if project.status != ProjectStatus.DRAFT.value:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -705,34 +708,8 @@ async def _run_formal_project_inference(
     prompts: Any,
     inference_snapshot: dict[str, Any],
 ) -> None:
-    """Run a formal task after its persisted one-hour queue window."""
+    """Run a formal task immediately after it has been persisted."""
     from app.db.session import SessionLocal
-
-    queue_db = SessionLocal()
-    try:
-        queued_project = queue_db.get(Project, project_id)
-        queued_task = queue_db.get(DetectionTask, task_id)
-        if (
-            queued_project is None
-            or queued_project.deleted_at is not None
-            or queued_task is None
-            or queued_task.status != DetectionTaskStatus.PENDING.value
-            or queued_project.status != ProjectStatus.QUEUED.value
-        ):
-            return
-        queued_at = queued_project.started_at or queued_task.created_at
-    finally:
-        queue_db.close()
-
-    remaining_seconds = max(
-        0.0,
-        (
-            queued_at + timedelta(seconds=FORMAL_DETECTION_QUEUE_SECONDS)
-            - datetime.now(UTC)
-        ).total_seconds(),
-    )
-    if remaining_seconds:
-        await asyncio.sleep(remaining_seconds)
 
     db = SessionLocal()
     usage_reservation: InferenceUsageReservation | None = None

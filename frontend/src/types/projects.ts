@@ -32,6 +32,7 @@ export type ProjectUpdatePayload = Partial<ProjectCreatePayload>;
 
 export interface ProjectListItem {
   id: string;
+  created_by: string;
   project_no: string;
   name: string;
   client_name: string | null;
@@ -47,8 +48,10 @@ export interface ProjectListItem {
   valid_photo_count: number;
   total_defects: number;
   by_defect_type: Record<string, number>;
+  model_types: string[];
   first_photo_url: string | null;
   started_at: string | null;
+  completed_at: string | null;
   created_at: string;
   updated_at: string;
 }

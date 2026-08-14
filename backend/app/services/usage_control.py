@@ -57,6 +57,11 @@ return next
 if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end
 return 0
 """
+    _CACHE_POP_SCRIPT = """
+local value = redis.call('GET', KEYS[1])
+if value then redis.call('DEL', KEYS[1]) end
+return value
+"""
     _ACQUIRE_SEMAPHORE_SCRIPT = """
 local now = tonumber(ARGV[1])
 redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', now)
@@ -232,6 +237,27 @@ return 1
                 return
         with self._memory_lock:
             self._memory[key] = (encoded, time.time() + ttl_seconds)
+
+    def cache_pop(self, scope: str, identity: str) -> dict[str, Any] | None:
+        """Read and delete a short-lived cache entry atomically."""
+        key = self._key(f"cache:{scope}", identity)
+        if self._redis is not None:
+            try:
+                value = self._redis.eval(self._CACHE_POP_SCRIPT, 1, key)
+            except RedisError as exc:
+                self._redis_failure(exc)
+                return None
+        else:
+            now = time.time()
+            with self._memory_lock:
+                self._purge_memory(now)
+                value = self._memory.pop(key, (None, None))[0]
+        if value is None:
+            return None
+        try:
+            return json.loads(value) if isinstance(value, str) else value
+        except (TypeError, json.JSONDecodeError):
+            return None
 
     def token_is_revoked(self, token_id: str) -> bool:
         key = self._key("revoked-token", token_id)

@@ -26,6 +26,7 @@ class ReportListItem(ApiSchema):
     address: str | None
     total_defects: int
     by_defect_type: dict[str, int] = Field(default_factory=dict)
+    model_types: list[str] = Field(default_factory=list)
     photo_count: int = 0
     first_photo_url: str | None = None
     generated_at: datetime

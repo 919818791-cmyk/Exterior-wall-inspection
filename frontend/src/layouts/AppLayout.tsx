@@ -13,18 +13,19 @@ import { useAuthStore } from "@/stores/useAuthStore";
 import type { CurrentAccountUsageResponse } from "@/types/accountUsage";
 
 function pageClass(pathname: string) {
-  if (pathname === "/trial") return "project-page new-project-page project-list-chrome trial-route";
-  if (pathname === "/reports") return "project-page project-list-route report-list-route";
-  if (pathname === "/projects") return "project-page project-list-route";
+  if (pathname === "/") return "home-route";
+  if (pathname === "/trials/new") return "project-page new-project-page project-list-chrome trial-route";
+  if (pathname === "/trials") return "project-page project-list-route report-list-route";
+  if (pathname === "/detections") return "project-page project-list-route";
   if (pathname === "/capabilities/time") return "detail-page recommendation-detail-page";
   if (pathname.startsWith("/accounts")) return "project-page account-management-route";
   if (pathname.startsWith("/data-management")) return "project-page data-management-route";
   if (pathname === "/review") return "project-page review-workbench-route review-workbench-list-route";
   if (pathname.startsWith("/review")) return "project-page review-workbench-route";
-  if (/^\/reports\/[^/]+$/.test(pathname)) return "project-page report-detail-route";
-  if (pathname === "/projects/new") return "project-page new-project-page project-list-chrome";
-  if (/^\/projects\/[^/]+$/.test(pathname)) return "project-page project-detail-page";
-  if (pathname.startsWith("/projects") || pathname.startsWith("/accounts") || pathname.startsWith("/data-management") || pathname.startsWith("/system-settings") || pathname.startsWith("/reports") || pathname.startsWith("/review")) {
+  if (/^\/trials\/[^/]+$/.test(pathname) || /^\/detections\/results\/[^/]+$/.test(pathname) || /^\/reports\/[^/]+$/.test(pathname)) return "project-page report-detail-route";
+  if (pathname === "/detections/new") return "project-page new-project-page project-list-chrome";
+  if (/^\/detections\/[^/]+$/.test(pathname)) return "project-page project-detail-page";
+  if (pathname.startsWith("/detections") || pathname.startsWith("/trials") || pathname.startsWith("/accounts") || pathname.startsWith("/data-management") || pathname.startsWith("/system-settings") || pathname.startsWith("/review")) {
     return "project-page";
   }
   if (pathname.startsWith("/capabilities")) return "detail-page";
@@ -50,6 +51,7 @@ export function AppLayout() {
   const [managementMenuOpen, setManagementMenuOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [headerScrolled, setHeaderScrolled] = useState(false);
+  const [homeNavigationVisible, setHomeNavigationVisible] = useState(true);
   const [projectDetailListChrome, setProjectDetailListChrome] = useState(false);
   const accountUsageQuery = useQuery({
     ...currentAccountUsageQueryOptions,
@@ -59,24 +61,27 @@ export function AppLayout() {
   const managementMenuRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLElement>(null);
   const pendingAuthenticationActionRef = useRef<(() => void) | null>(null);
-  const isTrialRoute = location.pathname === "/trial";
   const defectKey = location.pathname.match(/^\/capabilities\/(crack|spalling|missing|moisture|corrosion|hollow)$/)?.[1];
-  const isReviewDetailRoute = /^\/review\/projects\/[^/]+$/.test(location.pathname);
+  const isReviewDetailRoute = /^\/review\/detections\/[^/]+$/.test(location.pathname);
   const isStandaloneManagementRoute = (
     location.pathname === "/system-settings"
     || location.pathname.startsWith("/accounts")
     || location.pathname.startsWith("/data-management")
     || location.pathname === "/review"
+    || (location.pathname !== "/trials/new" && /^\/trials\/[^/]+$/.test(location.pathname))
+    || /^\/detections\/results\/[^/]+$/.test(location.pathname)
     || /^\/reports\/[^/]+$/.test(location.pathname)
   );
-  const isProjectRoute = location.pathname.startsWith("/projects");
+  const isDetectionRoute = location.pathname.startsWith("/detections");
   const isManagementRoute = location.pathname.startsWith("/accounts") || location.pathname.startsWith("/data-management") || location.pathname.startsWith("/system-settings") || location.pathname.startsWith("/review");
   const isHomeRoute = location.pathname === "/";
-  const isReportRoute = location.pathname === "/reports" || location.pathname.startsWith("/reports/");
+  const isTrialSectionRoute = location.pathname.startsWith("/trials");
+  const isCreationRoute = location.pathname === "/detections/new" || location.pathname === "/trials/new";
   const currentPageClass = pageClass(location.pathname);
   const resolvedPageClass = `${currentPageClass}${projectDetailListChrome ? " project-list-chrome" : ""}`;
   const isCapabilityDetailRoute = location.pathname.startsWith("/capabilities");
-  const isThemeHeroRoute = isTrialRoute || isReportRoute || isProjectRoute || isManagementRoute;
+  const usesHomeHeaderStyle = isHomeRoute || isCapabilityDetailRoute || location.pathname === "/detections" || location.pathname === "/trials";
+  const isThemeHeroRoute = isTrialSectionRoute || isDetectionRoute || isManagementRoute;
   const usesPermanentDarkShell = isCapabilityDetailRoute || isThemeHeroRoute;
   const usesDarkShell = usesPermanentDarkShell;
   const canAccessAdmin = user?.role === "admin";
@@ -113,8 +118,9 @@ export function AppLayout() {
   }, [clearSession, navigate, queryClient]);
 
   useEffect(() => {
-    if (!isHomeRoute) {
+    if (!usesHomeHeaderStyle) {
       setHeaderScrolled(false);
+      setHomeNavigationVisible(true);
       return undefined;
     }
 
@@ -122,6 +128,17 @@ export function AppLayout() {
     updateHeader();
     window.addEventListener("scroll", updateHeader, { passive: true });
     return () => window.removeEventListener("scroll", updateHeader);
+  }, [usesHomeHeaderStyle]);
+
+  useEffect(() => {
+    if (!isHomeRoute) return undefined;
+
+    const handleVisibilityChange = (event: Event) => {
+      setHomeNavigationVisible((event as CustomEvent<boolean>).detail);
+    };
+
+    window.addEventListener("home-navigation-visibility", handleVisibilityChange);
+    return () => window.removeEventListener("home-navigation-visibility", handleVisibilityChange);
   }, [isHomeRoute]);
 
   useEffect(() => {
@@ -139,7 +156,7 @@ export function AppLayout() {
   useEffect(() => {
     setManagementMenuOpen(false);
     setMobileNavOpen(false);
-    if (!/^\/projects\/[^/]+$/.test(location.pathname)) setProjectDetailListChrome(false);
+    if (!/^\/detections\/[^/]+$/.test(location.pathname)) setProjectDetailListChrome(false);
   }, [location.pathname]);
 
   useEffect(() => {
@@ -274,13 +291,13 @@ export function AppLayout() {
     >
       <header
         ref={headerRef}
-        hidden={isReviewDetailRoute || isStandaloneManagementRoute}
-        className={`site-header centered-nav ${isHomeRoute ? "home-site-header" : ""} ${headerScrolled ? "is-scrolled" : ""} ${mobileNavOpen ? "mobile-nav-open" : ""}`}
+        hidden={(isHomeRoute && !homeNavigationVisible) || isReviewDetailRoute || isStandaloneManagementRoute}
+        className={`site-header centered-nav ${usesHomeHeaderStyle ? "home-site-header" : ""} ${isCreationRoute ? "creation-page-header" : ""} ${headerScrolled ? "is-scrolled" : ""} ${mobileNavOpen ? "mobile-nav-open" : ""}`}
         aria-label="顶部导航"
       >
-        <NavLink className="brand" to="/" aria-label="建筑外墙巡检智能报告平台首页" onClick={() => setMobileNavOpen(false)}>
+        <NavLink className="brand" to="/" aria-label="外墙智能巡检平台首页" onClick={() => setMobileNavOpen(false)}>
           <span className="brand-mark" aria-hidden="true"><span /><span /><span /></span>
-          <span className="brand-name">建筑外墙巡检智能报告平台</span>
+          <span className="brand-name">外墙智能巡检平台</span>
         </NavLink>
 
         <button
@@ -301,8 +318,8 @@ export function AppLayout() {
         <div id="mobile-navigation-panel" className="mobile-nav-panel">
           <nav className="main-nav" aria-label="主导航">
           <NavLink className={({ isActive }) => (isActive ? "active" : "")} end to="/" onClick={() => setMobileNavOpen(false)}>首页</NavLink>
-          <NavLink className={({ isActive }) => (isActive ? "active" : "")} to="/projects" onClick={() => { setManagementMenuOpen(false); setMobileNavOpen(false); }}>专业检测</NavLink>
-          <NavLink className={({ isActive }) => (isActive ? "active" : "")} to="/reports" onClick={() => { setManagementMenuOpen(false); setMobileNavOpen(false); }}>免费试用</NavLink>
+          <NavLink className={({ isActive }) => (isActive ? "active" : "")} to="/detections" onClick={() => { setManagementMenuOpen(false); setMobileNavOpen(false); }}>专业检测</NavLink>
+          <NavLink className={({ isActive }) => (isActive ? "active" : "")} to="/trials" onClick={() => { setManagementMenuOpen(false); setMobileNavOpen(false); }}>免费试用</NavLink>
           <NavLink
             className={({ isActive }) => (isActive ? "active" : "")}
             to="/capabilities/time"

@@ -13,6 +13,7 @@ export interface ReportListItem {
   address: string | null;
   total_defects: number;
   by_defect_type: Record<string, number>;
+  model_types: string[];
   photo_count: number;
   first_photo_url: string | null;
   generated_at: string;

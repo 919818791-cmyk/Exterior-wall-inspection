@@ -6,7 +6,8 @@ gsap.registerPlugin(ScrollTrigger);
 
 export function usePublicHeroAnimation(
   heroRef: RefObject<HTMLElement>,
-  animationKey?: unknown
+  animationKey?: unknown,
+  scrollerRef?: RefObject<HTMLElement>
 ) {
   useLayoutEffect(() => {
     const hero = heroRef.current;
@@ -43,11 +44,16 @@ export function usePublicHeroAnimation(
       }
 
       if (heroCopy) {
+        const scrollerCandidate = scrollerRef?.current;
+        const scroller = scrollerCandidate && !["visible", "clip"].includes(getComputedStyle(scrollerCandidate).overflowY)
+          ? scrollerCandidate
+          : undefined;
         gsap.to(heroCopy, {
           y: -150,
           autoAlpha: 0,
           ease: "none",
           scrollTrigger: {
+            ...(scroller ? { scroller } : {}),
             trigger: hero,
             start: "top top",
             end: "50% top",
@@ -66,5 +72,5 @@ export function usePublicHeroAnimation(
       window.cancelAnimationFrame(refreshFrame);
       context.revert();
     };
-  }, [animationKey, heroRef]);
+  }, [animationKey, heroRef, scrollerRef]);
 }

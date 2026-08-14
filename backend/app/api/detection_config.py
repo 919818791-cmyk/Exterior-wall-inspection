@@ -7,7 +7,12 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.dependencies import AuthenticatedUser, ensure_project_access, get_current_user
+from app.api.dependencies import (
+    AuthenticatedUser,
+    ensure_project_access,
+    ensure_project_write_access,
+    get_current_user,
+)
 from app.api.projects import _ensure_project_editable, _get_project_or_404
 from app.db.session import get_db
 from app.models.tables import DetectionConfig
@@ -60,7 +65,7 @@ def update_detection_config(
     current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> DetectionConfigResponse:
     project = _get_project_or_404(db, project_id)
-    ensure_project_access(project, current_user)
+    ensure_project_write_access(project, current_user)
     _ensure_project_editable(project)
     config = db.scalar(select(DetectionConfig).where(DetectionConfig.project_id == project_id))
 

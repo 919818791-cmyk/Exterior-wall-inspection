@@ -19,7 +19,7 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 
-WATERMARK_TEXT = "建筑外墙巡检智能报告平台（试用版本）"
+WATERMARK_TEXT = "外墙智能巡检平台（试用版本）"
 
 DEFECT_DISPLAY = {
     "crack": ("裂缝", "#DC2626"),

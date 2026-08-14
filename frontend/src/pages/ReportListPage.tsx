@@ -1,13 +1,13 @@
-import { useQuery } from "@tanstack/react-query";
-import { Plus } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ChevronRight, Plus } from "lucide-react";
+import { useMemo } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
-import { reportsQueryOptions } from "@/api/reports";
-import { ListPagination } from "@/components/ListPagination";
+import { deleteReport, reportsQueryOptions, updateTrialReportTitle } from "@/api/reports";
 import { WorkbenchStatusBadge, type WorkbenchStatusVariant } from "@/components/WorkbenchStatusBadge";
-import { WorkbenchDefectSummary, WorkbenchResultTable } from "@/components/WorkbenchResultTable";
+import { WorkbenchDefectSummary, WorkbenchDetectionTypes, WorkbenchResultTable } from "@/components/WorkbenchResultTable";
 import { useAuthStore } from "@/stores/useAuthStore";
+import type { ReportListItem } from "@/types/reports";
 import type { InspectionReportStatus } from "@/types/review";
 
 const reportStatusLabels: Record<InspectionReportStatus, string> = {
@@ -24,70 +24,78 @@ const reportStatusVariants: Record<InspectionReportStatus, WorkbenchStatusVarian
   revoked: "draft"
 };
 
-const PAGE_SIZE = 5;
-
 export function ReportListPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const user = useAuthStore((state) => state.user);
   const reportsQuery = useQuery(reportsQueryOptions(user));
-  const [searchKeyword, setSearchKeyword] = useState("");
-  const [page, setPage] = useState(1);
-  const reports = useMemo(() => reportsQuery.data ?? [], [reportsQuery.data]);
-  const matchingReports = useMemo(() => {
-    const keyword = searchKeyword.trim().toLocaleLowerCase();
-    if (!keyword) return reports;
-    return reports.filter((report) => report.title.toLocaleLowerCase().includes(keyword));
-  }, [reports, searchKeyword]);
-  const totalPages = Math.max(1, Math.ceil(matchingReports.length / PAGE_SIZE));
-  const currentPage = Math.min(page, totalPages);
-  const pagedReports = matchingReports.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const renameReportMutation = useMutation({
+    mutationFn: ({ reportId, title }: { reportId: string; title: string }) => updateTrialReportTitle(reportId, title),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["reports"] });
+    }
+  });
+  const deleteReportMutation = useMutation({
+    mutationFn: deleteReport,
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["reports"] }),
+        queryClient.invalidateQueries({ queryKey: ["projects"] })
+      ]);
+    }
+  });
 
+  const handleRenameReport = (report: ReportListItem) => {
+    const nextTitle = window.prompt("请输入新的检测名称", report.title);
+    if (nextTitle === null) return;
+    const title = nextTitle.trim();
+    if (!title) {
+      window.alert("检测名称不能为空。");
+      return;
+    }
+    if (title === report.title) return;
+    renameReportMutation.mutate({ reportId: report.id, title });
+  };
+
+  const handleDeleteReport = (report: ReportListItem) => {
+    if (!window.confirm(`确认删除试用结果“${report.title}”？删除后将无法恢复。`)) return;
+    deleteReportMutation.mutate(report.id);
+  };
+
+  const reports = useMemo(() => reportsQuery.data ?? [], [reportsQuery.data]);
+  const showReportEmptyState = !reportsQuery.isLoading && reports.length === 0;
   return <div className="report-list-page project-management-page workbench-result-list-page trial-records-page"><div className="project-workspace">
     <div className="project-workbench-layout">
       <div className="project-workbench-content-panel">
-        <header className="list-page-heading">
+        <header className={`list-page-heading${showReportEmptyState ? " list-page-heading-empty-hidden" : ""}`}>
           <div className="list-page-heading-row">
             <h1>免费试用</h1>
-            <Link className="list-page-heading-action" to="/trial"><Plus aria-hidden="true" />开始试用</Link>
           </div>
           <p>上传照片即可体验 AI 外墙缺陷检测，快速了解结果样式。</p>
+          {reports.length ? <Link className="list-page-heading-action" to="/trials/new"><Plus aria-hidden="true" />开始试用</Link> : null}
         </header>
-        {reports.length ? <div
-          className="project-list-search-toolbar"
-          role="search"
-        >
-          <input
-            aria-label="搜索试用记录"
-            placeholder="输入结果名称"
-            type="search"
-            value={searchKeyword}
-            onChange={(event) => {
-              setSearchKeyword(event.target.value);
-              setPage(1);
-            }}
-          />
-        </div> : null}
         {reportsQuery.isError ? <p className="project-list-error">检测结果加载失败。<button className="inline-retry-button" type="button" onClick={() => void reportsQuery.refetch()}>重新加载</button></p> : null}
-        <section className="project-list-panel workbench-result-list-panel" aria-label="试用记录列表"><div className="project-table-wrap project-workbench-table-wrap">
-          {reportsQuery.isLoading ? <div className="project-empty"><strong>正在加载结果…</strong></div> : matchingReports.length ? <WorkbenchResultTable
-            getAriaLabel={(report) => `查看检测结果：${report.title}`}
+        {renameReportMutation.isError || deleteReportMutation.isError ? <p className="project-list-error" role="alert">操作失败，请稍后重试。</p> : null}
+        <section
+          className={`project-list-panel workbench-result-list-panel${showReportEmptyState ? " project-list-empty-surface" : ""}`}
+          aria-label="试用记录列表"
+        ><div className="project-table-wrap project-workbench-table-wrap">
+          {reportsQuery.isLoading ? <div className="project-empty"><strong>正在加载结果…</strong></div> : reports.length ? <WorkbenchResultTable
+            getActionLabel={(report) => report.status === "generated" || report.status === "pushed" ? "查看结果" : "查看详情"}
             getKey={(report) => report.id}
-            items={pagedReports}
-            onOpen={(report) => navigate(`/reports/${report.id}`)}
-            renderDetectionDescription={(report) => <WorkbenchDefectSummary counts={report.by_defect_type} />}
+            items={reports}
+            onDelete={handleDeleteReport}
+            onOpen={(report) => navigate(`/trials/${report.id}`)}
+            onRename={handleRenameReport}
+            renderDetectionDescription={(report) => <WorkbenchDefectSummary counts={report.by_defect_type} variant="compact" />}
+            renderDetectionType={(report) => <WorkbenchDetectionTypes types={report.model_types} />}
             renderTitleAccessory={(report) => <WorkbenchStatusBadge
               className="project-name-status-icon"
               label={reportStatusLabels[report.status]}
               variant={reportStatusVariants[report.status]}
             />}
-          /> : reports.length && searchKeyword.trim() ? <div className="project-empty"><strong>未找到匹配的试用记录</strong></div> : <ReportEmptyState />}
+          /> : <ReportEmptyState />}
         </div>
-        {matchingReports.length ? <ListPagination
-          currentPage={currentPage}
-          onPageChange={setPage}
-          pageSize={PAGE_SIZE}
-          totalItems={matchingReports.length}
-        /> : null}
         </section>
       </div>
     </div>
@@ -95,7 +103,19 @@ export function ReportListPage() {
 }
 
 function ReportEmptyState() {
-  return <div className="project-empty project-workbench-empty project-workbench-welcome-empty">
-    <span className="project-welcome-supporting-copy">暂无试用记录，上传照片即可体验智能检测</span>
+  return <div className="project-empty project-workbench-empty project-workbench-welcome-empty public-list-hero-empty">
+    <span className="project-welcome-supporting-copy project-empty-hero-title">
+      <span className="project-empty-hero-title-primary">上传照片</span>
+      <span className="project-empty-hero-title-gradient">开始第一次免费试用</span>
+    </span>
+    <Link className="public-empty-cta-card" to="/trials/new">
+      <span className="public-empty-card-copy">
+        <strong>免费试用</strong>
+        <span>上传照片即可体验 AI 外墙缺陷检测，快速了解结果样式。</span>
+      </span>
+      <span className="public-empty-card-action">
+        开始试用<ChevronRight aria-hidden="true" />
+      </span>
+    </Link>
   </div>;
 }

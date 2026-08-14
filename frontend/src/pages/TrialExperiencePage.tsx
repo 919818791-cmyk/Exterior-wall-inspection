@@ -783,13 +783,13 @@ export function TrialExperiencePage() {
     if (!archivedReportId) return;
     allowNavigationRef.current = true;
     setDetectionDialogStage(null);
-    navigate(`/reports/${archivedReportId}`);
+    navigate(`/trials/${archivedReportId}`);
   }
 
   function returnToTrialList() {
     allowNavigationRef.current = true;
     setDetectionDialogStage(null);
-    navigate("/reports");
+    navigate("/trials");
   }
 
   function handleGeneratedPrimaryAction() {
@@ -922,7 +922,7 @@ export function TrialExperiencePage() {
 
   function openProfessionalDetection() {
     allowNavigationRef.current = true;
-    navigate("/projects/new");
+    navigate("/detections/new");
   }
 
   return (
@@ -950,7 +950,7 @@ export function TrialExperiencePage() {
               <div className="trial-name-actions">
                 <Link
                   className="button secondary report-back-button project-workbench-nav-button new-project-back-button"
-                  to="/"
+                  to="/trials"
                 >
                   <ArrowLeft aria-hidden="true" />
                   返回
@@ -1735,7 +1735,7 @@ export function TrialExperiencePage() {
           </ModalHeader>
           <ModalBody className="trial-version-modal-body">
             <p>
-              当前功能可用于快速了解检测流程与结果样式。若需要高准确率的检测结果，请前往检测工作台新建项目，使用专业版检测。
+              当前功能适合快速体验检测流程。若需要准确率更高的检测结果与更全面的检测信息，请使用专业版检测。
             </p>
           </ModalBody>
           <ModalFooter className="trial-version-modal-footer">

@@ -41,6 +41,7 @@ class ProjectUpdateRequest(ApiSchema):
 
 class ProjectListItem(ApiSchema):
     id: UUID
+    created_by: UUID
     project_no: str
     name: str
     client_name: str | None
@@ -56,8 +57,10 @@ class ProjectListItem(ApiSchema):
     valid_photo_count: int
     total_defects: int = 0
     by_defect_type: dict[str, int] = Field(default_factory=dict)
+    model_types: list[str] = Field(default_factory=list)
     first_photo_url: str | None = None
     started_at: datetime | None
+    completed_at: datetime | None
     created_at: datetime
     updated_at: datetime
 

@@ -8,6 +8,7 @@ from re import IGNORECASE, Match, search
 from typing import Any, Callable
 
 from docx import Document
+from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Emu, RGBColor
@@ -32,6 +33,11 @@ TABLE_IMAGE_HEIGHT_EMU = 1_212_850
 TABLE_IMAGE_MAX_WIDTH = 1_200
 TABLE_IMAGE_MAX_HEIGHT = 900
 TABLE_IMAGE_JPEG_QUALITY = 82
+REPORT_TITLE_SUFFIX = "外立面表观病害筛查简报"
+REPORT_INTRO_TEXT = (
+    "经对巡检结果进行空间定位与尺度估算，得到以下疑似病害位置。"
+    "深度估计结果存在模型与相机参数误差，建议结合现场复核。"
+)
 
 ObjectReader = Callable[[str, str], bytes]
 
@@ -319,11 +325,14 @@ def _set_photo_cell(
     _set_paragraph_text(cell.paragraphs[1], filename)
 
 
-def _set_title(document, report_title: str, report_no: str) -> None:
+def _set_title(document, data: dict[str, Any], report_title: str, report_no: str) -> None:
     if len(document.paragraphs) < 3:
         raise DocxReportExportError("DOCX 模板缺少标题或说明段落。")
-    title = report_title.strip() or report_no.strip() or "外立面表观病害筛查简报"
+    project = data.get("project") or {}
+    detection_name = str(project.get("name") or report_title or report_no).strip()
+    title = f"{detection_name}-{REPORT_TITLE_SUFFIX}" if detection_name else REPORT_TITLE_SUFFIX
     _set_paragraph_text(document.paragraphs[1], title)
+    _set_paragraph_text(document.paragraphs[2], REPORT_INTRO_TEXT)
     document.core_properties.title = title
     document.core_properties.subject = report_no
 
@@ -389,6 +398,10 @@ def _populate_result_table(
             _metadata_text(primary["photo"] if primary else None),
         )
 
+    for row in table.rows:
+        for cell in row.cells:
+            cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+
 
 def build_report_docx(
     report_title: str,
@@ -402,7 +415,7 @@ def build_report_docx(
 
     data = report_data or {}
     document = Document(FORMAL_TEMPLATE)
-    _set_title(document, report_title, report_no)
+    _set_title(document, data, report_title, report_no)
     _populate_result_table(document, data, read_object)
     _remove_trailing_empty_paragraph(document)
 

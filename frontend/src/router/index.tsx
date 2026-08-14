@@ -1,5 +1,5 @@
 import { lazy, Suspense, type ReactElement } from "react";
-import { createBrowserRouter, Navigate } from "react-router-dom";
+import { createBrowserRouter, Navigate, useParams } from "react-router-dom";
 
 import { RequireAuth, RequireRole } from "@/components/auth/RouteGuards";
 import { AppLayout } from "@/layouts/AppLayout";
@@ -28,6 +28,16 @@ function deferred(element: ReactElement) {
   );
 }
 
+function LegacyDetectionRedirect() {
+  const { id = "" } = useParams();
+  return <Navigate replace to={`/detections/${id}`} />;
+}
+
+function LegacyReviewDetectionRedirect() {
+  const { id = "" } = useParams();
+  return <Navigate replace to={`/review/detections/${id}`} />;
+}
+
 export const router = createBrowserRouter([
   { path: "/login", element: <Navigate replace to="/" /> },
   { path: "/privacy", element: deferred(<PrivacyPolicyPage />) },
@@ -39,15 +49,22 @@ export const router = createBrowserRouter([
       { index: true, element: deferred(<DashboardPage />) },
       { path: "capabilities", element: <Navigate replace to="/capabilities/crack" /> },
       { path: "capabilities/:type", element: deferred(<CapabilityDetailPage />) },
-      { path: "reports", element: deferred(<ReportListPage />) },
-      { path: "projects", element: deferred(<ProjectListPage />) },
+      { path: "trials", element: deferred(<ReportListPage />) },
+      { path: "reports", element: <Navigate replace to="/trials" /> },
+      { path: "projects", element: <Navigate replace to="/detections" /> },
+      { path: "detections", element: deferred(<ProjectListPage />) },
       {
         element: <RequireAuth />,
         children: [
-          { path: "trial", element: deferred(<TrialExperiencePage />) },
+          { path: "trials/new", element: deferred(<TrialExperiencePage />) },
+          { path: "trials/:id", element: deferred(<ReportDetailPage />) },
+          { path: "detections/results/:id", element: deferred(<ReportDetailPage />) },
+          { path: "detections/new", element: deferred(<NewProjectPage />) },
+          { path: "detections/:id", element: deferred(<ProjectDetailPage />) },
+          { path: "trial", element: <Navigate replace to="/trials/new" /> },
           { path: "reports/:id", element: deferred(<ReportDetailPage />) },
-          { path: "projects/new", element: deferred(<NewProjectPage />) },
-          { path: "projects/:id", element: deferred(<ProjectDetailPage />) },
+          { path: "projects/new", element: <Navigate replace to="/detections/new" /> },
+          { path: "projects/:id", element: <LegacyDetectionRedirect /> },
           {
             element: <RequireRole roles={["admin"]} />,
             children: [
@@ -61,7 +78,8 @@ export const router = createBrowserRouter([
             children: [
               { path: "annotation-management/*", element: <Navigate replace to="/review" /> },
               { path: "review", element: deferred(<ReviewProjectListPage />) },
-              { path: "review/projects/:id", element: deferred(<ReviewProjectDetailPage />) }
+              { path: "review/detections/:id", element: deferred(<ReviewProjectDetailPage />) },
+              { path: "review/projects/:id", element: <LegacyReviewDetectionRedirect /> }
             ]
           }
         ]

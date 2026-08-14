@@ -4,7 +4,7 @@
 
 > **方案边界备注（2026-07-14）**：YOLO 方案和正式项目管理流程已暂停。本文中对本地 YOLO、算法 Worker、正式项目或审核流程的提及仅用于说明 Trial 的隔离边界；Trial 的 Qwen 视觉模型链路仍是当前有效范围。
 
-本文记录 `/trial` 简易 AI 检测的当前实现、接口约束、图像处理流程、结果过滤规则，以及实际发送给视觉模型的完整提示词。默认使用 Qwen，管理员可在“管理中心 -> 推理设置”手动切换到备用的智谱 GLM。提示词的代码源文件是 `backend/app/services/trial_qwen_inference.py`；修改提示词时应同步更新本文和相关自动测试。
+本文记录 `/trials/new` 免费试用页面及其 `/api/trial/*` 后端接口的当前实现、接口约束、图像处理流程、结果过滤规则，以及实际发送给视觉模型的完整提示词。默认使用 Qwen，管理员可在“管理中心 -> 推理设置”手动切换到备用的智谱 GLM。提示词的代码源文件是 `backend/app/services/trial_qwen_inference.py`；修改提示词时应同步更新本文和相关自动测试。
 
 ## 1. 功能范围
 
@@ -23,7 +23,7 @@ Trial 会先根据上传时提取的照片元数据区分可见光照片和 Iron
 ## 2. 调用链
 
 ```text
-浏览器 /trial
+浏览器 /trials/new
   -> POST /api/trial/photos 上传并暂存图片
   -> POST /api/trial/generate 提交 photo_ids
   -> Web 后端从对象存储读取图片

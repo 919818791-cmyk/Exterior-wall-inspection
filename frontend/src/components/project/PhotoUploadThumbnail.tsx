@@ -11,6 +11,7 @@ export function PhotoUploadThumbnail({
   footer,
   onPreview,
   onRemove,
+  precheckCategory,
   precheckReason,
   precheckStatus,
   previewUrl,
@@ -26,6 +27,7 @@ export function PhotoUploadThumbnail({
   footer?: ReactNode;
   onPreview?: () => void;
   onRemove?: () => void;
+  precheckCategory?: string | null;
   precheckReason?: string | null;
   precheckStatus?: PhotoPrecheckStatus | null;
   previewUrl?: string | null;
@@ -41,9 +43,12 @@ export function PhotoUploadThumbnail({
   const variantClassName = variant === "trial" ? "trial-photo-thumb" : "project-photo-thumb";
   const imageClassName = variant === "trial" ? "trial-photo-thumb-image" : "project-photo-thumb-image";
   const precheckClassName = precheckStatus ? `precheck-${precheckStatus}` : "";
+  const isNonDronePhoto = precheckCategory === "NON_DRONE";
   const warningLabel = unsupportedFormat
     ? "不支持此格式"
-    : precheckStatus === "rejected" ? "非建筑照片！" : "预检失败";
+    : precheckStatus === "rejected"
+      ? isNonDronePhoto ? "非无人机照片！" : "非建筑照片！"
+      : "预检失败";
 
   return (
     <figure

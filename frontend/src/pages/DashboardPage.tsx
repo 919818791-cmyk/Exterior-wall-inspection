@@ -1,13 +1,14 @@
 import {
+  ArrowRight,
+  CalendarClock,
   ChevronRight,
   FileCheck2,
-  FileText,
   ScanSearch,
   Sparkles
 } from "lucide-react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
-import { useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 
 import { usePublicHeroAnimation } from "@/hooks/usePublicHeroAnimation";
@@ -44,7 +45,126 @@ const defects = [
 export function DashboardPage() {
   const pageRef = useRef<HTMLDivElement>(null);
   const heroRef = useRef<HTMLElement>(null);
-  usePublicHeroAnimation(heroRef);
+  usePublicHeroAnimation(heroRef, undefined, pageRef);
+
+  useEffect(() => {
+    const page = pageRef.current;
+    if (!page) return undefined;
+
+    const panels = Array.from(page.querySelectorAll<HTMLElement>("[data-home-panel]"));
+    if (panels.length === 0) return undefined;
+
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const usesPanelScroll = window.matchMedia("(min-width: 861px)");
+    let transitionLocked = false;
+    let unlockTimer = 0;
+    let transitionLockMinimum = 0;
+
+    const panelScrollTop = (panel: HTMLElement) => Math.min(
+      panel.offsetTop,
+      Math.max(0, page.scrollHeight - page.clientHeight)
+    );
+
+    const currentPanelIndex = () => panels.reduce((closestIndex, panel, index) => (
+      Math.abs(panelScrollTop(panel) - page.scrollTop) < Math.abs(panelScrollTop(panels[closestIndex]) - page.scrollTop)
+        ? index
+        : closestIndex
+    ), 0);
+
+    const updateHomeNavigation = () => {
+      window.dispatchEvent(new CustomEvent<boolean>("home-navigation-visibility", {
+        detail: (usesPanelScroll.matches ? page.scrollTop : window.scrollY) < Math.min(80, window.innerHeight * 0.1)
+      }));
+    };
+
+    const goToPanel = (index: number) => {
+      const target = panels[Math.max(0, Math.min(index, panels.length - 1))];
+      if (!target) return;
+
+      transitionLocked = true;
+      transitionLockMinimum = performance.now() + (reduceMotion.matches ? 0 : 700);
+      page.scrollTo({
+        top: panelScrollTop(target),
+        behavior: reduceMotion.matches ? "auto" : "smooth"
+      });
+
+      window.clearTimeout(unlockTimer);
+      unlockTimer = window.setTimeout(() => {
+        transitionLocked = false;
+      }, reduceMotion.matches ? 0 : 760);
+    };
+
+    const extendWheelGestureLock = () => {
+      if (!transitionLocked) return;
+      const delay = Math.max(160, transitionLockMinimum - performance.now());
+      window.clearTimeout(unlockTimer);
+      unlockTimer = window.setTimeout(() => {
+        transitionLocked = false;
+      }, delay);
+    };
+
+    const handleWheel = (event: WheelEvent) => {
+      if (!usesPanelScroll.matches) return;
+      if (Math.abs(event.deltaX) > Math.abs(event.deltaY) || Math.abs(event.deltaY) < 6) return;
+
+      event.preventDefault();
+      if (transitionLocked) {
+        extendWheelGestureLock();
+        return;
+      }
+
+      const currentIndex = currentPanelIndex();
+      const nextIndex = currentIndex + (event.deltaY > 0 ? 1 : -1);
+      if (nextIndex === currentIndex || nextIndex < 0 || nextIndex >= panels.length) return;
+      goToPanel(nextIndex);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!usesPanelScroll.matches) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("a, button, input, select, textarea, [contenteditable='true']")) return;
+
+      const currentIndex = currentPanelIndex();
+      let nextIndex: number | null = null;
+
+      if (event.key === "ArrowDown" || event.key === "PageDown" || event.key === " ") nextIndex = currentIndex + 1;
+      if (event.key === "ArrowUp" || event.key === "PageUp") nextIndex = currentIndex - 1;
+      if (event.key === "Home") nextIndex = 0;
+      if (event.key === "End") nextIndex = panels.length - 1;
+      if (nextIndex === null) return;
+
+      event.preventDefault();
+      if (!transitionLocked) goToPanel(nextIndex);
+    };
+
+    const handleResize = () => {
+      if (!usesPanelScroll.matches) {
+        page.scrollTo({ top: 0, behavior: "auto" });
+        updateHomeNavigation();
+        return;
+      }
+      const currentIndex = currentPanelIndex();
+      page.scrollTo({ top: panelScrollTop(panels[currentIndex]), behavior: "auto" });
+      updateHomeNavigation();
+    };
+
+    page.addEventListener("wheel", handleWheel, { passive: false });
+    page.addEventListener("scroll", updateHomeNavigation, { passive: true });
+    window.addEventListener("scroll", updateHomeNavigation, { passive: true });
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("resize", handleResize);
+    updateHomeNavigation();
+
+    return () => {
+      window.clearTimeout(unlockTimer);
+      page.removeEventListener("wheel", handleWheel);
+      page.removeEventListener("scroll", updateHomeNavigation);
+      window.removeEventListener("scroll", updateHomeNavigation);
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("resize", handleResize);
+      window.dispatchEvent(new CustomEvent<boolean>("home-navigation-visibility", { detail: true }));
+    };
+  }, []);
 
   useLayoutEffect(() => {
     const page = pageRef.current;
@@ -52,6 +172,7 @@ export function DashboardPage() {
 
     const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (reduceMotion) return undefined;
+    const revealScroller = window.matchMedia("(min-width: 861px)").matches ? page : undefined;
 
     const context = gsap.context(() => {
       page.querySelectorAll<HTMLElement>(".home-reveal-section").forEach((section) => {
@@ -66,8 +187,9 @@ export function DashboardPage() {
               delay: index * 0.12,
               ease: "power2.out",
               onComplete: () => gsap.set(item, { clearProps: "opacity,transform,visibility" }),
-              scrollTrigger: {
-                trigger: item,
+                scrollTrigger: {
+                  ...(revealScroller ? { scroller: revealScroller } : {}),
+                  trigger: item,
                 start: "20% bottom",
                 toggleActions: "play none none none"
               }
@@ -84,7 +206,7 @@ export function DashboardPage() {
 
   return (
     <div ref={pageRef} className="home-page">
-      <section ref={heroRef} className="hero">
+      <section ref={heroRef} className="hero" data-home-panel aria-labelledby="home-hero-title">
         <video
           className="hero-background-video"
           autoPlay
@@ -97,34 +219,31 @@ export function DashboardPage() {
           <source src="/videos/MZ.mp4" type="video/mp4" />
         </video>
         <div className="hero-copy">
-          <div className="hero-copy-main">
-            <h1>
-              <span className="hero-line">
-                <span className="phrase">让检测<span className="accent">更智能</span></span>
-                <span className="phrase">让报告<span className="accent">更高效</span></span>
-              </span>
-            </h1>
+          <h1 id="home-hero-title">发现问题，更早一步。</h1>
+          <div className="hero-copy-footer">
             <p className="hero-description">
-              我们采用最新的AI 视觉分析技术，可对建筑物的外墙状况进行快速、准确且高效的评估
+              我们采用最新的视觉分析技术，支持上传可见光与热成像照片，可准确、高效地评估建筑外墙状况
             </p>
-          </div>
-          <div className="hero-actions">
-            <div className="hero-primary-action">
-              <Link className="button primary" to="/trial"><Sparkles aria-hidden="true" />上传照片开始体验</Link>
-              <span className="hero-trial-note">* 限时赠送免费体验额度</span>
+            <div className="hero-actions">
+              <div className="hero-primary-action">
+                <Link className="button primary" to="/trials/new">
+                  <Sparkles aria-hidden="true" />上传照片免费体验<ArrowRight className="hero-action-arrow" aria-hidden="true" />
+                </Link>
+              </div>
+              <Link className="button secondary" to="/detections/new">
+                <ScanSearch aria-hidden="true" />开始专业检测<ArrowRight className="hero-action-arrow" aria-hidden="true" />
+              </Link>
+              <Link className="button secondary" to="/capabilities/time">
+                <CalendarClock aria-hidden="true" />查询检测时段<ArrowRight className="hero-action-arrow" aria-hidden="true" />
+              </Link>
             </div>
-            <Link className="button secondary" to="/reports"><FileText aria-hidden="true" />查看示例</Link>
           </div>
         </div>
       </section>
 
-      <section className="section home-reveal-section" id="ai">
+      <section className="section home-reveal-section" id="ai" data-home-panel aria-labelledby="home-ai-title">
         <div className="section-heading home-reveal-item">
-          <h2>AI检测能力</h2>
-          <p>
-            <span className="section-subtitle-line">覆盖裂缝、剥落、锈蚀、空鼓四类高频外墙隐患，结合视觉分析快速</span>
-            <span className="section-subtitle-line">定位问题，让风险发现更早、复核更准</span>
-          </p>
+          <h2 id="home-ai-title">检测能力</h2>
         </div>
         <div className="defect-grid">
           {defects.map((defect) => (
@@ -140,9 +259,9 @@ export function DashboardPage() {
         </div>
       </section>
 
-      <section className="section compact home-reveal-section" id="capabilities">
+      <section className="section compact home-reveal-section" id="capabilities" data-home-panel aria-labelledby="home-capabilities-title">
         <div className="section-heading home-reveal-item">
-          <h2>核心功能</h2>
+          <h2 id="home-capabilities-title">核心功能</h2>
           <p>
             <span className="section-subtitle-line">围绕采集前规划、检测中识别、交付后报告三大环节</span>
           </p>
@@ -157,14 +276,14 @@ export function DashboardPage() {
               <p>综合立面朝向、温度和光照等因素，推荐适合采集的时段</p>
             </div>
           </Link>
-          <Link className="capability-card home-reveal-item" to="/trial">
+          <Link className="capability-card home-reveal-item" to="/trials/new">
             <span className="feature-icon indigo"><ScanSearch aria-hidden="true" /></span>
             <div>
-              <h3>AI缺陷识别</h3>
+              <h3>外墙缺陷识别</h3>
               <p>基于视觉分析算法，识别裂缝、剥落、锈蚀、空鼓等缺陷</p>
             </div>
           </Link>
-          <Link className="capability-card home-reveal-item" to="/reports">
+          <Link className="capability-card home-reveal-item" to="/trials">
             <span className="feature-icon green"><FileCheck2 aria-hidden="true" /></span>
             <div>
               <h3>智能报告生成</h3>
@@ -174,7 +293,7 @@ export function DashboardPage() {
         </div>
       </section>
 
-      <footer className="home-contact-footer" id="contact" aria-label="联合研发单位及联系方式">
+      <footer className="home-contact-footer" id="contact" data-home-panel aria-label="联合研发单位及联系方式">
         <div className="home-contact-inner">
           <div className="home-contact-company">
             <div className="home-contact-company-name">
@@ -196,17 +315,17 @@ export function DashboardPage() {
             <h2 id="contact-title">联系我们</h2>
             <dl>
               <div>
-                <dt>技术联系人</dt>
-                <dd className="home-contact-person">
-                  <span className="home-contact-person-name">陆伟庆</span>
-                  <span className="home-contact-number">13556995290</span>
-                </dd>
-              </div>
-              <div>
                 <dt>商务联系人</dt>
                 <dd className="home-contact-person">
                   <span className="home-contact-person-name">邓鹏</span>
                   <span className="home-contact-number">13826521065</span>
+                </dd>
+              </div>
+              <div>
+                <dt>技术联系人</dt>
+                <dd className="home-contact-person">
+                  <span className="home-contact-person-name">陆伟庆</span>
+                  <span className="home-contact-number">13556995290</span>
                 </dd>
               </div>
               <div>

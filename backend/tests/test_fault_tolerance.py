@@ -10,6 +10,7 @@ from app.api.reports import delete_report, restore_trial_report
 from app.db.session import get_db
 from app.enums.status import ProjectStatus, UserRole
 from app.main import app
+from app.services.sms_verification import SmsSendResult, get_sms_verification_service
 
 
 CUSTOMER = AuthenticatedUser(
@@ -23,6 +24,13 @@ CUSTOMER = AuthenticatedUser(
 
 
 def test_registration_idempotency_does_not_create_duplicate_account() -> None:
+    class FakeSmsVerificationService:
+        def send_code(self, phone: str) -> SmsSendResult:
+            return SmsSendResult(biz_id="test", request_id="test")
+
+        def verify_code(self, phone: str, code: str) -> bool:
+            return True
+
     class FakeDb:
         def __init__(self) -> None:
             self.add_count = 0
@@ -38,10 +46,12 @@ def test_registration_idempotency_does_not_create_duplicate_account() -> None:
 
     fake_db = FakeDb()
     app.dependency_overrides[get_db] = lambda: fake_db
+    app.dependency_overrides[get_sms_verification_service] = FakeSmsVerificationService
     payload = {
         "username": "idempotent_user",
         "password": "Trial123!",
         "phone": "13800000008",
+        "verification_code": "1234",
     }
     try:
         with TestClient(app) as client:
@@ -76,6 +86,7 @@ def test_customer_can_delete_accessible_formal_report() -> None:
     task = SimpleNamespace(id=task_id)
     project = SimpleNamespace(
         id=UUID(int=2),
+        created_by=CUSTOMER.id,
         current_report_id=report_id,
         current_task_id=task_id,
         status=ProjectStatus.COMPLETED.value,

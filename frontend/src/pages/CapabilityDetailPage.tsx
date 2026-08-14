@@ -1,6 +1,6 @@
-import { ChevronLeft, ChevronRight, Sparkles, X } from "lucide-react";
+import { CalendarClock, ChevronLeft, ChevronRight, Sparkles, X } from "lucide-react";
 import gsap from "gsap";
-import type { CSSProperties, SVGProps } from "react";
+import type { CSSProperties } from "react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link, Navigate, useOutletContext, useParams } from "react-router-dom";
 
@@ -18,12 +18,12 @@ import {
 
 const details = {
   crack: {
-    title: "裂缝识别",
+    title: "细微裂缝，也不放过。",
     lead: "系统对无人机采集的外墙影像进行分区分析，识别细微裂缝及连续裂缝区域，并将检测结果映射到对应立面位置。",
     images: ["/images/optimized/crack-detail-1.webp"]
   },
   spalling: {
-    title: "剥落识别",
+    title: "发现每一处缺失",
     lead: "系统从外墙纹理、颜色和边缘变化中定位面砖、饰面层及混凝土等材料的缺失、脱落和连续剥离区域，帮助工程师快速安排复核与修补。",
     images: ["/images/optimized/spalling-detail-1.webp", "/images/optimized/spalling-detail-2.webp"]
   },
@@ -40,8 +40,8 @@ const details = {
     comingSoon: true
   },
   hollow: {
-    title: "空鼓识别",
-    lead: "系统对立面红外影像进行温度分布分析，并结合构造边界与可见光影像排除明显干扰，输出需要优先复核的疑似空鼓区域。",
+    title: "看见表面之下",
+    lead: "系统对立面红外影像进行温度分布分析，并结合构造边界与可见光影像排除明显干扰，输出疑似空鼓区域。",
     images: ["/images/optimized/hollow-detail.webp"]
   }
 } as const;
@@ -51,20 +51,6 @@ const legacyDetailRoutes: Record<string, keyof typeof details> = {
   leakage: "moisture",
   missing: "spalling"
 };
-
-function DroneScanIcon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" viewBox="0 0 24 24" {...props}>
-      <circle cx="5" cy="5" r="2.75" />
-      <circle cx="19" cy="5" r="2.75" />
-      <circle cx="5" cy="19" r="2.75" />
-      <circle cx="19" cy="19" r="2.75" />
-      <path d="m7 7 2.25 2.25M17 7l-2.25 2.25M7 17l2.25-2.25M17 17l-2.25-2.25" />
-      <rect width="7" height="7" x="8.5" y="8.5" rx="2.25" />
-      <circle cx="12" cy="12" r="1.25" />
-    </svg>
-  );
-}
 
 function StaggeredLead({ children }: { children: string }) {
   const lines = children.match(/[^，。！？]+[，。！？]?/g) ?? [children];
@@ -182,7 +168,7 @@ function DefectDetail({ detail }: { detail: (typeof details)[keyof typeof detail
           {"comingSoon" in detail && detail.comingSoon ? (
             <button className="button capability-coming-soon-button" disabled type="button">敬请期待</button>
           ) : (
-            <Link className="button primary" to="/trial"><Sparkles aria-hidden="true" />上传照片开始体验</Link>
+            <Link className="button primary" to="/trials/new"><Sparkles aria-hidden="true" />上传照片开始体验</Link>
           )}
         </div>
       </div>
@@ -391,9 +377,9 @@ export function TimeRecommendation() {
   }
 
   return <>
-    <section ref={heroRef} className="detail-hero recommendation-hero"><div className="detail-hero-copy"><h1>检测时段推荐</h1><StaggeredLead>综合计划时间、立面朝向与气象条件，提前筛选更稳定、更安全的无人机采集窗口。</StaggeredLead><div className="detail-actions"><button className="button primary" type="button" onClick={openDialog}><DroneScanIcon aria-hidden="true" />查询推荐时段</button></div></div></section>
+    <section ref={heroRef} className="detail-hero recommendation-hero"><div className="detail-hero-copy"><h1>检测时段推荐</h1><StaggeredLead>综合计划时间、立面朝向与气象条件，提前筛选更稳定、更安全的无人机采集窗口。</StaggeredLead><div className="detail-actions"><button className="button primary" type="button" onClick={openDialog}><CalendarClock aria-hidden="true" />查询推荐时段</button></div></div></section>
     <dialog ref={dialogRef} aria-labelledby="time-recommendation-title" className={`project-dialog recommendation-dialog detection-time-dialog${recommendation ? ` detection-time-dialog--results${showsTwoRecommendationWindows ? " detection-time-dialog--two-windows" : ""}` : isQuerying ? " detection-time-dialog--loading" : ""}`} onCancel={(event) => { event.preventDefault(); requestDialogClose(); }} onClose={() => setIsDialogOpen(false)}>
-      <div className="dialog-heading"><div className="recommendation-dialog-title"><DroneScanIcon aria-hidden="true" className="recommendation-dialog-title-icon" /><h2 id="time-recommendation-title">检测时段推荐</h2></div><button aria-label="关闭检测时段推荐" className="icon-button" type="button" onClick={requestDialogClose}><X aria-hidden="true" /></button></div>
+      <div className="dialog-heading"><div className="recommendation-dialog-title"><CalendarClock aria-hidden="true" className="recommendation-dialog-title-icon" /><h2 id="time-recommendation-title">检测时段推荐</h2></div><button aria-label="关闭检测时段推荐" className="icon-button" type="button" onClick={requestDialogClose}><X aria-hidden="true" /></button></div>
       <div className="recommendation-content">
         <div className="recommendation-form-grid recommendation-form-grid--without-project">
           <label className="recommendation-date-field"><span>日期</span><input aria-label="选择日期" className="recommendation-date-input" disabled={Boolean(recommendation)} max={latestDate} min={earliestDate} type="date" value={date} onChange={(event) => { setDate(event.target.value); resetResult(); }} /></label>

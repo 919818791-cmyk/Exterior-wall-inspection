@@ -74,7 +74,7 @@ def test_pdf_uses_original_object_and_contains_three_column_labels() -> None:
     assert reads == [("inspection", "originals/east.jpg")]
     assert pdf.startswith(b"%PDF-")
     assert len(pdf) > len(original)
-    assert WATERMARK_TEXT == "建筑外墙巡检智能报告平台（试用版本）"
+    assert WATERMARK_TEXT == "外墙智能巡检平台（试用版本）"
 
 
 def test_pdf_description_uses_the_page_defect_colors() -> None:

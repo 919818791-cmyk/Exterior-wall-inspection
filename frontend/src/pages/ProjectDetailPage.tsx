@@ -30,6 +30,7 @@ import { DetectionCreateWorkspace } from "@/components/project/DetectionCreateWo
 import { ProjectPhotoActions } from "@/components/project/ProjectPhotoActions";
 import { ProjectWorkbenchShell } from "@/components/project/ProjectWorkbenchShell";
 import { StartDetectionModal } from "@/components/project/StartDetectionModal";
+import { useAuthStore } from "@/stores/useAuthStore";
 import type {
   Photo,
   ProjectDetail,
@@ -73,11 +74,11 @@ function getPrimaryAction(status: ProjectStatus) {
     case "draft":
       return { label: "开始 AI 检测", note: "系统会统一检测预检通过的照片。" };
     case "queued":
-      return { label: "排队中", note: "检测任务已提交，预计排队 1 小时后开始检测。" };
+      return { label: "检测中", note: "检测任务已提交，正在启动检测。" };
     case "detecting":
       return { label: "检测中", note: "检测完成前项目保持只读。" };
     case "pending_review":
-      return { label: "检测中", note: "检测结果正在生成中。" };
+      return { label: "检测中", note: "正在汇总检测结果。" };
     case "reviewed":
       return { label: "查看结果", note: "检测已完成，可查看检测结果。" };
     case "completed":
@@ -91,11 +92,16 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "操作失败，请稍后重试。";
 }
 
+function canDeleteProject(status: ProjectStatus) {
+  return status === "draft" || status === "reviewed" || status === "completed";
+}
+
 export function ProjectDetailPage() {
   const { id = "" } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const user = useAuthStore((state) => state.user);
   const outletContext = useOutletContext<{
     setProjectDetailListChrome: (enabled: boolean) => void;
   } | undefined>();
@@ -120,7 +126,8 @@ export function ProjectDetailPage() {
   const failedAutoSaveSignatureRef = useRef("");
   const autoSaveQueueRunningRef = useRef(false);
 
-  const isEditable = project?.status === "draft";
+  const canManageProject = Boolean(project && (user?.role === "admin" || project.created_by === user?.id));
+  const isEditable = canManageProject && project?.status === "draft";
   const usesNewProjectAppearance = project
     ? ["draft", "queued", "detecting", "pending_review"].includes(project.status)
     : false;
@@ -172,9 +179,9 @@ export function ProjectDetailPage() {
   const deleteProjectMutation = useMutation({
     mutationFn: deleteProject,
     onSuccess: async (_, projectId) => {
-      await queryClient.invalidateQueries({ queryKey: ["projects"], exact: true });
+      await queryClient.invalidateQueries({ queryKey: ["projects"] });
       queryClient.removeQueries({ queryKey: ["projects", projectId] });
-      navigate("/projects", { replace: true });
+      navigate("/detections", { replace: true });
     },
     onError: (error) => setFormError(getErrorMessage(error))
   });
@@ -278,12 +285,12 @@ export function ProjectDetailPage() {
   };
 
   const handlePrimaryAction = () => {
-    if (project?.status !== "draft") return;
+    if (!canManageProject || project?.status !== "draft") return;
     setDetectionModalOpen(true);
   };
 
   const handleDeleteProject = () => {
-    if (!project || project.status !== "draft") return;
+    if (!project || !canManageProject || !canDeleteProject(project.status)) return;
     if (!window.confirm(`确认删除项目“${project.name}”？此操作会软删除项目及其照片。`)) return;
 
     queuedAutoSaveRef.current = null;
@@ -313,7 +320,7 @@ export function ProjectDetailPage() {
               <p className="text-sm font-bold text-red-700">
                 {getErrorMessage(projectQuery.error)}
               </p>
-              <RouterLink className="button secondary report-back-button w-fit" to="/projects">
+              <RouterLink className="button secondary report-back-button w-fit" to="/detections">
                 <ArrowLeft aria-hidden="true" />返回
               </RouterLink>
             </CardBody>
@@ -327,6 +334,7 @@ export function ProjectDetailPage() {
     <ProjectWorkbenchShell actionLabel="返回" hideHeader>
       <ProjectDetailPrototype
         activeError={activeError}
+        canManageProject={canManageProject}
         deleteProjectPending={deleteProjectMutation.isPending}
         formError={formError}
         isEditable={isEditable}
@@ -354,6 +362,7 @@ export function ProjectDetailPage() {
 function ProjectDetailPrototype({
   project,
   usesNewProjectAppearance,
+  canManageProject,
   isEditable,
   projectDraft,
   formError,
@@ -374,6 +383,7 @@ function ProjectDetailPrototype({
 }: {
   project: ProjectDetail;
   usesNewProjectAppearance: boolean;
+  canManageProject: boolean;
   isEditable: boolean;
   projectDraft: ProjectBasicDraft;
   formError: string;
@@ -394,6 +404,9 @@ function ProjectDetailPrototype({
 }) {
   const qualifiedPhotos = photos.filter((photo) => photo.precheck_status === "passed");
   const rejectedPhotoCount = photos.filter((photo) => photo.precheck_status === "rejected").length;
+  const nonDronePhotoCount = photos.filter((photo) => (
+    photo.precheck_status === "rejected" && photo.precheck_category === "NON_DRONE"
+  )).length;
   const thermalPhotoCount = qualifiedPhotos.filter((photo) => photo.photo_type === "thermal").length;
 
   if (usesNewProjectAppearance) {
@@ -417,11 +430,11 @@ function ProjectDetailPrototype({
             <>
               <RouterLink
                 className="button secondary report-back-button project-workbench-nav-button project-detail-back-button"
-                to="/projects"
+                to="/detections"
               >
                 <ArrowLeft aria-hidden="true" />返回
               </RouterLink>
-              {project.status === "draft" ? (
+              {canManageProject && canDeleteProject(project.status) ? (
                 <button
                   className="button secondary report-back-button project-workbench-nav-button project-detail-delete-button"
                   disabled={deleteProjectPending || updateProjectPending}
@@ -434,7 +447,7 @@ function ProjectDetailPrototype({
               ) : null}
               <button
                 className="button primary start-ai-detection-button"
-                disabled={project.status !== "draft" || startDetectionPending}
+                disabled={!canManageProject || project.status !== "draft" || startDetectionPending}
                 type="button"
                 onClick={onPrimaryAction}
               >
@@ -463,6 +476,7 @@ function ProjectDetailPrototype({
           error={activeError}
           isOpen={detectionModalOpen}
           isPending={startDetectionPending}
+          nonDronePhotoCount={nonDronePhotoCount}
           qualifiedPhotoCount={qualifiedPhotos.length}
           rejectedPhotoCount={rejectedPhotoCount}
           thermalPhotoCount={thermalPhotoCount}
@@ -492,10 +506,10 @@ function ProjectDetailPrototype({
 
         <div className="create-action-bar detail-action-bar">
           <div className="detail-view-actions">
-            <RouterLink className="button secondary report-back-button project-detail-back-button" to="/projects">
+            <RouterLink className="button secondary report-back-button project-detail-back-button" to="/detections">
               <ArrowLeft aria-hidden="true" />返回
             </RouterLink>
-            {project.status === "draft" ? (
+            {canManageProject && canDeleteProject(project.status) ? (
               <button
                 className="button secondary project-detail-delete-button"
                 disabled={deleteProjectPending || updateProjectPending}
@@ -507,8 +521,8 @@ function ProjectDetailPrototype({
               </button>
             ) : null}
             {(project.status === "reviewed" || project.status === "completed") && project.current_report_id
-              ? <RouterLink className="button primary" to={`/reports/${project.current_report_id}`}><FileText aria-hidden="true" />查看结果</RouterLink>
-              : <button className="button primary start-ai-detection-button" disabled={project.status !== "draft" || startDetectionPending} type="button" onClick={onPrimaryAction}><Send aria-hidden="true" />{startDetectionPending ? "检测中" : primaryAction.label}</button>}
+              ? <RouterLink className="button primary" to={`/detections/results/${project.current_report_id}`}><FileText aria-hidden="true" />查看结果</RouterLink>
+              : <button className="button primary start-ai-detection-button" disabled={!canManageProject || project.status !== "draft" || startDetectionPending} type="button" onClick={onPrimaryAction}><Send aria-hidden="true" />{startDetectionPending ? "检测中" : primaryAction.label}</button>}
           </div>
         </div>
       </section>
@@ -516,6 +530,7 @@ function ProjectDetailPrototype({
         error={activeError}
         isOpen={detectionModalOpen}
         isPending={startDetectionPending}
+        nonDronePhotoCount={nonDronePhotoCount}
         qualifiedPhotoCount={qualifiedPhotos.length}
         rejectedPhotoCount={rejectedPhotoCount}
         thermalPhotoCount={thermalPhotoCount}

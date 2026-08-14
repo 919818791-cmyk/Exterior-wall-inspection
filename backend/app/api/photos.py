@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.api.dependencies import (
     AuthenticatedUser,
     ensure_project_access,
+    ensure_project_write_access,
     get_current_user,
 )
 from app.api.projects import _ensure_project_editable, _get_project_or_404
@@ -23,7 +24,11 @@ from app.schemas.phase4 import (
     UploadBatchRead,
 )
 from app.services.object_storage import presigned_get_url, put_object, remove_object
-from app.services.photo_metadata import extract_formal_photo_metadata, facade_orientation_from_yaw
+from app.services.photo_metadata import (
+    FormalPhotoMetadata,
+    extract_formal_photo_metadata,
+    facade_orientation_from_yaw,
+)
 from app.services.photo_precheck import run_stored_photo_precheck
 from app.services.photo_thumbnails import build_thumbnail, store_thumbnail
 from app.services.usage_tracking import add_photo_upload_event
@@ -41,6 +46,15 @@ def _enum_value(value: object) -> str:
 def _batch_no() -> str:
     timestamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S%f")
     return f"UP-{timestamp}-{uuid4().hex[:6].upper()}"
+
+
+def _non_drone_photo_reason(metadata: FormalPhotoMetadata) -> str:
+    missing_items: list[str] = []
+    if not metadata["drone_metadata_available"]:
+        missing_items.append("无人机拍摄元数据")
+    if not metadata["camera_model"]:
+        missing_items.append("无人机机型信息")
+    return f"未检测到{'或'.join(missing_items)}。仅支持专业无人机拍摄的原始照片。"
 
 
 def _photo_to_read(photo: Photo) -> PhotoRead:
@@ -118,7 +132,7 @@ def create_upload_batch(
     current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> UploadBatchRead:
     project = _get_project_or_404(db, project_id)
-    ensure_project_access(project, current_user)
+    ensure_project_write_access(project, current_user)
     _ensure_project_editable(project)
     batch = UploadBatch(
         project_id=project.id,
@@ -146,7 +160,7 @@ def upload_photo(
     current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> PhotoRead:
     project = _get_project_or_404(db, project_id)
-    ensure_project_access(project, current_user)
+    ensure_project_write_access(project, current_user)
     _ensure_project_editable(project)
 
     batch = db.get(UploadBatch, upload_batch_id)
@@ -212,8 +226,20 @@ def upload_photo(
             else _enum_value(photo_type)
         ),
         status=PhotoStatus.UPLOADED.value,
-        precheck_status=PhotoPrecheckStatus.PENDING.value,
-        precheck_attempts=0,
+        precheck_status=(
+            PhotoPrecheckStatus.PENDING.value
+            if metadata["professional_drone_photo"]
+            else PhotoPrecheckStatus.REJECTED.value
+        ),
+        precheck_category=None if metadata["professional_drone_photo"] else "NON_DRONE",
+        precheck_reason=(
+            None
+            if metadata["professional_drone_photo"]
+            else _non_drone_photo_reason(metadata)
+        ),
+        precheck_model=None if metadata["professional_drone_photo"] else "embedded-metadata",
+        precheck_attempts=0 if metadata["professional_drone_photo"] else 1,
+        prechecked_at=None if metadata["professional_drone_photo"] else datetime.now(UTC),
     )
     db.add(photo)
     db.flush()
@@ -226,10 +252,13 @@ def upload_photo(
         occurred_at=photo.created_at,
     )
     batch.photo_count = _count_active_batch_photos(db, batch.id)
+    if metadata["camera_model"] and not batch.drone_type:
+        batch.drone_type = metadata["camera_model"]
     project.updated_at = datetime.now(UTC)
     db.commit()
     db.refresh(photo)
-    run_stored_photo_precheck(db, photo)
+    if metadata["professional_drone_photo"]:
+        run_stored_photo_precheck(db, photo)
     return _photo_to_read(photo)
 
 
@@ -261,7 +290,7 @@ def delete_photo(
     if photo is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Photo not found.")
     project = _get_project_or_404(db, photo.project_id)
-    ensure_project_access(project, current_user)
+    ensure_project_write_access(project, current_user)
     _ensure_project_editable(project)
 
     deleted_at = datetime.now(UTC)

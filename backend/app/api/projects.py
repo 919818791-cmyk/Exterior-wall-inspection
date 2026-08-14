@@ -9,11 +9,16 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.api.dependencies import AuthenticatedUser, ensure_project_access, get_current_user
+from app.api.dependencies import (
+    AuthenticatedUser,
+    ensure_project_access,
+    ensure_project_write_access,
+    get_current_user,
+)
 from app.core.config import get_settings
 from app.db.session import get_db
 from app.enums.status import ProjectStatus
-from app.models.tables import AiDetectionResult, DetectionTask, Photo, Project
+from app.models.tables import AiDetectionResult, DetectionConfig, DetectionTask, Photo, Project
 from app.schemas.projects import (
     DeleteResponse,
     ProjectCreateRequest,
@@ -62,8 +67,7 @@ def _now_project_no(db: Session) -> str:
 
 
 def _generated_project_name(project_no: str) -> str:
-    timestamp = project_no.removeprefix("PRJ-").split("-", maxsplit=1)[0][:14]
-    return f"未命名项目-{timestamp}"
+    return project_no
 
 
 def _get_project_or_404(db: Session, project_id: UUID) -> Project:
@@ -78,6 +82,18 @@ def _ensure_project_editable(project: Project) -> None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Only draft projects can be edited.",
+        )
+
+
+def _ensure_project_deletable(project: Project) -> None:
+    if project.status not in {
+        ProjectStatus.DRAFT.value,
+        ProjectStatus.REVIEWED.value,
+        ProjectStatus.COMPLETED.value,
+    }:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only draft or completed projects can be deleted.",
         )
 
 
@@ -117,9 +133,20 @@ def _project_list_item(
     photo_count: int | None = None,
     total_defects: int | None = None,
     by_defect_type: dict[str, int] | None = None,
+    model_types: list[str] | None = None,
 ) -> ProjectListItem:
+    if model_types is None:
+        model_types = list(
+            db.scalar(
+                select(DetectionConfig.model_types).where(
+                    DetectionConfig.project_id == project.id
+                )
+            )
+            or []
+        )
     return ProjectListItem(
         id=project.id,
+        created_by=project.created_by,
         project_no=project.project_no,
         name=project.name,
         client_name=project.client_name,
@@ -144,7 +171,9 @@ def _project_list_item(
             ) or 0
         ) if total_defects is None else total_defects,
         by_defect_type=by_defect_type or {},
+        model_types=model_types,
         started_at=project.started_at,
+        completed_at=project.completed_at,
         created_at=project.created_at,
         updated_at=project.updated_at,
     )
@@ -156,7 +185,6 @@ def _project_detail(db: Session, project: Project) -> ProjectDetailRead:
         **_project_list_item(db, project).model_dump(),
         current_task_id=project.current_task_id,
         current_task_status=current_task.status if current_task else None,
-        completed_at=project.completed_at,
     )
 
 
@@ -239,6 +267,14 @@ def list_projects(
         ).all()
     )
     current_task_ids = [project.current_task_id for project in projects if project.current_task_id]
+    model_types_by_project = {
+        project_id: list(model_types or [])
+        for project_id, model_types in db.execute(
+            select(DetectionConfig.project_id, DetectionConfig.model_types).where(
+                DetectionConfig.project_id.in_(project_ids)
+            )
+        ).all()
+    }
     defect_counts: dict[UUID, dict[str, int]] = {}
     for task_id, defect_type, count in db.execute(
             select(AiDetectionResult.detection_task_id, AiDetectionResult.defect_type, func.count())
@@ -276,6 +312,7 @@ def list_projects(
                 photo_count=int(photo_counts.get(project.id, 0)),
                 total_defects=sum(defect_counts.get(project.current_task_id, {}).values()),
                 by_defect_type=defect_counts.get(project.current_task_id, {}),
+                model_types=model_types_by_project.get(project.id, []),
             ).model_copy(update={"first_photo_url": first_photo_url})
         )
     return items
@@ -359,7 +396,7 @@ def update_project(
     current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> ProjectDetailRead:
     project = _get_project_or_404(db, project_id)
-    ensure_project_access(project, current_user)
+    ensure_project_write_access(project, current_user)
     if "name" in payload.model_fields_set:
         project_name = payload.name.strip() if payload.name and payload.name.strip() else None
         payload = payload.model_copy(
@@ -378,8 +415,8 @@ def delete_project(
     current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> DeleteResponse:
     project = _get_project_or_404(db, project_id)
-    ensure_project_access(project, current_user)
-    _ensure_project_editable(project)
+    ensure_project_write_access(project, current_user)
+    _ensure_project_deletable(project)
     deleted_at = datetime.now(UTC)
     project.deleted_at = deleted_at
 

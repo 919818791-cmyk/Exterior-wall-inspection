@@ -3,7 +3,6 @@ import {
   ArrowLeft,
   ClipboardCheck,
   Eye,
-  FileText,
   Timer,
   TriangleAlert
 } from "lucide-react";
@@ -43,7 +42,7 @@ function actionFor(result: ReviewDetectionListItem) {
   if (result.review_status === "pending_review" && result.report_id) {
     return {
       label: "开始审核",
-      to: `/review/projects/${result.id}`,
+      to: `/review/detections/${result.id}`,
       Icon: ClipboardCheck,
       disabled: false
     };
@@ -53,15 +52,15 @@ function actionFor(result: ReviewDetectionListItem) {
     && result.report_id
   ) {
     return {
-      label: "查看结果",
-      to: `/reports/${result.report_id}`,
-      Icon: result.review_status === "reviewed" ? FileText : Eye,
+      label: "再次审核",
+      to: `/review/detections/${result.id}`,
+      Icon: ClipboardCheck,
       disabled: false
     };
   }
   return {
     label: result.review_status === "failed" ? "检测失败" : "等待 AI 结果",
-    to: `/review/projects/${result.id}`,
+    to: `/review/detections/${result.id}`,
     Icon: result.review_status === "failed" ? TriangleAlert : Timer,
     disabled: true
   };
@@ -146,22 +145,29 @@ export function ReviewProjectListPage() {
                         </td>
                         <td data-label="更新时间">{formatDateTime(result.updated_at)}</td>
                         <td data-label="操作">
-                          {action.disabled ? (
-                            <span className="table-action is-disabled">
-                              <Icon aria-hidden="true" />{action.label}
-                            </span>
-                          ) : (
-                            <Link
-                              className={`table-action ${
-                                result.review_status === "pending_review"
-                                  ? "table-action-review"
-                                  : ""
-                              }`}
-                              to={action.to}
-                            >
-                              <Icon aria-hidden="true" />{action.label}
-                            </Link>
-                          )}
+                          <div className="table-actions">
+                            {action.disabled ? (
+                              <span className="table-action is-disabled">
+                                <Icon aria-hidden="true" />{action.label}
+                              </span>
+                            ) : (
+                              <Link
+                                className="table-action table-action-review"
+                                to={action.to}
+                              >
+                                <Icon aria-hidden="true" />{action.label}
+                              </Link>
+                            )}
+                            {(result.review_status === "reviewed" || result.review_status === "completed")
+                              && result.report_id ? (
+                                <Link
+                                  className="table-action"
+                                  to={`/detections/results/${result.report_id}`}
+                                >
+                                  <Eye aria-hidden="true" />查看结果
+                                </Link>
+                              ) : null}
+                          </div>
                         </td>
                       </tr>
                     );

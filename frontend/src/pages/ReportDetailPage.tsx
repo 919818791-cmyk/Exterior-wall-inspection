@@ -14,9 +14,10 @@ import {
 } from "lucide-react";
 import type { CSSProperties, MouseEvent as ReactMouseEvent } from "react";
 import { useMemo, useRef, useState } from "react";
-import { Link as RouterLink, useNavigate, useParams } from "react-router-dom";
+import { Link as RouterLink, Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
 
 import { deleteReport, downloadReportDocx, downloadTrialReportPdf, reportQueryOptions } from "@/api/reports";
+import { completeDetectionReview, reviewDetectionPreviewQueryOptions } from "@/api/review";
 import { TilePreviewDialog, type TilePreviewSource } from "@/components/TilePreviewDialog";
 import type {
   ModelOutputPhoto,
@@ -38,12 +39,26 @@ function getErrorMessage(error: unknown) {
 
 export function ReportDetailPage() {
   const { id = "" } = useParams();
+  const location = useLocation();
   const user = useAuthStore((state) => state.user);
   const canShowTile = user?.role === "admin";
-  const reportQuery = useQuery(reportQueryOptions(id, false, user));
-  const report = reportQuery.data;
+  const requestedReviewTaskId = new URLSearchParams(location.search).get("reviewTaskId") ?? "";
+  const reviewTaskId = user?.role === "reviewer" || user?.role === "admin"
+    ? requestedReviewTaskId
+    : "";
+  const isReviewPreview = Boolean(reviewTaskId);
+  const reportQuery = useQuery({
+    ...reportQueryOptions(id, false, user),
+    enabled: Boolean(id && user?.id && !isReviewPreview)
+  });
+  const reviewPreviewQuery = useQuery({
+    ...reviewDetectionPreviewQueryOptions(reviewTaskId),
+    enabled: isReviewPreview
+  });
+  const activeQuery = isReviewPreview ? reviewPreviewQuery : reportQuery;
+  const report = activeQuery.data;
 
-  if (reportQuery.isLoading) {
+  if (activeQuery.isLoading) {
     return (
       <div className="grid gap-5">
         <Skeleton className="h-24 rounded-lg" />
@@ -52,29 +67,29 @@ export function ReportDetailPage() {
     );
   }
 
-  if (reportQuery.isError || !report) {
+  if (activeQuery.isError || !report) {
     return (
       <div className="grid min-h-[calc(100svh-8rem)] place-items-center">
         <Card className="w-full max-w-2xl rounded-lg border border-red-200 shadow-none">
           <CardBody className="gap-4 p-6">
             <h1 className="text-xl font-black text-ink">结果加载失败</h1>
             <p className="text-sm font-bold text-red-700">
-              {getErrorMessage(reportQuery.error)}
+              {getErrorMessage(activeQuery.error)}
             </p>
             <div className="flex flex-wrap gap-3">
               <Button
                 className="w-fit rounded-lg bg-primary font-bold text-white shadow-none"
-                onPress={() => void reportQuery.refetch()}
+                onPress={() => void activeQuery.refetch()}
               >
                 重新加载
               </Button>
               <Button
                 as={RouterLink}
                 className="report-back-button w-fit rounded-lg border border-slate-300 bg-white font-bold text-slate-700 shadow-none"
-                to="/projects"
+                to={isReviewPreview ? `/review/detections/${reviewTaskId}` : "/detections"}
                 variant="flat"
               >
-                返回列表
+                {isReviewPreview ? "返回修改" : "返回列表"}
               </Button>
             </div>
           </CardBody>
@@ -83,20 +98,30 @@ export function ReportDetailPage() {
     );
   }
 
+  const canonicalPath = report.source_type === "trial"
+    ? `/trials/${report.id}`
+    : `/detections/results/${report.id}`;
+  if (location.pathname !== canonicalPath) {
+    return <Navigate replace to={canonicalPath} />;
+  }
+
   return (
     <TrialResultDetail
       report={report}
       canShowTile={canShowTile}
+      reviewTaskId={reviewTaskId || undefined}
     />
   );
 }
 
 function TrialResultDetail({
   report,
-  canShowTile
+  canShowTile,
+  reviewTaskId
 }: {
   report: ReportDetail;
   canShowTile: boolean;
+  reviewTaskId?: string;
 }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -108,7 +133,7 @@ function TrialResultDetail({
   const previewDragMoved = useRef(false);
   const [tilePreview, setTilePreview] = useState<TilePreviewSource | null>(null);
   const isTrialResult = report.source_type === "trial";
-  const resultListPath = isTrialResult ? "/reports" : "/projects";
+  const resultListPath = isTrialResult ? "/trials" : "/detections";
   const exportFormat = isTrialResult ? "PDF" : "DOCX";
   const exportMutation = useMutation({
     mutationFn: () => isTrialResult
@@ -127,6 +152,17 @@ function TrialResultDetail({
         queryClient.invalidateQueries({ queryKey: ["reports"] })
       ]);
       navigate(resultListPath, { replace: true });
+    }
+  });
+  const completeReviewMutation = useMutation({
+    mutationFn: () => completeDetectionReview(reviewTaskId ?? ""),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["review"] }),
+        queryClient.invalidateQueries({ queryKey: ["projects"] }),
+        queryClient.invalidateQueries({ queryKey: ["reports"] })
+      ]);
+      navigate("/review", { replace: true });
     }
   });
   const resultRows = useMemo(() => buildTrialResultRows(report), [report]);
@@ -184,38 +220,65 @@ function TrialResultDetail({
           </div>
         </div>
         <div className="flex flex-wrap gap-3">
-          <button
-            aria-busy={exportMutation.isPending}
-            className="button secondary report-back-button report-export-button"
-            disabled={exportMutation.isPending}
-            type="button"
-            onClick={() => {
-              if (confirmReportExport()) exportMutation.mutate();
-            }}
-          >
-            <Download aria-hidden="true" />
-            {exportMutation.isPending ? "正在导出" : `导出 ${exportFormat}`}
-          </button>
-          <button
-            aria-busy={deleteMutation.isPending}
-            className="button secondary report-back-button result-delete-button"
-            disabled={deleteMutation.isPending || exportMutation.isPending}
-            type="button"
-            onClick={() => {
-              const confirmation = isTrialResult
-                ? `确认删除“${report.title}”免费试用结果？删除后无法在列表中查看。`
-                : `确认删除检测项目“${report.title}”及其检测结果和关联检测任务？删除后无法在列表中查看。`;
-              if (window.confirm(confirmation)) {
-                deleteMutation.mutate();
-              }
-            }}
-          >
-            <Trash2 aria-hidden="true" />
-            {deleteMutation.isPending ? "删除中…" : "删除"}
-          </button>
-          <RouterLink className="button secondary report-back-button" to={resultListPath}>
-            <ArrowLeft aria-hidden="true" />返回列表
-          </RouterLink>
+          {reviewTaskId ? (
+            <>
+              <button
+                aria-busy={completeReviewMutation.isPending}
+                className="button primary review-preview-complete-button"
+                disabled={completeReviewMutation.isPending}
+                type="button"
+                onClick={() => {
+                  if (window.confirm("确认当前预览结果无误并完成审核？完成后将推送正式结果并返回审核工作台。")) {
+                    completeReviewMutation.mutate();
+                  }
+                }}
+              >
+                <CheckCircle2 aria-hidden="true" />
+                {completeReviewMutation.isPending ? "正在完成审核…" : "完成审核"}
+              </button>
+              <RouterLink
+                className="button secondary report-back-button"
+                to={`/review/detections/${reviewTaskId}`}
+              >
+                <ArrowLeft aria-hidden="true" />返回修改
+              </RouterLink>
+            </>
+          ) : (
+            <>
+              <button
+                aria-busy={exportMutation.isPending}
+                className="button secondary report-back-button report-export-button"
+                disabled={exportMutation.isPending}
+                type="button"
+                onClick={() => {
+                  if (confirmReportExport()) exportMutation.mutate();
+                }}
+              >
+                <Download aria-hidden="true" />
+                {exportMutation.isPending ? "正在导出" : `导出 ${exportFormat}`}
+              </button>
+              <button
+                aria-busy={deleteMutation.isPending}
+                className="button secondary report-back-button result-delete-button"
+                disabled={deleteMutation.isPending || exportMutation.isPending}
+                type="button"
+                onClick={() => {
+                  const confirmation = isTrialResult
+                    ? `确认删除“${report.title}”免费试用结果？删除后无法在列表中查看。`
+                    : `确认删除检测项目“${report.title}”及其检测结果和关联检测任务？删除后无法在列表中查看。`;
+                  if (window.confirm(confirmation)) {
+                    deleteMutation.mutate();
+                  }
+                }}
+              >
+                <Trash2 aria-hidden="true" />
+                {deleteMutation.isPending ? "删除中…" : "删除"}
+              </button>
+              <RouterLink className="button secondary report-back-button" to={resultListPath}>
+                <ArrowLeft aria-hidden="true" />返回列表
+              </RouterLink>
+            </>
+          )}
         </div>
       </div>
       {exportMutation.isError ? (
@@ -223,6 +286,9 @@ function TrialResultDetail({
       ) : null}
       {deleteMutation.isError ? (
         <p className="project-list-error">删除失败：{getErrorMessage(deleteMutation.error)}<button className="inline-retry-button" type="button" onClick={() => deleteMutation.mutate()}>重试</button></p>
+      ) : null}
+      {completeReviewMutation.isError ? (
+        <p className="project-list-error">完成审核失败：{getErrorMessage(completeReviewMutation.error)}<button className="inline-retry-button" type="button" onClick={() => completeReviewMutation.mutate()}>重试</button></p>
       ) : null}
       <div className="trial-experience-shell trial-experience-content-shell trial-result-detail-shell">
         <section className="trial-experience-grid">

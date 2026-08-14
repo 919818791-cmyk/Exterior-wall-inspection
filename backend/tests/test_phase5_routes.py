@@ -1,3 +1,4 @@
+import asyncio
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from uuid import uuid4
@@ -9,6 +10,7 @@ from fastapi.testclient import TestClient
 from app.api.detection_tasks import (
     _formal_compatible_inference,
     _remove_rejected_project_photos,
+    _run_formal_project_inference,
     _validate_formal_photo_model_compatibility,
 )
 from app.enums.status import PhotoPrecheckStatus
@@ -82,6 +84,34 @@ def test_detection_start_defaults_to_all_supported_report_types() -> None:
     payload = DetectionStartRequest.model_validate({})
 
     assert payload.model_types == ["crack", "spalling", "hollow"]
+
+
+def test_formal_detection_does_not_wait_before_starting(monkeypatch: pytest.MonkeyPatch) -> None:
+    class EmptyDb:
+        def scalar(self, *_: object, **__: object) -> None:
+            return None
+
+        def close(self) -> None:
+            pass
+
+    async def fail_if_called(*_: object, **__: object) -> None:
+        raise AssertionError("formal detection must not wait before starting")
+
+    monkeypatch.setattr("app.db.session.SessionLocal", lambda: EmptyDb())
+    monkeypatch.setattr("app.api.detection_tasks.asyncio.sleep", fail_if_called)
+
+    asyncio.run(
+        _run_formal_project_inference(
+            project_id=uuid4(),
+            task_id=uuid4(),
+            actor_id=uuid4(),
+            photo_ids=[],
+            selected_model_types=[],
+            runtime=SimpleNamespace(model="test-model"),
+            prompts=SimpleNamespace(),
+            inference_snapshot={},
+        )
+    )
 
 
 def test_start_detection_removes_rejected_photos_from_project_list() -> None:

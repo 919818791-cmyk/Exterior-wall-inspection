@@ -37,6 +37,8 @@ interface PendingPhoto {
   remoteId?: string;
   photoType?: PhotoType;
   precheckStatus?: PhotoPrecheckStatus;
+  precheckCategory?: string | null;
+  precheckReason?: string | null;
   status: "pending" | "uploading" | "saved" | "failed";
 }
 
@@ -128,7 +130,10 @@ export function NewProjectPage() {
 
   const updatePhoto = (
     localId: string,
-    update: Partial<Pick<PendingPhoto, "photoType" | "precheckStatus" | "remoteId" | "status">>
+    update: Partial<Pick<
+      PendingPhoto,
+      "photoType" | "precheckStatus" | "precheckCategory" | "precheckReason" | "remoteId" | "status"
+    >>
   ) => {
     replaceForm({
       ...formRef.current,
@@ -173,7 +178,7 @@ export function NewProjectPage() {
       let batch;
       try {
         batch = await createUploadBatch(project.id, {
-          drone_type: "大疆型号",
+          drone_type: null,
           remark: null,
           upload_mode: "dji"
         });
@@ -194,6 +199,8 @@ export function NewProjectPage() {
           updatePhoto(photo.localId, {
             photoType: uploadedPhoto.photo_type,
             precheckStatus: uploadedPhoto.precheck_status,
+            precheckCategory: uploadedPhoto.precheck_category,
+            precheckReason: uploadedPhoto.precheck_reason,
             remoteId: uploadedPhoto.id,
             status: "saved"
           });
@@ -437,7 +444,7 @@ export function NewProjectPage() {
       if (!project || !uploadedPhotoCount) {
         throw new Error("照片尚未保存完成，请稍后重试。");
       }
-      navigate(`/projects/${project.id}`, {
+      navigate(`/detections/${project.id}`, {
         state: { openDetectionModal: true }
       });
     } catch (error) {
@@ -480,7 +487,7 @@ export function NewProjectPage() {
         <>
           <Link
             className="button secondary report-back-button project-workbench-nav-button new-project-back-button"
-            to="/projects"
+            to="/detections"
           >
             <ArrowLeft aria-hidden="true" />
             返回
@@ -525,6 +532,7 @@ export function NewProjectPage() {
           <ProjectPhotoUploader
             addDisabled={startDetectionPending || form.photos.length >= MAX_PROJECT_PHOTO_COUNT}
             disabled={startDetectionPending}
+            emptyHint={<span className="professional-drone-upload-hint">（仅支持专业无人机拍摄的照片）</span>}
             hasPhotos={Boolean(form.photos.length)}
             onFilesSelected={applyFiles}
           >
@@ -535,6 +543,8 @@ export function NewProjectPage() {
                   badges={thermalAvailable ? <span className="trial-thermal-available-tag">热成像</span> : null}
                   fileName={photo.file.name}
                   key={photo.localId}
+                  precheckCategory={photo.precheckCategory}
+                  precheckReason={photo.precheckReason}
                   precheckStatus={photo.precheckStatus}
                   previewUrl={photo.previewUrl}
                   removeDisabled={isSaving || startDetectionPending}

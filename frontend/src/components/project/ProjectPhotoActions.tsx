@@ -140,7 +140,7 @@ export function ProjectPhotoActions({
   const uploadMutation = useMutation({
     mutationFn: async (entries: PendingUpload[]) => {
       const batch = await createUploadBatch(project.id, {
-        drone_type: "大疆型号",
+        drone_type: null,
         remark: null,
         upload_mode: "dji"
       });
@@ -455,6 +455,7 @@ export function ProjectPhotoActions({
         addDisabled={!isEditable || uploadMutation.isPending || visiblePhotoCount >= MAX_PROJECT_PHOTO_COUNT}
         containerRef={uploaderRef}
         disabled={!isEditable || uploadMutation.isPending}
+        emptyHint={<span className="professional-drone-upload-hint">（仅支持专业无人机拍摄的照片）</span>}
         hasPhotos={hasPhotos}
         isLoading={photosQuery.isLoading}
         onFilesSelected={applyFiles}
@@ -466,6 +467,7 @@ export function ProjectPhotoActions({
               badges={photo.photo_type === "thermal" ? <span className="trial-thermal-available-tag">热成像</span> : null}
               fileName={photo.original_filename}
               key={photo.id}
+              precheckCategory={photo.precheck_category}
               precheckReason={photo.precheck_reason}
               precheckStatus={photo.precheck_status}
               previewUrl={previewUrl}

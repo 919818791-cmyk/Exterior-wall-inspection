@@ -2,6 +2,7 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
 
 from app.api import projects
@@ -36,10 +37,10 @@ def test_phase3_create_project_uses_server_owned_fields() -> None:
     assert "latitude" in fields
 
 
-def test_blank_project_names_use_the_project_number_timestamp() -> None:
+def test_blank_project_names_use_the_project_number() -> None:
     project_no = "PRJ-20260729-001"
 
-    assert projects._generated_project_name(project_no) == "未命名项目-20260729"
+    assert projects._generated_project_name(project_no) == project_no
     assert ProjectCreateRequest().name is None
     assert ProjectUpdateRequest(name="   ").name == "   "
 
@@ -198,8 +199,59 @@ def test_update_project_generates_a_name_when_the_submitted_name_is_blank(
     )
 
     assert result is project
-    assert project.name == "未命名项目-20260729"
+    assert project.name == project.project_no
     assert db.commit_count == 1
+
+
+@pytest.mark.parametrize(
+    "project_status",
+    [
+        ProjectStatus.DRAFT.value,
+        ProjectStatus.REVIEWED.value,
+        ProjectStatus.COMPLETED.value,
+    ],
+)
+def test_delete_project_allows_draft_and_completed_statuses(
+    monkeypatch: pytest.MonkeyPatch,
+    project_status: str,
+) -> None:
+    project = SimpleNamespace(id=uuid4(), status=project_status, deleted_at=None)
+    db = FakeProjectUpdateDb()
+
+    monkeypatch.setattr(projects, "_get_project_or_404", lambda *_: project)
+    monkeypatch.setattr(projects, "ensure_project_access", lambda *_: None)
+
+    result = projects.delete_project(project.id, db, _admin())
+
+    assert result.ok is True
+    assert project.deleted_at is not None
+    assert db.commit_count == 1
+
+
+@pytest.mark.parametrize(
+    "project_status",
+    [
+        ProjectStatus.QUEUED.value,
+        ProjectStatus.DETECTING.value,
+        ProjectStatus.PENDING_REVIEW.value,
+    ],
+)
+def test_delete_project_rejects_active_statuses(
+    monkeypatch: pytest.MonkeyPatch,
+    project_status: str,
+) -> None:
+    project = SimpleNamespace(id=uuid4(), status=project_status, deleted_at=None)
+    db = FakeProjectUpdateDb()
+
+    monkeypatch.setattr(projects, "_get_project_or_404", lambda *_: project)
+    monkeypatch.setattr(projects, "ensure_project_access", lambda *_: None)
+
+    with pytest.raises(HTTPException) as exc_info:
+        projects.delete_project(project.id, db, _admin())
+
+    assert exc_info.value.status_code == 409
+    assert project.deleted_at is None
+    assert db.commit_count == 0
 
 
 def test_create_project_generates_a_name_when_the_submitted_name_is_blank(
@@ -216,7 +268,7 @@ def test_create_project_generates_a_name_when_the_submitted_name_is_blank(
     )
 
     assert project.project_no == project_no
-    assert project.name == "未命名项目-20260729"
+    assert project.name == project.project_no
     assert db.records == [project]
     assert db.flush_count == 1
 

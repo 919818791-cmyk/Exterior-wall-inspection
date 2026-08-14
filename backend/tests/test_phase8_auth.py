@@ -1,15 +1,48 @@
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from uuid import UUID
 
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
-from pytest import raises
+from pytest import fixture, raises
 
-from app.api.dependencies import AuthenticatedSession, AuthenticatedUser, get_current_session, get_current_user, require_roles
+from app.api.dependencies import (
+    AuthenticatedSession,
+    AuthenticatedUser,
+    ensure_project_access,
+    ensure_project_write_access,
+    get_current_session,
+    get_current_user,
+    require_roles,
+)
 from app.core.security import create_access_token, decode_access_token, hash_password, verify_password
 from app.db.session import get_db
 from app.enums.status import UserRole, UserStatus
 from app.main import app
+from app.services.sms_verification import SmsSendResult, get_sms_verification_service
+
+
+class StubSmsVerificationService:
+    def __init__(self) -> None:
+        self.sent_phones: list[str] = []
+        self.verification_attempts: list[tuple[str, str]] = []
+        self.verification_result = True
+
+    def send_code(self, phone: str) -> SmsSendResult:
+        self.sent_phones.append(phone)
+        return SmsSendResult(biz_id="test-biz-id", request_id="test-request-id")
+
+    def verify_code(self, phone: str, code: str) -> bool:
+        self.verification_attempts.append((phone, code))
+        return self.verification_result
+
+
+@fixture(autouse=True)
+def stub_sms_verification_service() -> StubSmsVerificationService:
+    service = StubSmsVerificationService()
+    app.dependency_overrides[get_sms_verification_service] = lambda: service
+    yield service
+    app.dependency_overrides.pop(get_sms_verification_service, None)
 
 
 def test_phase8_auth_routes_are_registered() -> None:
@@ -22,6 +55,11 @@ def test_phase8_auth_routes_are_registered() -> None:
     }
 
     assert "/api/auth/login" in paths
+    assert "/api/auth/registration/username-availability" in paths
+    assert "/api/auth/registration/sms-code" in paths
+    assert "/api/auth/password-reset/sms-code" in paths
+    assert "/api/auth/password-reset/verify" in paths
+    assert "/api/auth/password-reset" in paths
     assert "/api/auth/trial-application" in paths
     assert "/api/auth/me" in paths
     assert "/api/auth/me/data-export" not in paths
@@ -71,6 +109,7 @@ def test_trial_application_creates_active_customer_account() -> None:
                 "username": "trial_user",
                 "password": "Trial123!",
                 "phone": "13800000000",
+                "verification_code": "1234",
             },
         )
     finally:
@@ -102,6 +141,7 @@ def test_trial_application_rejects_invalid_china_mobile_phone() -> None:
                 "username": "invalid_phone_user",
                 "password": "Trial123!",
                 "phone": "12800000000",
+                "verification_code": "1234",
             },
         )
     finally:
@@ -136,6 +176,7 @@ def test_trial_application_treats_blank_optional_profile_fields_as_missing() -> 
                 "password": "Trial123!",
                 "real_name": "   ",
                 "phone": "13900000000",
+                "verification_code": "1234",
                 "organization": "   ",
             },
         )
@@ -161,6 +202,7 @@ def test_trial_application_rejects_duplicate_username_case_insensitively() -> No
                 "username": "TRIAL_USER",
                 "password": "Trial123!",
                 "phone": "13700000000",
+                "verification_code": "1234",
             },
         )
     finally:
@@ -168,6 +210,176 @@ def test_trial_application_rejects_duplicate_username_case_insensitively() -> No
 
     assert response.status_code == 409
     assert response.json()["message"] == "用户名已存在。"
+
+
+def test_registration_username_availability_is_case_insensitive() -> None:
+    class FakeDb:
+        def __init__(self) -> None:
+            self.statements: list[object] = []
+
+        def scalar(self, statement: object) -> UUID:
+            self.statements.append(statement)
+            return UUID("00000000-0000-0000-0000-000000000010")
+
+    fake_db = FakeDb()
+    app.dependency_overrides[get_db] = lambda: fake_db
+
+    try:
+        response = TestClient(app).get(
+            "/api/auth/registration/username-availability",
+            params={"username": "  TRIAL_USER  "},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == {"username": "TRIAL_USER", "available": False}
+    assert "lower(user_account.username)" in str(fake_db.statements[0])
+
+
+def test_registration_username_availability_reports_unused_username() -> None:
+    class FakeDb:
+        def scalar(self, _: object) -> None:
+            return None
+
+    app.dependency_overrides[get_db] = lambda: FakeDb()
+
+    try:
+        response = TestClient(app).get(
+            "/api/auth/registration/username-availability",
+            params={"username": "new_trial_user"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == {"username": "new_trial_user", "available": True}
+
+
+def test_registration_sms_code_is_sent_to_available_phone(
+    stub_sms_verification_service: StubSmsVerificationService,
+) -> None:
+    class FakeDb:
+        def scalar(self, _: object) -> None:
+            return None
+
+    app.dependency_overrides[get_db] = lambda: FakeDb()
+
+    try:
+        response = TestClient(app).post(
+            "/api/auth/registration/sms-code",
+            json={"phone": "13800000000"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True, "retry_after_seconds": 60}
+    assert stub_sms_verification_service.sent_phones == ["13800000000"]
+
+
+def test_password_reset_verification_can_set_a_new_password(
+    stub_sms_verification_service: StubSmsVerificationService,
+) -> None:
+    class FakeUser:
+        id = UUID("00000000-0000-0000-0000-000000000010")
+        username = "reset_user"
+        real_name = "找回密码用户"
+        phone = "13800000000"
+        role = UserRole.CUSTOMER.value
+        organization = None
+        status = UserStatus.ACTIVE.value
+        deleted_at = None
+        password_hash = hash_password("OldPassword123!")
+
+    class FakeDb:
+        def __init__(self) -> None:
+            self.user = FakeUser()
+            self.committed = False
+
+        def get(self, _model: object, _user_id: UUID) -> FakeUser:
+            return self.user
+
+        def scalar(self, _statement: object) -> FakeUser:
+            return self.user
+
+        def flush(self) -> None:
+            return None
+
+        def commit(self) -> None:
+            self.committed = True
+
+    fake_db = FakeDb()
+    app.dependency_overrides[get_db] = lambda: fake_db
+
+    try:
+        client = TestClient(app)
+        send_response = client.post(
+            "/api/auth/password-reset/sms-code",
+            json={"phone": "13800000000"},
+        )
+        verify_response = client.post(
+            "/api/auth/password-reset/verify",
+            json={"phone": "13800000000", "verification_code": "1234"},
+        )
+        reset_token = verify_response.json()["reset_token"]
+        reset_response = client.post(
+            "/api/auth/password-reset",
+            json={"reset_token": reset_token, "new_password": "NewPassword123!"},
+        )
+        reused_token_response = client.post(
+            "/api/auth/password-reset",
+            json={"reset_token": reset_token, "new_password": "AnotherPassword123!"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert send_response.status_code == 200
+    assert stub_sms_verification_service.sent_phones == ["13800000000"]
+    assert verify_response.status_code == 200
+    assert stub_sms_verification_service.verification_attempts == [("13800000000", "1234")]
+    assert reset_response.status_code == 200
+    assert reset_response.json() == {"ok": True}
+    assert reused_token_response.status_code == 400
+    assert fake_db.committed
+    assert verify_password("NewPassword123!", fake_db.user.password_hash)
+    assert not verify_password("OldPassword123!", fake_db.user.password_hash)
+
+
+def test_trial_application_rejects_invalid_sms_code(
+    stub_sms_verification_service: StubSmsVerificationService,
+) -> None:
+    class FakeDb:
+        def __init__(self) -> None:
+            self.add_count = 0
+
+        def scalar(self, _: object) -> None:
+            return None
+
+        def add(self, _: object) -> None:
+            self.add_count += 1
+
+    fake_db = FakeDb()
+    stub_sms_verification_service.verification_result = False
+    app.dependency_overrides[get_db] = lambda: fake_db
+
+    try:
+        response = TestClient(app).post(
+            "/api/auth/trial-application",
+            json={
+                "username": "invalid_code_user",
+                "password": "Trial123!",
+                "phone": "13800000000",
+                "verification_code": "9999",
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 400
+    assert response.json()["message"] == "验证码错误或已过期。"
+    assert fake_db.add_count == 0
+    assert stub_sms_verification_service.verification_attempts == [("13800000000", "9999")]
 
 
 def test_disabled_account_login_reports_not_opened() -> None:
@@ -281,6 +493,45 @@ def test_customer_is_rejected_from_review_boundary() -> None:
         reviewer_guard(customer)
 
     assert raised.value.status_code == 403
+
+
+def test_reviewer_can_read_but_cannot_mutate_another_users_project() -> None:
+    project = SimpleNamespace(created_by=UUID("00000000-0000-0000-0000-000000000001"))
+    reviewer = AuthenticatedUser(
+        id=UUID("00000000-0000-0000-0000-000000000002"),
+        username="reviewer",
+        real_name="审核员",
+        role=UserRole.REVIEWER.value,
+        organization=None,
+    )
+
+    ensure_project_access(project, reviewer)
+    with raises(HTTPException) as raised:
+        ensure_project_write_access(project, reviewer)
+
+    assert raised.value.status_code == 404
+
+
+def test_project_owner_and_admin_have_project_write_access() -> None:
+    owner_id = UUID("00000000-0000-0000-0000-000000000001")
+    project = SimpleNamespace(created_by=owner_id)
+    owner = AuthenticatedUser(
+        id=owner_id,
+        username="owner",
+        real_name=None,
+        role=UserRole.CUSTOMER.value,
+        organization=None,
+    )
+    admin = AuthenticatedUser(
+        id=UUID("00000000-0000-0000-0000-000000000003"),
+        username="admin",
+        real_name=None,
+        role=UserRole.ADMIN.value,
+        organization=None,
+    )
+
+    ensure_project_write_access(project, owner)
+    ensure_project_write_access(project, admin)
 
 
 def test_all_authenticated_roles_can_access_project_workbench() -> None:
@@ -561,7 +812,7 @@ def test_change_password_updates_hash_and_revokes_current_session() -> None:
     assert not verify_password("Customer123!", fake_db.user.password_hash)
 
 
-def test_admin_reset_account_password_uses_default_password() -> None:
+def test_admin_reset_account_password_returns_random_temporary_password() -> None:
     class FakeAccount:
         id = UUID("00000000-0000-0000-0000-000000000001")
         username = "customer"
@@ -607,5 +858,12 @@ def test_admin_reset_account_password_uses_default_password() -> None:
 
     assert response.status_code == 200
     assert fake_db.committed
-    assert verify_password("123456", fake_db.account.password_hash)
+    payload = response.json()
+    temporary_password = payload["temporary_password"]
+    assert payload["account"]["id"] == "00000000-0000-0000-0000-000000000001"
+    assert len(temporary_password) >= 20
+    assert temporary_password != "123456"
+    assert response.headers["cache-control"] == "no-store"
+    assert verify_password(temporary_password, fake_db.account.password_hash)
+    assert not verify_password("123456", fake_db.account.password_hash)
     assert not verify_password("OldPassword123!", fake_db.account.password_hash)

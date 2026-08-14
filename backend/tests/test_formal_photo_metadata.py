@@ -3,6 +3,7 @@ from zipfile import ZipFile
 
 import pytest
 from docx import Document
+from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
 from PIL import Image
 
 from app import models  # noqa: F401
@@ -15,10 +16,17 @@ from app.services.photo_metadata import (
 )
 
 
-def _dji_xmp(*, relative_altitude: str, gimbal_yaw_degree: str) -> bytes:
+def _dji_xmp(
+    *,
+    relative_altitude: str,
+    gimbal_yaw_degree: str,
+    camera_model: str | None = None,
+) -> bytes:
+    model_attribute = f'tiff:Model="{camera_model}" '.encode() if camera_model else b""
     return (
         b"\xff\xd8"
         b'<rdf:Description drone-dji:ImageSource="Visible" '
+        + model_attribute
         + f'drone-dji:RelativeAltitude="{relative_altitude}" '.encode()
         + f'drone-dji:GimbalYawDegree="{gimbal_yaw_degree}" />'.encode()
         + b"\xff\xd9"
@@ -26,13 +34,69 @@ def _dji_xmp(*, relative_altitude: str, gimbal_yaw_degree: str) -> bytes:
 
 
 def test_formal_photo_metadata_extracts_altitude_and_facade_orientation() -> None:
-    data = _dji_xmp(relative_altitude="+42.500", gimbal_yaw_degree="90.0")
+    data = _dji_xmp(
+        relative_altitude="+42.500",
+        gimbal_yaw_degree="90.0",
+        camera_model="M3T",
+    )
 
     metadata = extract_formal_photo_metadata_from_bytes(data)
 
     assert metadata["relative_altitude"] == 42.5
     assert metadata["gimbal_yaw_degree"] == 90.0
     assert metadata["facade_orientation"] == "西立面"
+    assert metadata["camera_model"] == "M3T"
+    assert metadata["drone_metadata_available"] is True
+    assert metadata["professional_drone_photo"] is True
+
+
+@pytest.mark.parametrize(
+    ("data", "expected_reason"),
+    [
+        (
+            _dji_xmp(relative_altitude="18.0", gimbal_yaw_degree="-45.0"),
+            "missing-model",
+        ),
+        (b'\xff\xd8<rdf:Description tiff:Model="M3T" />\xff\xd9', "missing-drone-metadata"),
+    ],
+)
+def test_formal_photo_requires_drone_metadata_and_camera_model(
+    data: bytes,
+    expected_reason: str,
+) -> None:
+    metadata = extract_formal_photo_metadata_from_bytes(data)
+
+    assert metadata["professional_drone_photo"] is False, expected_reason
+
+
+def test_formal_photo_reads_camera_model_from_exif() -> None:
+    output = BytesIO()
+    exif = Image.Exif()
+    exif[0x010F] = "DJI"
+    exif[0x0110] = "FC3582"
+    Image.new("RGB", (8, 8), "white").save(output, format="JPEG", exif=exif)
+    data = output.getvalue() + b'<rdf:Description drone-dji:RelativeAltitude="21.5" />'
+
+    metadata = extract_formal_photo_metadata_from_bytes(data)
+
+    assert metadata["camera_make"] == "DJI"
+    assert metadata["camera_model"] == "FC3582"
+    assert metadata["professional_drone_photo"] is True
+
+
+def test_formal_photo_accepts_non_dji_drone_metadata_namespace() -> None:
+    data = (
+        b"\xff\xd8"
+        b'<rdf:Description tiff:Model="EVO II Pro" '
+        b'drone-autel:RelativeAltitude="28.0" />'
+        b"\xff\xd9"
+    )
+
+    metadata = extract_formal_photo_metadata_from_bytes(data)
+
+    assert metadata["camera_model"] == "EVO II Pro"
+    assert metadata["relative_altitude"] == 28.0
+    assert metadata["professional_drone_photo"] is True
 
 
 def test_trial_metadata_contract_does_not_include_formal_pose_fields() -> None:
@@ -82,6 +146,7 @@ def test_formal_docx_adds_facade_orientation_and_capture_height_column() -> None
         "正式检测报告",
         "RPT-POSE-001",
         {
+            "project": {"name": "13号楼"},
             "photos": [
                 {
                     "id": "photo-1",
@@ -128,6 +193,7 @@ def test_formal_docx_uses_reference_layout_and_pairs_four_by_three_photos() -> N
         "13号楼外立面表观病害筛查简报",
         "RPT-LAYOUT-001",
         {
+            "project": {"name": "13号楼"},
             "photos": [
                 {
                     "id": "visible-1",
@@ -159,10 +225,14 @@ def test_formal_docx_uses_reference_layout_and_pairs_four_by_three_photos() -> N
     document = Document(BytesIO(content))
     assert document.sections[0].page_width.inches == pytest.approx(8.5)
     assert document.sections[0].left_margin.inches == pytest.approx(1.25)
-    assert document.paragraphs[1].text == "13号楼外立面表观病害筛查简报"
+    assert document.paragraphs[1].text == "13号楼-外立面表观病害筛查简报"
     assert document.paragraphs[1].runs[0].font.name == "黑体"
     assert document.paragraphs[1].runs[0].font.size.pt == pytest.approx(16)
-    assert document.paragraphs[2].text.startswith("经对巡检结果进行空间定位与尺度估算")
+    assert document.paragraphs[2].text == (
+        "经对巡检结果进行空间定位与尺度估算，得到以下疑似病害位置。"
+        "深度估计结果存在模型与相机参数误差，建议结合现场复核。"
+    )
+    assert "与面积" not in document.paragraphs[2].text
 
     table = document.tables[0]
     assert [cell.text for cell in table.rows[0].cells] == [
@@ -173,6 +243,11 @@ def test_formal_docx_uses_reference_layout_and_pairs_four_by_three_photos() -> N
         "立面朝向\n拍摄高度",
     ]
     assert len(table.rows) == 2
+    assert all(
+        cell.vertical_alignment == WD_CELL_VERTICAL_ALIGNMENT.CENTER
+        for row in table.rows
+        for cell in row.cells
+    )
     assert table.rows[1].cells[1].text.endswith("DJI_0165_V.JPG")
     assert table.rows[1].cells[2].text.endswith("DJI_0165_T.JPG")
     assert table.rows[1].cells[3].text == "疑似裂缝: 1处\n疑似空鼓: 1处"

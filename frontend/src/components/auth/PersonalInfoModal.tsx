@@ -73,8 +73,6 @@ export function PersonalInfoModal({
 
   if (!isOpen) return null;
 
-  const displayName = user.real_name?.trim() || user.username;
-  const avatarInitial = displayName.slice(0, 1).toLocaleUpperCase();
   const hasUnsavedChanges = isEditing && (
     realName.trim() !== (user.real_name ?? "").trim()
     || phone.trim() !== (user.phone ?? "").trim()
@@ -131,7 +129,7 @@ export function PersonalInfoModal({
         </button>
 
         <div className="personal-info-heading">
-          <span aria-hidden="true" className="personal-info-avatar">{avatarInitial}</span>
+          <span aria-hidden="true" className="personal-info-avatar"><UserRound /></span>
           <div>
             <h2 id="personal-info-title">个人信息</h2>
           </div>

@@ -663,16 +663,26 @@ def test_customer_trial_report_list_is_limited_to_own_results() -> None:
     assert "inspection_report" not in trial_result_query
 
 
-def test_reviewer_and_admin_trial_report_list_can_include_cross_user_results() -> None:
-    for user in (_reviewer(), _admin()):
-        fake_db = CapturingReportDb()
+def test_reviewer_trial_report_list_is_limited_to_own_results() -> None:
+    fake_db = CapturingReportDb()
 
-        list_reports(db=fake_db, current_user=user)
+    list_reports(db=fake_db, current_user=_reviewer())
 
-        assert len(fake_db.statements) == 1
-        trial_result_query = str(fake_db.statements[0])
-        assert "trial_detection_result.generated_by =" not in trial_result_query
-        assert "inspection_report" not in trial_result_query
+    assert len(fake_db.statements) == 1
+    trial_result_query = str(fake_db.statements[0])
+    assert "trial_detection_result.generated_by = :generated_by_1" in trial_result_query
+    assert "inspection_report" not in trial_result_query
+
+
+def test_admin_trial_report_list_can_include_cross_user_results() -> None:
+    fake_db = CapturingReportDb()
+
+    list_reports(db=fake_db, current_user=_admin())
+
+    assert len(fake_db.statements) == 1
+    trial_result_query = str(fake_db.statements[0])
+    assert "trial_detection_result.generated_by =" not in trial_result_query
+    assert "inspection_report" not in trial_result_query
 
 
 def test_trial_report_request_accepts_optional_report_name() -> None:
@@ -1467,9 +1477,10 @@ def test_docx_report_builder_creates_valid_package() -> None:
         document = package.read("word/document.xml").decode("utf-8")
         core_properties = package.read("docProps/core.xml").decode("utf-8")
 
-    assert "示例外墙检测报告" in document
+    assert "科技园 A 座-外立面表观病害筛查简报" in document
     assert "RPT-202606260001" in core_properties
     assert "经对巡检结果进行空间定位与尺度估算" in document
+    assert "与面积" not in document
     assert "可见光图像" in document
     assert "热红外图像" in document
     assert "facade-001.jpg" in document

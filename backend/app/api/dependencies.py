@@ -190,3 +190,9 @@ def require_roles(*roles: UserRole | str) -> Callable[[AuthenticatedUser], Authe
 def ensure_project_access(project: Project, current_user: AuthenticatedUser) -> None:
     if current_user.role == UserRole.CUSTOMER.value and project.created_by != current_user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
+
+
+def ensure_project_write_access(project: Project, current_user: AuthenticatedUser) -> None:
+    """Allow project-source mutations only to the owner or an administrator."""
+    if current_user.role != UserRole.ADMIN.value and project.created_by != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")

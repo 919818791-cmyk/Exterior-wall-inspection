@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import secrets
 from datetime import datetime, timedelta
 from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import and_, case, func, select
 from sqlalchemy.orm import Session
 
@@ -23,11 +24,16 @@ from app.schemas.account_usage import (
     AccountUsageTotals,
     CurrentAccountUsageResponse,
 )
-from app.schemas.auth import AccountCreateRequest, AccountRead, AccountUpdateRequest
+from app.schemas.auth import (
+    AccountCreateRequest,
+    AccountPasswordResetResponse,
+    AccountRead,
+    AccountUpdateRequest,
+)
 from app.services.trial_inference_provider import trial_scheduling_settings
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
-DEFAULT_RESET_PASSWORD = "123456"
+TEMPORARY_PASSWORD_BYTES = 18
 
 
 def _enum_value(value: object) -> str:
@@ -397,14 +403,20 @@ def update_account(
     return _to_account_read(account)
 
 
-@router.post("/{account_id}/reset-password", response_model=AccountRead)
+@router.post("/{account_id}/reset-password", response_model=AccountPasswordResetResponse)
 def reset_account_password(
     account_id: UUID,
+    response: Response,
     _: AuthenticatedUser = Depends(require_roles(UserRole.ADMIN)),
     db: Session = Depends(get_db),
-) -> AccountRead:
+) -> AccountPasswordResetResponse:
     account = _account_or_404(db, account_id)
-    account.password_hash = hash_password(DEFAULT_RESET_PASSWORD)
+    temporary_password = secrets.token_urlsafe(TEMPORARY_PASSWORD_BYTES)
+    account.password_hash = hash_password(temporary_password)
     db.commit()
     db.refresh(account)
-    return _to_account_read(account)
+    response.headers["Cache-Control"] = "no-store"
+    return AccountPasswordResetResponse(
+        account=_to_account_read(account),
+        temporary_password=temporary_password,
+    )

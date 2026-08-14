@@ -7,7 +7,14 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=(".env", "../.env", ".env.local", "../.env.local"),
+        env_file=(
+            ".env",
+            "../.env",
+            ".env.local",
+            "../.env.local",
+            ".env.sms.local",
+            "../.env.sms.local",
+        ),
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -49,6 +56,24 @@ class Settings(BaseSettings):
     login_rate_window_seconds: int = Field(default=900, ge=60)
     trial_application_limit_per_identity: int = Field(default=3, ge=1)
     trial_application_window_seconds: int = Field(default=86400, ge=60)
+
+    sms_verification_enabled: bool = False
+    aliyun_dypns_access_key_id: str = ""
+    aliyun_dypns_access_key_secret: str = ""
+    aliyun_dypns_region_id: str = "ap-southeast-1"
+    aliyun_dypns_endpoint: str = "dypnsapi.aliyuncs.com"
+    sms_verification_sign_name: str = ""
+    sms_verification_template_code: str = "100001"
+    sms_verification_scheme_name: str = ""
+    sms_verification_code_length: int = Field(default=4, ge=4, le=8)
+    sms_verification_valid_seconds: int = Field(default=300, ge=60, le=1800)
+    sms_verification_send_interval_seconds: int = Field(default=60, ge=30, le=600)
+    sms_verification_send_limit_per_phone_hour: int = Field(default=5, ge=1, le=30)
+    sms_verification_send_limit_per_ip_hour: int = Field(default=20, ge=1, le=200)
+    sms_verification_check_limit_per_phone: int = Field(default=10, ge=1, le=100)
+    sms_verification_check_limit_per_ip: int = Field(default=30, ge=1, le=300)
+    sms_verification_check_window_seconds: int = Field(default=600, ge=60, le=3600)
+    sms_verification_request_timeout_seconds: int = Field(default=10, ge=3, le=30)
 
     trial_daily_api_request_limit: int = Field(default=800, ge=1)
     trial_max_file_size_bytes: int = Field(default=5 * 1024 * 1024, ge=1024)
@@ -197,6 +222,22 @@ class Settings(BaseSettings):
             problems.append("SECURITY_STORE_BACKEND must be redis")
         if not self.security_fail_closed:
             problems.append("SECURITY_FAIL_CLOSED must be true")
+        if self.sms_verification_enabled:
+            sms_required_values = {
+                "ALIYUN_DYPNS_ACCESS_KEY_ID": self.aliyun_dypns_access_key_id,
+                "ALIYUN_DYPNS_ACCESS_KEY_SECRET": self.aliyun_dypns_access_key_secret,
+                "ALIYUN_DYPNS_REGION_ID": self.aliyun_dypns_region_id,
+                "ALIYUN_DYPNS_ENDPOINT": self.aliyun_dypns_endpoint,
+                "SMS_VERIFICATION_SIGN_NAME": self.sms_verification_sign_name,
+                "SMS_VERIFICATION_TEMPLATE_CODE": self.sms_verification_template_code,
+            }
+            missing_sms_values = [
+                name for name, value in sms_required_values.items() if not value.strip()
+            ]
+            if missing_sms_values:
+                problems.append(
+                    "SMS verification is enabled but missing " + ", ".join(missing_sms_values)
+                )
         if "*" in self.backend_cors_origins:
             problems.append("BACKEND_CORS_ORIGINS must not contain *")
         if self.photo_guard_enabled:

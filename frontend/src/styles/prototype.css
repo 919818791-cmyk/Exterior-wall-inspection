@@ -5,6 +5,14 @@
   --line: rgba(30, 78, 147, 0.14);
   --blue: #245cff;
   --blue-2: #4da3ff;
+  --button-primary-foreground: #fff;
+  --button-primary-background: var(--blue);
+  --button-primary-background-hover: #1748d4;
+  --button-primary-hover-shadow: 0 6px 14px rgba(36, 92, 255, 0.2);
+  --button-primary-radius: 999px;
+  --feedback-warning-foreground: #7c3aed;
+  --feedback-warning-border: #ddd6fe;
+  --feedback-warning-background: #f5f3ff;
   --cyan: #67d7ff;
   --green: #4ac27d;
   --orange: #ff8a35;
@@ -242,8 +250,9 @@ a {
 
 .nav-cta,
 .button.primary {
-  color: #fff;
-  background: linear-gradient(135deg, #1c50ff, #357cff);
+  color: var(--button-primary-foreground);
+  border-radius: var(--button-primary-radius);
+  background: var(--button-primary-background);
   box-shadow: none;
 }
 
@@ -289,7 +298,7 @@ a {
 
 .button.primary:hover:not(:disabled),
 .button.primary:focus-visible:not(:disabled) {
-  background: linear-gradient(135deg, #1746d8, #245fd8);
+  background: var(--button-primary-background-hover);
   transform: none;
 }
 
@@ -2064,9 +2073,9 @@ body.auth-modal-open {
 }
 
 .status-tag.reviewed {
-  color: #8a5b13;
-  background: #fff7e8;
-  border: 1px solid #f3ddb7;
+  color: var(--feedback-warning-foreground);
+  background: var(--feedback-warning-background);
+  border: 1px solid var(--feedback-warning-border);
 }
 
 .status-tag.neutral {
@@ -3017,8 +3026,8 @@ body.auth-modal-open {
 
 .recommendation-weather-input--warning {
   align-items: flex-start;
-  border-color: #ead6a4;
-  background: #fffaf0;
+  border-color: var(--feedback-warning-border);
+  background: var(--feedback-warning-background);
 }
 
 .recommendation-date-field {

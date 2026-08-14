@@ -17,6 +17,11 @@ export interface AccountUser extends AuthUser {
   updated_at: string;
 }
 
+export interface AccountPasswordResetResponse {
+  account: AccountUser;
+  temporary_password: string;
+}
+
 export interface AccountCreatePayload {
   username: string;
   password: string;
@@ -46,10 +51,26 @@ export interface TrialApplicationPayload {
   username: string;
   password: string;
   phone: string;
+  verification_code: string;
 }
 
 export interface TrialApplicationResponse {
   ok: boolean;
   username: string;
   status: "active";
+}
+
+export interface UsernameAvailabilityResponse {
+  username: string;
+  available: boolean;
+}
+
+export interface RegistrationSmsCodeResponse {
+  ok: boolean;
+  retry_after_seconds: number;
+}
+
+export interface PasswordResetVerifyResponse {
+  reset_token: string;
+  expires_in_seconds: number;
 }

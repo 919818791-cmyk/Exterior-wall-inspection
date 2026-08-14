@@ -2,7 +2,7 @@ import { queryOptions } from "@tanstack/react-query";
 
 import { apiRequest } from "@/api/client";
 import type { AccountUsageDetailResponse, AccountUsagePeriod, AccountUsageSummaryItem, CurrentAccountUsageResponse } from "@/types/accountUsage";
-import type { AccountCreatePayload, AccountUpdatePayload, AccountUser } from "@/types/auth";
+import type { AccountCreatePayload, AccountPasswordResetResponse, AccountUpdatePayload, AccountUser } from "@/types/auth";
 
 export const accountsQueryOptions = queryOptions({
   queryKey: ["accounts"],
@@ -42,7 +42,7 @@ export function updateAccount(accountId: string, payload: AccountUpdatePayload) 
 }
 
 export function resetAccountPassword(accountId: string) {
-  return apiRequest<AccountUser>(`/accounts/${accountId}/reset-password`, {
+  return apiRequest<AccountPasswordResetResponse>(`/accounts/${accountId}/reset-password`, {
     method: "POST"
   });
 }

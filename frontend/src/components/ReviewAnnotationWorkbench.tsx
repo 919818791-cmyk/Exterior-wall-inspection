@@ -21,7 +21,6 @@ import {
 } from "react-router-dom";
 
 import {
-  completeDetectionReview,
   reviewDetectionAnnotationsQueryOptions,
   saveReviewDetectionAnnotations
 } from "@/api/review";
@@ -147,7 +146,6 @@ export function ReviewAnnotationWorkbench({
   reviewTaskId: string;
 }) {
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
   const detailQuery = useQuery(reviewDetectionAnnotationsQueryOptions(reviewTaskId));
   const rows = useMemo(
     () => detailQuery.data ? buildAnnotationPhotoRows(detailQuery.data.result) : [],
@@ -224,18 +222,6 @@ export function ReviewAnnotationWorkbench({
     }
   }, [navigationBlocker.state]);
 
-  const completeMutation = useMutation({
-    mutationFn: () => completeDetectionReview(reviewTaskId),
-    onSuccess: async (report) => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["review"] }),
-        queryClient.invalidateQueries({ queryKey: ["projects"] }),
-        queryClient.invalidateQueries({ queryKey: ["reports"] })
-      ]);
-      navigate(`/reports/${report.id}`);
-    }
-  });
-
   if (detailQuery.isLoading) {
     return <div className="grid gap-5"><Skeleton className="h-24 rounded-lg" /><Skeleton className="h-[560px] rounded-lg" /></div>;
   }
@@ -258,22 +244,19 @@ export function ReviewAnnotationWorkbench({
   }
 
   const report = detailQuery.data.result;
-  const readOnly = report.status !== "draft";
+  const readOnly = report.status === "revoked";
   const activeSaveStatus = activePhotoKey ? editorSaveStatuses[activePhotoKey] : undefined;
   const saveActivePhoto = () => {
     if (!activePhotoKey || readOnly || !activeSaveStatus?.dirty || activeSaveStatus.isSaving) return;
     editorSaveHandlersRef.current.get(activePhotoKey)?.();
   };
-  const completeReview = () => {
-    if (completeMutation.isPending) return;
+  const previewAnnotations = () => {
     if (hasUnsavedChanges || isAnyEditorSaving) {
-      window.alert("请先保存所有照片的标注，等待保存完成后再提交审核。");
+      window.alert("请先保存所有照片的标注，等待保存完成后再预览结果。");
       return;
     }
-    if (!window.confirm("请确认所有需要调整的照片均已保存。完成审核后将生成项目正式报告，是否继续？")) {
-      return;
-    }
-    completeMutation.mutate();
+    const query = new URLSearchParams({ reviewTaskId });
+    navigate(`/detections/results/${report.id}?${query.toString()}`);
   };
   return (
     <div className="review-annotation-detail grid gap-5">
@@ -294,18 +277,16 @@ export function ReviewAnnotationWorkbench({
             <div className="annotation-detail-header-actions">
               <button
                 className="button primary annotation-complete-review"
-                disabled={readOnly || hasUnsavedChanges || isAnyEditorSaving || completeMutation.isPending}
+                disabled={readOnly || hasUnsavedChanges || isAnyEditorSaving}
                 type="button"
-                onClick={completeReview}
+                onClick={previewAnnotations}
               >
                 <CircleCheckBig aria-hidden="true" />
                 {readOnly
-                  ? "审核已完成"
+                  ? "当前审核不可编辑"
                   : hasUnsavedChanges || isAnyEditorSaving
                     ? "请先保存标注"
-                    : completeMutation.isPending
-                      ? "正在生成报告…"
-                      : "完成审核"}
+                    : "完成标注"}
               </button>
               <button
                 className="button primary annotation-save-annotations"
@@ -374,11 +355,6 @@ export function ReviewAnnotationWorkbench({
               ))}
             </div>
           </div>
-          {completeMutation.isError ? (
-            <p className="fixed bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700 shadow-lg">
-              {errorMessage(completeMutation.error)}
-            </p>
-          ) : null}
         </section>
       ) : (
         <Card className="rounded-lg border border-slate-200 shadow-none">

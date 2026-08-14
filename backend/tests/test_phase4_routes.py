@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from io import BytesIO
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -186,7 +187,7 @@ def test_photo_upload_rejects_more_than_thirty_photos_per_project() -> None:
     assert fake_db.usage_events == []
 
 
-def test_formal_photo_precheck_rejection_keeps_stored_original(monkeypatch) -> None:
+def test_formal_non_drone_rejection_keeps_stored_original(monkeypatch) -> None:
     owner_id = uuid4()
     project = Project(
         id=uuid4(),
@@ -222,17 +223,10 @@ def test_formal_photo_precheck_rejection_keeps_stored_original(monkeypatch) -> N
         stored = True
         return "test-bucket"
 
-    def reject_after_storage(db, photo) -> None:
-        assert stored is True
-        photo.precheck_status = "rejected"
-        photo.precheck_category = "OTHER"
-        photo.precheck_reason = "图片主体与建筑外墙无关"
-        photo.precheck_model = "guard-test"
-        photo.precheck_error = None
-        photo.precheck_attempts = 1
-        photo.prechecked_at = datetime.now(UTC)
+    def fail_if_called(*_: object, **__: object) -> None:
+        raise AssertionError("non-drone photos must not enter the building-photo precheck")
 
-    monkeypatch.setattr("app.api.photos.run_stored_photo_precheck", reject_after_storage)
+    monkeypatch.setattr("app.api.photos.run_stored_photo_precheck", fail_if_called)
     monkeypatch.setattr("app.api.photos.put_object", put)
     monkeypatch.setattr(
         "app.api.photos.presigned_get_url",
@@ -251,4 +245,71 @@ def test_formal_photo_precheck_rejection_keeps_stored_original(monkeypatch) -> N
 
     assert stored is True
     assert uploaded.precheck_status == "rejected"
+    assert uploaded.precheck_category == "NON_DRONE"
+    assert "无人机拍摄元数据" in (uploaded.precheck_reason or "")
+    assert "无人机机型信息" in (uploaded.precheck_reason or "")
     assert len(fake_db.photos) == 1
+
+
+def test_formal_drone_metadata_runs_building_precheck_and_records_model(monkeypatch) -> None:
+    owner_id = uuid4()
+    project = Project(
+        id=uuid4(),
+        project_no="PRJ-DRONE-METADATA",
+        name="无人机照片项目",
+        status=ProjectStatus.DRAFT.value,
+        created_by=owner_id,
+    )
+    batch = UploadBatch(
+        id=uuid4(),
+        project_id=project.id,
+        batch_no="UP-DRONE-METADATA",
+        upload_mode=UploadMode.DJI.value,
+        photo_count=0,
+        uploaded_by=owner_id,
+    )
+    current_user = AuthenticatedUser(
+        id=owner_id,
+        username="admin",
+        real_name="平台管理员",
+        role=UserRole.ADMIN.value,
+        organization=None,
+    )
+    data = (
+        b"\xff\xd8"
+        b'<rdf:Description tiff:Make="DJI" tiff:Model="M3T" '
+        b'drone-dji:RelativeAltitude="35.0" />'
+        b"\xff\xd9"
+    )
+    file = SimpleNamespace(
+        file=BytesIO(data),
+        filename="DJI_0001.JPG",
+        content_type="image/jpeg",
+    )
+
+    def pass_building_precheck(_: object, photo: Photo) -> None:
+        photo.precheck_status = "passed"
+        photo.precheck_category = "BUILDING"
+        photo.precheck_reason = "建筑外立面照片"
+        photo.precheck_model = "guard-test"
+        photo.precheck_attempts = 1
+        photo.prechecked_at = datetime.now(UTC)
+
+    monkeypatch.setattr("app.api.photos.put_object", lambda **_: "test-bucket")
+    monkeypatch.setattr("app.api.photos.run_stored_photo_precheck", pass_building_precheck)
+    monkeypatch.setattr(
+        "app.api.photos.presigned_get_url",
+        lambda bucket, key: f"https://storage.local/{key}" if key else None,
+    )
+
+    uploaded = upload_photo(
+        project_id=project.id,
+        upload_batch_id=batch.id,
+        photo_type=PhotoType.DJI,
+        file=file,
+        db=FakePhotoUploadDb(project, batch),
+        current_user=current_user,
+    )
+
+    assert uploaded.precheck_status == "passed"
+    assert batch.drone_type == "M3T"

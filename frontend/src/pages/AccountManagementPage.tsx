@@ -107,9 +107,9 @@ export function AccountManagementPage() {
 
   const resetPasswordMutation = useMutation({
     mutationFn: resetAccountPassword,
-    onSuccess: async () => {
+    onSuccess: async (result) => {
       await queryClient.invalidateQueries({ queryKey: ["accounts"] });
-      setFormNotice("密码已重置为 123456。");
+      setFormNotice(`密码已重置。临时密码：${result.temporary_password}（请立即安全转交用户）`);
     }
   });
 
@@ -206,7 +206,7 @@ export function AccountManagementPage() {
     setFormError("");
     setFormNotice("");
     resetPasswordMutation.reset();
-    if (!window.confirm(`确认将账号“${editingAccount.username}”的密码重置为 123456？`)) return;
+    if (!window.confirm(`确认重置账号“${editingAccount.username}”的密码？系统将生成一个随机临时密码。`)) return;
     resetPasswordMutation.mutate(editingAccount.id);
   }
 

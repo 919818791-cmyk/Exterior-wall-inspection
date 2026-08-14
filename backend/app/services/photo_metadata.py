@@ -15,6 +15,10 @@ class PhotoMetadata(TypedDict):
 
 
 class FormalPhotoMetadata(PhotoMetadata):
+    camera_make: str | None
+    camera_model: str | None
+    drone_metadata_available: bool
+    professional_drone_photo: bool
     relative_altitude: float | None
     gimbal_yaw_degree: float | None
     facade_orientation: str | None
@@ -57,6 +61,10 @@ def extract_formal_photo_metadata(file_obj: BinaryIO) -> FormalPhotoMetadata:
             "xmp_drone_dji_image_source": None,
             "ifd0_image_description": None,
             "thermal_imaging_available": False,
+            "camera_make": None,
+            "camera_model": None,
+            "drone_metadata_available": False,
+            "professional_drone_photo": False,
             "relative_altitude": None,
             "gimbal_yaw_degree": None,
             "facade_orientation": None,
@@ -72,6 +80,8 @@ def extract_formal_photo_metadata(file_obj: BinaryIO) -> FormalPhotoMetadata:
 
 def extract_formal_photo_metadata_from_bytes(data: bytes) -> FormalPhotoMetadata:
     metadata = extract_photo_metadata_from_bytes(data)
+    camera_make = _find_camera_make(data)
+    camera_model = _find_camera_model(data)
     relative_altitude = _find_float_value(
         data,
         ("XMP-drone-dji-RelativeAltitude", "drone-dji:RelativeAltitude", "RelativeAltitude"),
@@ -80,8 +90,17 @@ def extract_formal_photo_metadata_from_bytes(data: bytes) -> FormalPhotoMetadata
         data,
         ("XMP-drone-dji-GimbalYawDegree", "drone-dji:GimbalYawDegree", "GimbalYawDegree"),
     )
+    drone_metadata_available = (
+        _has_drone_metadata(data)
+        or relative_altitude is not None
+        or gimbal_yaw_degree is not None
+    )
     return {
         **metadata,
+        "camera_make": camera_make,
+        "camera_model": camera_model,
+        "drone_metadata_available": drone_metadata_available,
+        "professional_drone_photo": bool(camera_model and drone_metadata_available),
         "relative_altitude": relative_altitude,
         "gimbal_yaw_degree": gimbal_yaw_degree,
         "facade_orientation": facade_orientation_from_yaw(gimbal_yaw_degree),
@@ -122,6 +141,25 @@ def _find_xmp_image_source(data: bytes) -> str | None:
     return _find_text_value(data, ("XMP-drone-dji-ImageSource", "drone-dji:ImageSource"))
 
 
+def _find_camera_make(data: bytes) -> str | None:
+    return _find_tiff_ascii_value(data, 0x010F) or _find_text_value(
+        data,
+        ("IFD0-Make", "XMP-tiff-Make", "tiff:Make"),
+    )
+
+
+def _find_camera_model(data: bytes) -> str | None:
+    return _find_tiff_ascii_value(data, 0x0110) or _find_text_value(
+        data,
+        ("IFD0-Model", "XMP-tiff-Model", "tiff:Model", "CameraModelName"),
+    )
+
+
+def _has_drone_metadata(data: bytes) -> bool:
+    text = data[:XMP_SCAN_LIMIT].decode("utf-8", errors="ignore")
+    return bool(search(r"(?:XMP-)?drone-[a-z0-9_-]+[-:]", text, IGNORECASE))
+
+
 def _find_text_value(data: bytes, keys: tuple[str, ...]) -> str | None:
     text = data[:XMP_SCAN_LIMIT].decode("utf-8", errors="ignore")
     for key in keys:
@@ -155,6 +193,10 @@ def _escape_regex(value: str) -> str:
 
 
 def _find_ifd0_image_description(data: bytes) -> str | None:
+    return _find_tiff_ascii_value(data, 0x010E)
+
+
+def _find_tiff_ascii_value(data: bytes, expected_tag: int) -> str | None:
     tiff_start = _find_tiff_start(data)
     if tiff_start is None or tiff_start + 8 > len(data):
         return None
@@ -182,7 +224,7 @@ def _find_ifd0_image_description(data: bytes) -> str | None:
             return None
 
         tag = _read_uint16(data, entry_start, endian)
-        if tag != 0x010E:
+        if tag != expected_tag:
             continue
 
         value_type = _read_uint16(data, entry_start + 2, endian)

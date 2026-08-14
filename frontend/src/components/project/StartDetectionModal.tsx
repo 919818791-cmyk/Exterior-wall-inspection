@@ -30,6 +30,7 @@ export function StartDetectionModal({
   error,
   isOpen,
   isPending,
+  nonDronePhotoCount = 0,
   qualifiedPhotoCount,
   rejectedPhotoCount = 0,
   thermalPhotoCount,
@@ -39,6 +40,7 @@ export function StartDetectionModal({
   error?: unknown;
   isOpen: boolean;
   isPending: boolean;
+  nonDronePhotoCount?: number;
   qualifiedPhotoCount: number;
   rejectedPhotoCount?: number;
   thermalPhotoCount: number;
@@ -133,8 +135,11 @@ export function StartDetectionModal({
                 </span>
                 <span className="start-detection-summary-copy">
                   <strong>{qualifiedPhotoCount} 张照片将参与检测</strong>
-                  {rejectedPhotoCount ? (
-                    <span>{rejectedPhotoCount} 张非建筑照片将在确认后自动从照片列表中移除</span>
+                  {nonDronePhotoCount ? (
+                    <span>{nonDronePhotoCount} 张非无人机照片将在确认后自动从照片列表中移除</span>
+                  ) : null}
+                  {rejectedPhotoCount - nonDronePhotoCount > 0 ? (
+                    <span>{rejectedPhotoCount - nonDronePhotoCount} 张非建筑照片将在确认后自动从照片列表中移除</span>
                   ) : null}
                 </span>
                 <span className="start-detection-ready-badge">已就绪</span>

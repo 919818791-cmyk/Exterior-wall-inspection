@@ -16,6 +16,7 @@ import type {
   ReviewResultCreatePayload,
   ReviewResultUpdatePayload
 } from "@/types/review";
+import type { ReportDetail } from "@/types/reports";
 
 export const reviewProjectsQueryOptions = queryOptions({
   queryKey: ["review", "projects"],
@@ -40,6 +41,16 @@ export function reviewDetectionAnnotationsQueryOptions(taskId: string) {
     queryKey: ["review", "detections", taskId, "annotations"],
     queryFn: () => apiRequest<ReviewAnnotationDetail>(
       `/review/detections/${taskId}/annotations`
+    ),
+    enabled: Boolean(taskId)
+  });
+}
+
+export function reviewDetectionPreviewQueryOptions(taskId: string) {
+  return queryOptions({
+    queryKey: ["review", "detections", taskId, "preview"],
+    queryFn: () => apiRequest<ReportDetail>(
+      `/review/detections/${taskId}/preview`
     ),
     enabled: Boolean(taskId)
   });

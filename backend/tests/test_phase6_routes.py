@@ -1,7 +1,10 @@
 from types import SimpleNamespace
 from uuid import uuid4
 
-from app.api.review import _detection_review_status
+import pytest
+from fastapi import HTTPException
+
+from app.api.review import _detection_review_status, _ensure_report_reviewable
 from app.enums.status import DetectionTaskStatus, InspectionReportStatus
 from app.main import app
 from app.schemas.phase6 import ReviewResultCreateRequest, ReviewResultUpdateRequest
@@ -20,6 +23,7 @@ def test_phase6_review_routes_are_registered() -> None:
     assert "/api/review/detections/{task_id}" in paths
     assert "/api/review/detections/{task_id}/annotations" in paths
     assert "/api/review/detections/{task_id}/annotations/photos" in paths
+    assert "/api/review/detections/{task_id}/preview" in paths
     assert "/api/review/detections/{task_id}/complete" in paths
 
 
@@ -28,6 +32,27 @@ def test_generated_review_result_is_immediately_complete() -> None:
     report = SimpleNamespace(status=InspectionReportStatus.GENERATED.value)
 
     assert _detection_review_status(task, report) == "completed"
+
+
+@pytest.mark.parametrize(
+    "report_status",
+    [
+        InspectionReportStatus.DRAFT.value,
+        InspectionReportStatus.GENERATED.value,
+        InspectionReportStatus.PUSHED.value,
+    ],
+)
+def test_draft_and_completed_reports_can_be_reviewed_again(report_status: str) -> None:
+    _ensure_report_reviewable(SimpleNamespace(status=report_status))
+
+
+def test_revoked_report_cannot_be_reviewed_again() -> None:
+    with pytest.raises(HTTPException) as exc_info:
+        _ensure_report_reviewable(
+            SimpleNamespace(status=InspectionReportStatus.REVOKED.value)
+        )
+
+    assert exc_info.value.status_code == 409
 
 
 def test_review_result_create_payload_supports_manual_added_defect() -> None:

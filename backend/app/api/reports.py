@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 from app.api.dependencies import (
     AuthenticatedUser,
     ensure_project_access,
+    ensure_project_write_access,
     get_current_user,
 )
 from app.core.config import get_settings
@@ -296,7 +297,7 @@ def _project_reviewed_result_visible(project: Project) -> bool:
 
 
 def _trial_access_criteria(current_user: AuthenticatedUser) -> list[object]:
-    if _can_manage_reports(current_user):
+    if current_user.role == UserRole.ADMIN.value:
         return []
     return [TrialDetectionResult.generated_by == current_user.id]
 
@@ -525,6 +526,7 @@ def _list_item(
     data = report.report_data_json or {}
     project_snapshot = data.get("project") or {}
     summary = data.get("summary") or {}
+    detection_config = data.get("detection_config") or {}
     return ReportListItem(
         id=report.id,
         source_type="formal",
@@ -538,6 +540,7 @@ def _list_item(
         address=project_snapshot.get("address") or project.address,
         total_defects=int(summary.get("total_review_results") or 0),
         by_defect_type=summary.get("by_defect_type") or {},
+        model_types=list(detection_config.get("model_types") or []),
         photo_count=int(summary.get("photo_count") or len(data.get("photos") or [])),
         first_photo_url=_first_photo_url(data, request),
         generated_at=report.generated_at,
@@ -553,6 +556,7 @@ def _trial_list_item(
     data = result.report_data_json or {}
     summary = data.get("summary") or {}
     project_snapshot = data.get("project") or {}
+    detection_config = data.get("detection_config") or {}
     return ReportListItem(
         id=result.id,
         source_type="trial",
@@ -566,6 +570,7 @@ def _trial_list_item(
         address=TRIAL_RESULT_ARCHIVE_ADDRESS,
         total_defects=int(summary.get("total_review_results") or result.finding_count or 0),
         by_defect_type=summary.get("by_defect_type") or {},
+        model_types=list(detection_config.get("model_types") or []),
         photo_count=int(summary.get("photo_count") or len(data.get("photos") or [])),
         first_photo_url=_first_photo_url(data, request),
         generated_at=result.generated_at,
@@ -1743,6 +1748,7 @@ def delete_report(
         db.commit()
         return DeleteResponse()
 
+    ensure_project_write_access(project, current_user)
     task = (
         db.get(DetectionTask, report.detection_task_id)
         if report.detection_task_id is not None

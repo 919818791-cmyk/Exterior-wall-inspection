@@ -26,7 +26,7 @@ export function ProjectWorkbenchShell({
             <h1>{title}</h1>
           </div>
           <div className="project-hero-action">
-            <Link className="button secondary report-back-button project-workbench-nav-button" to="/projects">
+            <Link className="button secondary report-back-button project-workbench-nav-button" to="/detections">
               <ActionIcon aria-hidden="true" />
               {actionLabel}
             </Link>

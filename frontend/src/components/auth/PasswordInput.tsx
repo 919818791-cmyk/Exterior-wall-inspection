@@ -3,8 +3,7 @@ import {
   forwardRef,
   useId,
   useState,
-  type InputHTMLAttributes,
-  type KeyboardEvent as ReactKeyboardEvent
+  type InputHTMLAttributes
 } from "react";
 
 interface PasswordInputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "type"> {
@@ -12,16 +11,10 @@ interface PasswordInputProps extends Omit<InputHTMLAttributes<HTMLInputElement>,
 }
 
 export const PasswordInput = forwardRef<HTMLInputElement, PasswordInputProps>(
-  function PasswordInput({ id, label, onKeyDown, onKeyUp, ...props }, ref) {
+  function PasswordInput({ id, label, ...props }, ref) {
     const generatedId = useId();
     const inputId = id ?? generatedId;
-    const capsLockHintId = `${inputId}-caps-lock`;
     const [isVisible, setIsVisible] = useState(false);
-    const [capsLockOn, setCapsLockOn] = useState(false);
-
-    function updateCapsLock(event: ReactKeyboardEvent<HTMLInputElement>) {
-      setCapsLockOn(event.getModifierState("CapsLock"));
-    }
 
     return (
       <label className="auth-field" htmlFor={inputId}>
@@ -31,16 +24,7 @@ export const PasswordInput = forwardRef<HTMLInputElement, PasswordInputProps>(
             {...props}
             ref={ref}
             id={inputId}
-            aria-describedby={capsLockOn ? capsLockHintId : props["aria-describedby"]}
             type={isVisible ? "text" : "password"}
-            onKeyDown={(event) => {
-              updateCapsLock(event);
-              onKeyDown?.(event);
-            }}
-            onKeyUp={(event) => {
-              updateCapsLock(event);
-              onKeyUp?.(event);
-            }}
           />
           <button
             aria-label={isVisible ? `隐藏${label}` : `显示${label}`}
@@ -52,7 +36,6 @@ export const PasswordInput = forwardRef<HTMLInputElement, PasswordInputProps>(
             {isVisible ? <EyeOff aria-hidden="true" /> : <Eye aria-hidden="true" />}
           </button>
         </div>
-        {capsLockOn ? <small id={capsLockHintId} className="auth-caps-lock-hint">大写锁定已开启</small> : null}
       </label>
     );
   }
