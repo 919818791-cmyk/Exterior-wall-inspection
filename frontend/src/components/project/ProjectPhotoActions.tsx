@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, RefreshCcw, X, ZoomIn, ZoomOut } from "lucide-react";
+import { RefreshCcw, X, ZoomIn, ZoomOut } from "lucide-react";
 import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
@@ -446,9 +446,8 @@ export function ProjectPhotoActions({
               <RefreshCcw aria-hidden="true" />{failedPendingCount} 张失败，重试
             </button>
           ) : visiblePhotoCount ? (
-            <span className="new-project-upload-summary is-complete">上传完成</span>
+            <span className="new-project-upload-summary is-complete photo-upload-complete-status">上传完成</span>
           ) : null}
-          <span className="new-project-photo-count">{visiblePhotoCount} 张</span>
         </div>
       </header>
       <ProjectPhotoUploader
@@ -495,8 +494,6 @@ export function ProjectPhotoActions({
                   <span aria-hidden="true" className="new-project-photo-upload-ring" />
                   <small>上传中</small>
                 </span>
-            ) : item.status === "uploaded" ? (
-              <span className="project-photo-check"><Check aria-hidden="true" /></span>
             ) : null}
           </PhotoUploadThumbnail>
         ))}

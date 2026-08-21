@@ -8,10 +8,11 @@ import {
 } from "lucide-react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { usePublicHeroAnimation } from "@/hooks/usePublicHeroAnimation";
+import { TimeRecommendationDialog } from "@/pages/CapabilityDetailPage";
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -45,6 +46,7 @@ const defects = [
 export function DashboardPage() {
   const pageRef = useRef<HTMLDivElement>(null);
   const heroRef = useRef<HTMLElement>(null);
+  const [timeRecommendationOpenSignal, setTimeRecommendationOpenSignal] = useState(0);
   usePublicHeroAnimation(heroRef, undefined, pageRef);
 
   useEffect(() => {
@@ -205,7 +207,8 @@ export function DashboardPage() {
   }, []);
 
   return (
-    <div ref={pageRef} className="home-page">
+    <>
+      <div ref={pageRef} className="home-page">
       <section ref={heroRef} className="hero" data-home-panel aria-labelledby="home-hero-title">
         <video
           className="hero-background-video"
@@ -233,9 +236,9 @@ export function DashboardPage() {
               <Link className="button secondary" to="/detections">
                 <ScanSearch aria-hidden="true" />开始专业检测<ArrowRight className="hero-action-arrow" aria-hidden="true" />
               </Link>
-              <Link className="button secondary" to="/capabilities/time">
+              <button className="button secondary" type="button" onClick={() => setTimeRecommendationOpenSignal((signal) => signal + 1)}>
                 <CalendarClock aria-hidden="true" />查询检测时段<ArrowRight className="hero-action-arrow" aria-hidden="true" />
-              </Link>
+              </button>
             </div>
           </div>
         </div>
@@ -250,8 +253,10 @@ export function DashboardPage() {
             <Link key={defect.key} className="defect-card home-reveal-item" id={`defect-${defect.key}`} to={`/capabilities/${defect.key}`} aria-label={`查看${defect.title}详情`}>
               <div className="defect-media"><img alt={`${defect.title}示意图`} decoding="async" loading="lazy" src={defect.image} /></div>
               <div className="defect-card-body">
-                <h3>{defect.title}</h3>
-                <p className="defect-description">{defect.description}</p>
+                <div className="defect-card-copy">
+                  <h3>{defect.title}</h3>
+                  <p className="defect-description">{defect.description}</p>
+                </div>
                 <span className="defect-detail-link">了解详情 <ChevronRight aria-hidden="true" /></span>
               </div>
             </Link>
@@ -262,12 +267,9 @@ export function DashboardPage() {
       <section className="section compact home-reveal-section" id="capabilities" data-home-panel aria-labelledby="home-capabilities-title">
         <div className="section-heading home-reveal-item">
           <h2 id="home-capabilities-title">核心功能</h2>
-          <p>
-            <span className="section-subtitle-line">围绕采集前规划、检测中识别、交付后报告三大环节</span>
-          </p>
         </div>
         <div className="capability-grid">
-          <Link className="capability-card time-recommendation-card home-reveal-item" to="/capabilities/time">
+          <article className="capability-card time-recommendation-card home-reveal-item">
             <span className="feature-icon feature-icon-image time-recommendation-mark">
               <img alt="" decoding="async" loading="lazy" src="/images/optimized/time-recommendation-icon.webp" />
             </span>
@@ -275,7 +277,7 @@ export function DashboardPage() {
               <h3>检测时段推荐</h3>
               <p>综合立面朝向、温度和光照等因素，推荐适合采集的时段</p>
             </div>
-          </Link>
+          </article>
           <Link className="capability-card home-reveal-item" to="/trials/new">
             <span className="feature-icon indigo"><ScanSearch aria-hidden="true" /></span>
             <div>
@@ -350,6 +352,8 @@ export function DashboardPage() {
           </div>
         </div>
       </footer>
-    </div>
+      </div>
+      <TimeRecommendationDialog openSignal={timeRecommendationOpenSignal} />
+    </>
   );
 }

@@ -938,7 +938,6 @@ export function TrialExperiencePage() {
                 <input
                   disabled={isReportNameLocked}
                   maxLength={255}
-                  placeholder="请输入检测名称"
                   value={reportName}
                   onBlur={() => void saveArchivedReportName()}
                   onChange={(event) => updateReportName(event.target.value)}
@@ -948,21 +947,14 @@ export function TrialExperiencePage() {
                 />
               </label>
               <div className="trial-name-actions">
-                <Link
-                  className="button secondary report-back-button project-workbench-nav-button new-project-back-button"
-                  to="/trials"
-                >
-                  <ArrowLeft aria-hidden="true" />
-                  返回
-                </Link>
                 <button
                   className="button primary start-ai-detection-button"
                   disabled={isPhotoEditingLocked}
                   type="button"
                   onClick={generateReport}
                 >
-                  <Send aria-hidden="true" />
-                  {isGenerating ? "检测中" : "开始AI检测"}
+                  <ScanSearch aria-hidden="true" />
+                  {isGenerating ? "检测中" : "开始检测"}
                 </button>
               </div>
             </div>
@@ -989,9 +981,8 @@ export function TrialExperiencePage() {
                     ) : failedPhotoCount ? (
                       <span className="new-project-upload-summary is-error">{failedPhotoCount} 张上传失败</span>
                     ) : allPhotosUploaded ? (
-                      <span className="new-project-upload-summary is-complete">上传完成</span>
+                      <span className="new-project-upload-summary is-complete photo-upload-complete-status">上传完成</span>
                     ) : null}
-                    <span className="new-project-photo-count">{totalPhotoCount} 张</span>
                   </div>
                 </header>
                 <ProjectPhotoUploader
@@ -1252,7 +1243,7 @@ export function TrialExperiencePage() {
                   onClick={() => void generateReport()}
                 >
                   <Send aria-hidden="true" />
-                  {isGenerating ? "检测中" : "开始AI检测"}
+                  {isGenerating ? "检测中" : "开始检测"}
                 </button>
               )}
             </div>

@@ -17,10 +17,11 @@ function pageClass(pathname: string) {
   if (pathname === "/trials/new") return "project-page new-project-page project-list-chrome trial-route";
   if (pathname === "/trials") return "project-page project-list-route report-list-route";
   if (pathname === "/detections") return "project-page project-list-route";
-  if (pathname === "/capabilities/time") return "detail-page recommendation-detail-page";
+  if (/^\/detections\/[^/]+\/model$/.test(pathname)) return "building-model-route";
   if (pathname.startsWith("/accounts")) return "project-page account-management-route";
   if (pathname.startsWith("/data-management")) return "project-page data-management-route";
   if (pathname === "/review") return "project-page review-workbench-route review-workbench-list-route";
+  if (/^\/review\/detections\/[^/]+$/.test(pathname)) return "project-page review-workbench-route review-workbench-detail-route";
   if (pathname.startsWith("/review")) return "project-page review-workbench-route";
   if (/^\/trials\/[^/]+$/.test(pathname) || /^\/detections\/results\/[^/]+$/.test(pathname) || /^\/reports\/[^/]+$/.test(pathname)) return "project-page report-detail-route";
   if (pathname === "/detections/new") return "project-page new-project-page project-list-chrome";
@@ -62,17 +63,15 @@ export function AppLayout() {
   const headerRef = useRef<HTMLElement>(null);
   const pendingAuthenticationActionRef = useRef<(() => void) | null>(null);
   const defectKey = location.pathname.match(/^\/capabilities\/(crack|spalling|missing|moisture|corrosion|hollow)$/)?.[1];
+  const isBuildingModelRoute = /^\/detections\/[^/]+\/model$/.test(location.pathname);
   const isReviewDetailRoute = /^\/review\/detections\/[^/]+$/.test(location.pathname);
   const isStandaloneManagementRoute = (
     location.pathname === "/system-settings"
     || location.pathname.startsWith("/accounts")
     || location.pathname.startsWith("/data-management")
     || location.pathname === "/review"
-    || (location.pathname !== "/trials/new" && /^\/trials\/[^/]+$/.test(location.pathname))
-    || /^\/detections\/results\/[^/]+$/.test(location.pathname)
-    || /^\/reports\/[^/]+$/.test(location.pathname)
   );
-  const isDetectionRoute = location.pathname.startsWith("/detections");
+  const isDetectionRoute = location.pathname.startsWith("/detections") && !isBuildingModelRoute;
   const isManagementRoute = location.pathname.startsWith("/accounts") || location.pathname.startsWith("/data-management") || location.pathname.startsWith("/system-settings") || location.pathname.startsWith("/review");
   const isHomeRoute = location.pathname === "/";
   const isTrialSectionRoute = location.pathname.startsWith("/trials");
@@ -80,7 +79,7 @@ export function AppLayout() {
   const currentPageClass = pageClass(location.pathname);
   const resolvedPageClass = `${currentPageClass}${projectDetailListChrome ? " project-list-chrome" : ""}`;
   const isCapabilityDetailRoute = location.pathname.startsWith("/capabilities");
-  const usesHomeHeaderStyle = isHomeRoute || isCapabilityDetailRoute || location.pathname === "/detections" || location.pathname === "/trials";
+  const showsSiteHeader = !isBuildingModelRoute && !isReviewDetailRoute && !isStandaloneManagementRoute;
   const isThemeHeroRoute = isTrialSectionRoute || isDetectionRoute || isManagementRoute;
   const usesPermanentDarkShell = isCapabilityDetailRoute || isThemeHeroRoute;
   const usesDarkShell = usesPermanentDarkShell;
@@ -118,7 +117,7 @@ export function AppLayout() {
   }, [clearSession, navigate, queryClient]);
 
   useEffect(() => {
-    if (!usesHomeHeaderStyle) {
+    if (!showsSiteHeader) {
       setHeaderScrolled(false);
       setHomeNavigationVisible(true);
       return undefined;
@@ -128,7 +127,7 @@ export function AppLayout() {
     updateHeader();
     window.addEventListener("scroll", updateHeader, { passive: true });
     return () => window.removeEventListener("scroll", updateHeader);
-  }, [usesHomeHeaderStyle]);
+  }, [showsSiteHeader]);
 
   useEffect(() => {
     if (!isHomeRoute) return undefined;
@@ -291,8 +290,8 @@ export function AppLayout() {
     >
       <header
         ref={headerRef}
-        hidden={(isHomeRoute && !homeNavigationVisible) || isReviewDetailRoute || isStandaloneManagementRoute}
-        className={`site-header centered-nav ${usesHomeHeaderStyle ? "home-site-header" : ""} ${isCreationRoute ? "creation-page-header" : ""} ${headerScrolled ? "is-scrolled" : ""} ${mobileNavOpen ? "mobile-nav-open" : ""}`}
+        hidden={!showsSiteHeader || (isHomeRoute && !homeNavigationVisible)}
+        className={`site-header centered-nav home-site-header ${isCreationRoute ? "creation-page-header" : ""} ${headerScrolled ? "is-scrolled" : ""} ${mobileNavOpen ? "mobile-nav-open" : ""}`}
         aria-label="顶部导航"
       >
         <NavLink className="brand" to="/" aria-label="外墙智能巡检平台首页" onClick={() => setMobileNavOpen(false)}>
@@ -320,13 +319,6 @@ export function AppLayout() {
           <NavLink className={({ isActive }) => (isActive ? "active" : "")} end to="/" onClick={() => setMobileNavOpen(false)}>首页</NavLink>
           <NavLink className={({ isActive }) => (isActive ? "active" : "")} to="/detections" onClick={() => { setManagementMenuOpen(false); setMobileNavOpen(false); }}>专业检测</NavLink>
           <NavLink className={({ isActive }) => (isActive ? "active" : "")} to="/trials" onClick={() => { setManagementMenuOpen(false); setMobileNavOpen(false); }}>免费试用</NavLink>
-          <NavLink
-            className={({ isActive }) => (isActive ? "active" : "")}
-            to="/capabilities/time"
-            onClick={() => { setManagementMenuOpen(false); setMobileNavOpen(false); }}
-          >
-            检测时段推荐
-          </NavLink>
           {managementLinks.length > 0 ? (
             <div ref={managementMenuRef} className={`nav-menu ${managementMenuOpen ? "is-open" : ""}`}>
               <button

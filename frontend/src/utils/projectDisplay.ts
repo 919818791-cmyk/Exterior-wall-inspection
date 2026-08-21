@@ -22,7 +22,7 @@ export function getProfessionalDisplayState(project: ProfessionalDetectionSource
   if (project.status === "draft") {
     return {
       status: "draft",
-      statusLabel: "待检测"
+      statusLabel: "等待开始"
     };
   }
 
@@ -107,10 +107,10 @@ export function formatEstimatedRemainingTime(value: string | null | undefined, n
   if (!Number.isFinite(estimatedTimestamp)) return "--";
 
   const remainingMinutes = Math.max(1, Math.ceil((estimatedTimestamp - now) / (60 * 1000)));
-  if (remainingMinutes < 60) return "排队中，预计等待少于1小时";
+  if (remainingMinutes < 60) return "预计等待少于1小时";
 
   const hours = Math.floor(remainingMinutes / 60);
-  return `排队中，预计等待超${hours}小时`;
+  return `预计等待超过${hours}小时`;
 }
 
 export function formatLocation(project: {

@@ -7,7 +7,9 @@ import {
   CircleCheckBig,
   ClipboardCheck,
   CopyPlus,
+  Download,
   FileImage,
+  FileUp,
   Save,
   Trash2
 } from "lucide-react";
@@ -30,7 +32,13 @@ import type {
   ManagedAnnotation
 } from "@/types/reviewAnnotations";
 import type { ReportDefectSnapshot, ReportDetail, ReportPhotoSnapshot } from "@/types/reports";
+import { createAsyncLimiter } from "@/utils/asyncLimiter";
+import { saveBlobAsFile } from "@/utils/download";
 import { createClientId } from "@/utils/id";
+import {
+  parseReviewAnnotationJson,
+  type AnnotationImportMatch
+} from "@/utils/reviewAnnotationImport";
 
 const DEFECT_OPTIONS = [
   { value: "crack", label: "裂缝", color: "#ef4444" },
@@ -59,6 +67,11 @@ interface AnnotationPhotoRowData {
 interface AnnotationEditorSaveStatus {
   dirty: boolean;
   isSaving: boolean;
+}
+
+interface AnnotationImportNotice {
+  message: string;
+  tone: "error" | "success";
 }
 
 type AnnotationEditorSaveHandler = () => void;
@@ -146,6 +159,7 @@ export function ReviewAnnotationWorkbench({
   reviewTaskId: string;
 }) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const detailQuery = useQuery(reviewDetectionAnnotationsQueryOptions(reviewTaskId));
   const rows = useMemo(
     () => detailQuery.data ? buildAnnotationPhotoRows(detailQuery.data.result) : [],
@@ -156,6 +170,8 @@ export function ReviewAnnotationWorkbench({
     [detailQuery.data?.edits]
   );
   const [selectedPhotoKey, setSelectedPhotoKey] = useState<string | null>(null);
+  const importInputRef = useRef<HTMLInputElement | null>(null);
+  const [importNotice, setImportNotice] = useState<AnnotationImportNotice | null>(null);
   const editorSaveHandlersRef = useRef(new Map<string, AnnotationEditorSaveHandler>());
   const [editorSaveStatuses, setEditorSaveStatuses] = useState<Record<string, AnnotationEditorSaveStatus>>({});
 
@@ -201,26 +217,62 @@ export function ReviewAnnotationWorkbench({
   }, []);
   const hasUnsavedChanges = rows.some((row) => editorSaveStatuses[row.key]?.dirty);
   const isAnyEditorSaving = rows.some((row) => editorSaveStatuses[row.key]?.isSaving);
+  const importMutation = useMutation({
+    mutationFn: async (matches: AnnotationImportMatch[]) => {
+      const runLimited = createAsyncLimiter(4);
+      const results = await Promise.allSettled(matches.map((match) => runLimited(() => (
+        saveReviewDetectionAnnotations(reviewTaskId, {
+          photo_key: match.photoKey,
+          annotations: match.annotations
+        })
+      ))));
+      const failedCount = results.filter((result) => result.status === "rejected").length;
+      if (failedCount) {
+        throw new Error(`已保存 ${matches.length - failedCount} 张照片，另有 ${failedCount} 张保存失败，请检查后重试。`);
+      }
+      return {
+        annotationCount: matches.reduce((total, match) => total + match.annotations.length, 0),
+        photoCount: matches.length
+      };
+    },
+    onSuccess: ({ annotationCount, photoCount }) => {
+      setImportNotice({
+        tone: "success",
+        message: `批量导入完成：已更新 ${photoCount} 张照片，共 ${annotationCount} 个标注框。`
+      });
+    },
+    onError: (error) => {
+      setImportNotice({ tone: "error", message: errorMessage(error) });
+    },
+    onSettled: async () => {
+      setEditorSaveStatuses({});
+      await queryClient.invalidateQueries({ queryKey: ["review", "detections"] });
+    }
+  });
+  const hasBlockingWork = hasUnsavedChanges || isAnyEditorSaving || importMutation.isPending;
   const navigationBlocker = useBlocker(({ currentLocation, nextLocation }) => (
-    hasUnsavedChanges
+    hasBlockingWork
     && `${currentLocation.pathname}${currentLocation.search}` !== `${nextLocation.pathname}${nextLocation.search}`
   ));
   const warnBeforeUnload = useCallback((event: BeforeUnloadEvent) => {
-    if (!hasUnsavedChanges) return;
+    if (!hasBlockingWork) return;
     event.preventDefault();
     event.returnValue = "";
-  }, [hasUnsavedChanges]);
+  }, [hasBlockingWork]);
 
   useBeforeUnload(warnBeforeUnload);
 
   useEffect(() => {
     if (navigationBlocker.state !== "blocked") return;
-    if (window.confirm("当前有未保存的标注，离开页面后修改将丢失。确认离开？")) {
+    const message = importMutation.isPending || isAnyEditorSaving
+      ? "标注正在保存，立即离开可能导致部分修改未完成。确认离开？"
+      : "当前有未保存的标注，离开页面后修改将丢失。确认离开？";
+    if (window.confirm(message)) {
       navigationBlocker.proceed();
     } else {
       navigationBlocker.reset();
     }
-  }, [navigationBlocker.state]);
+  }, [importMutation.isPending, isAnyEditorSaving, navigationBlocker.state]);
 
   if (detailQuery.isLoading) {
     return <div className="grid gap-5"><Skeleton className="h-24 rounded-lg" /><Skeleton className="h-[560px] rounded-lg" /></div>;
@@ -250,6 +302,136 @@ export function ReviewAnnotationWorkbench({
     if (!activePhotoKey || readOnly || !activeSaveStatus?.dirty || activeSaveStatus.isSaving) return;
     editorSaveHandlersRef.current.get(activePhotoKey)?.();
   };
+  const importPhotos = rows.map((row) => ({
+    key: row.key,
+    filename: row.filename,
+    imageWidth: row.imageWidth,
+    imageHeight: row.imageHeight
+  }));
+
+  async function importAnnotationFiles(files: FileList | null) {
+    if (!files?.length || readOnly || importMutation.isPending) return;
+    if (hasUnsavedChanges || isAnyEditorSaving) {
+      setImportNotice({ tone: "error", message: "请先保存当前未保存的标注，再执行批量导入。" });
+      return;
+    }
+
+    setImportNotice(null);
+    const matches: AnnotationImportMatch[] = [];
+    const unmatched = new Set<string>();
+    const errors: string[] = [];
+    const selectedFiles = Array.from(files);
+    if (selectedFiles.length > 100) {
+      setImportNotice({ tone: "error", message: "单次最多导入 100 个 JSON 文件。" });
+      return;
+    }
+
+    await Promise.all(selectedFiles.map(async (file) => {
+      try {
+        if (file.size > 20 * 1024 * 1024) {
+          throw new Error(`${file.name} 超过 20 MB，无法导入。`);
+        }
+        const parsed = parseReviewAnnotationJson(file.name, await file.text(), importPhotos);
+        matches.push(...parsed.matches);
+        parsed.unmatchedPhotoNames.forEach((name) => unmatched.add(name));
+      } catch (error) {
+        errors.push(errorMessage(error));
+      }
+    }));
+
+    if (errors.length) {
+      const extraCount = Math.max(0, errors.length - 3);
+      setImportNotice({
+        tone: "error",
+        message: `${errors.slice(0, 3).join("；")}${extraCount ? `；另有 ${extraCount} 个文件不符合格式` : ""}`
+      });
+      return;
+    }
+
+    const duplicateFilenames = matches
+      .filter((match, index) => matches.findIndex((candidate) => candidate.photoKey === match.photoKey) !== index)
+      .map((match) => match.filename);
+    if (duplicateFilenames.length) {
+      setImportNotice({
+        tone: "error",
+        message: `同一照片在导入内容中出现多次：${Array.from(new Set(duplicateFilenames)).slice(0, 3).join("、")}。请合并后重试。`
+      });
+      return;
+    }
+
+    if (!matches.length) {
+      setImportNotice({
+        tone: "error",
+        message: unmatched.size
+          ? `未匹配到当前任务照片，请检查 JSON 中的图片名（已跳过 ${unmatched.size} 张）。`
+          : "没有可导入的标注框。"
+      });
+      return;
+    }
+
+    const annotationCount = matches.reduce((total, match) => total + match.annotations.length, 0);
+    const skippedMessage = unmatched.size ? `，另有 ${unmatched.size} 张未匹配照片将跳过` : "";
+    const confirmed = window.confirm(
+      `将用导入内容覆盖 ${matches.length} 张照片的现有标注，共 ${annotationCount} 个标注框${skippedMessage}。导入后会立即保存，是否继续？`
+    );
+    if (confirmed) importMutation.mutate(matches);
+  }
+
+  function handleImportInputChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const files = event.currentTarget.files;
+    void importAnnotationFiles(files);
+    event.currentTarget.value = "";
+  }
+
+  function exportAnnotations() {
+    if (hasUnsavedChanges || isAnyEditorSaving || importMutation.isPending) {
+      setImportNotice({ tone: "error", message: "请先保存所有照片的标注，等待保存完成后再导出 JSON。" });
+      return;
+    }
+
+    const images = rows.map((row) => {
+      const imageWidth = Math.max(1, row.imageWidth ?? 1200);
+      const imageHeight = Math.max(1, row.imageHeight ?? 800);
+      const annotations = cleanAnnotations(
+        editsByPhoto.get(row.key)?.annotations
+        ?? annotationsFromDefects(row.defects, imageWidth, imageHeight)
+      );
+      return {
+        image_name: row.filename,
+        image_width: imageWidth,
+        image_height: imageHeight,
+        annotations: annotations.map((annotation) => ({
+          id: annotation.id,
+          source_annotation_id: annotation.source_annotation_id,
+          defect_type: annotation.defect_type,
+          bbox: annotation.bbox,
+          confidence: annotation.confidence
+        }))
+      };
+    });
+    const exportData = {
+      schema: "building-exterior-review-annotations",
+      version: 1,
+      project_name: projectName ?? report.title,
+      review_task_id: reviewTaskId,
+      exported_at: new Date().toISOString(),
+      images
+    };
+    const baseName = (projectName || report.title || report.report_no || "审核标注")
+      .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "-")
+      .trim()
+      .slice(0, 120) || "审核标注";
+    saveBlobAsFile(
+      new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json;charset=utf-8" }),
+      `${baseName}-标注.json`
+    );
+    const annotationCount = images.reduce((total, image) => total + image.annotations.length, 0);
+    setImportNotice({
+      tone: "success",
+      message: `JSON 导出完成：${images.length} 张照片，共 ${annotationCount} 个标注框。`
+    });
+  }
+
   const previewAnnotations = () => {
     if (hasUnsavedChanges || isAnyEditorSaving) {
       window.alert("请先保存所有照片的标注，等待保存完成后再预览结果。");
@@ -275,9 +457,19 @@ export function ReviewAnnotationWorkbench({
               </div>
             </div>
             <div className="annotation-detail-header-actions">
+              <input
+                ref={importInputRef}
+                className="sr-only"
+                accept=".json,application/json"
+                aria-label="批量导入标注框 JSON"
+                disabled={readOnly || hasUnsavedChanges || isAnyEditorSaving || importMutation.isPending}
+                multiple
+                type="file"
+                onChange={handleImportInputChange}
+              />
               <button
                 className="button primary annotation-complete-review"
-                disabled={readOnly || hasUnsavedChanges || isAnyEditorSaving}
+                disabled={readOnly || hasUnsavedChanges || isAnyEditorSaving || importMutation.isPending}
                 type="button"
                 onClick={previewAnnotations}
               >
@@ -286,23 +478,56 @@ export function ReviewAnnotationWorkbench({
                   ? "当前审核不可编辑"
                   : hasUnsavedChanges || isAnyEditorSaving
                     ? "请先保存标注"
-                    : "完成标注"}
+                    : "预览报告"}
               </button>
               <button
                 className="button primary annotation-save-annotations"
-                disabled={readOnly || !activeSaveStatus?.dirty || activeSaveStatus.isSaving}
+                disabled={readOnly || !activeSaveStatus?.dirty || activeSaveStatus.isSaving || importMutation.isPending}
                 type="button"
                 onClick={saveActivePhoto}
               >
                 <Save aria-hidden="true" />
                 {activeSaveStatus?.isSaving ? "保存中…" : "保存标注"}
               </button>
-              <RouterLink className="button secondary report-back-button annotation-back-link" to={backTo}>
+              <button
+                className="button primary annotation-import-annotations"
+                disabled={readOnly || hasUnsavedChanges || isAnyEditorSaving || importMutation.isPending}
+                title={hasUnsavedChanges ? "请先保存当前未保存的标注" : "按照片文件名匹配并覆盖现有标注"}
+                type="button"
+                onClick={() => importInputRef.current?.click()}
+              >
+                <FileUp aria-hidden="true" />
+                {importMutation.isPending ? "导入保存中…" : "批量导入 JSON"}
+              </button>
+              <button
+                className="button primary annotation-export-annotations"
+                disabled={hasUnsavedChanges || isAnyEditorSaving || importMutation.isPending}
+                title={hasUnsavedChanges ? "请先保存当前未保存的标注" : "导出全部照片的已保存标注"}
+                type="button"
+                onClick={exportAnnotations}
+              >
+                <Download aria-hidden="true" />
+                导出 JSON
+              </button>
+              <RouterLink
+                aria-label={backLabel}
+                className="button secondary report-back-button annotation-back-link"
+                title={backLabel}
+                to={backTo}
+              >
                 <ChevronLeft aria-hidden="true" />
-                <span>{backLabel}</span>
               </RouterLink>
             </div>
           </header>
+
+          {importNotice ? (
+            <p
+              className={`annotation-import-notice is-${importNotice.tone}`}
+              role={importNotice.tone === "error" ? "alert" : "status"}
+            >
+              {importNotice.message}
+            </p>
+          ) : null}
 
           <aside className="annotation-photo-rail" aria-label="照片缩略图列表">
             <div className="annotation-photo-rail-heading">

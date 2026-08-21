@@ -86,6 +86,13 @@ def test_detection_start_defaults_to_all_supported_report_types() -> None:
     assert payload.model_types == ["crack", "spalling", "hollow"]
 
 
+@pytest.mark.parametrize("facade_type", ["tile", "coating", "stone"])
+def test_detection_start_accepts_supported_facade_types(facade_type: str) -> None:
+    payload = DetectionStartRequest.model_validate({"facade_type": facade_type})
+
+    assert payload.facade_type == facade_type
+
+
 def test_formal_detection_does_not_wait_before_starting(monkeypatch: pytest.MonkeyPatch) -> None:
     class EmptyDb:
         def scalar(self, *_: object, **__: object) -> None:

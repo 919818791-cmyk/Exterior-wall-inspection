@@ -149,4 +149,5 @@ export interface DetectionTask {
 
 export interface StartDetectionPayload {
   model_types: Array<"crack" | "spalling" | "hollow">;
+  facade_type?: "tile" | "coating" | "stone";
 }

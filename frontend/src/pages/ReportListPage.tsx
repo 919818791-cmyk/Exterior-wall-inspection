@@ -7,6 +7,7 @@ import { deleteReport, reportsQueryOptions, updateTrialReportTitle } from "@/api
 import { WorkbenchDefectSummary, WorkbenchResultTable } from "@/components/WorkbenchResultTable";
 import { useAuthStore } from "@/stores/useAuthStore";
 import type { ReportListItem } from "@/types/reports";
+import { formatDateTime } from "@/utils/projectDisplay";
 
 export function ReportListPage() {
   const navigate = useNavigate();
@@ -63,14 +64,18 @@ export function ReportListPage() {
         <section
           className={`project-list-panel workbench-result-list-panel${showReportEmptyState ? " project-list-empty-surface" : ""}`}
           aria-label="试用记录列表"
-        ><div className="project-table-wrap project-workbench-table-wrap">
+        >
+          <div className="project-table-wrap project-workbench-table-wrap">
           {reportsQuery.isLoading ? <div className="project-empty"><strong>正在加载结果…</strong></div> : reports.length ? <WorkbenchResultTable
-            getActionLabel={(report) => report.status === "generated" || report.status === "pushed" ? "查看结果" : "查看详情"}
             getKey={(report) => report.id}
             items={reports}
             onDelete={handleDeleteReport}
             onOpen={(report) => navigate(`/trials/${report.id}`)}
             onRename={handleRenameReport}
+            openOnRowClick
+            renderCompletionTime={(report) => (
+              <time dateTime={report.generated_at}>{formatDateTime(report.generated_at)}</time>
+            )}
             renderDetectionDescription={(report) => <WorkbenchDefectSummary counts={report.by_defect_type} variant="compact" />}
           /> : <ReportEmptyState />}
         </div>
@@ -88,11 +93,8 @@ function ReportEmptyState() {
     </span>
     <Link className="public-empty-cta-card" to="/trials/new">
       <span className="public-empty-card-copy">
-        <strong>免费试用</strong>
+        <strong>开始试用<ChevronRight aria-hidden="true" /></strong>
         <span>上传照片即可体验 AI 外墙缺陷检测，快速了解结果样式。</span>
-      </span>
-      <span className="public-empty-card-action">
-        开始试用<ChevronRight aria-hidden="true" />
       </span>
     </Link>
   </div>;

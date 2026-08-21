@@ -10,6 +10,21 @@ export interface TrialInferenceProviderOption {
   runtime_message: string | null;
 }
 
+export interface FormalDetectionPromptSettings {
+  tile_crack_prompt: string;
+  tile_spalling_prompt: string;
+  tile_visible_prompt: string;
+  tile_thermal_prompt: string;
+  coating_crack_prompt: string;
+  coating_spalling_prompt: string;
+  coating_visible_prompt: string;
+  coating_thermal_prompt: string;
+  stone_crack_prompt: string;
+  stone_spalling_prompt: string;
+  stone_visible_prompt: string;
+  stone_thermal_prompt: string;
+}
+
 export interface TrialInferenceSetting {
   provider: TrialInferenceProvider;
   global_job_concurrency: number;
@@ -21,6 +36,7 @@ export interface TrialInferenceSetting {
   spalling_prompt: string;
   thermal_prompt: string;
   photo_guard_prompt: string;
+  formal_prompts: FormalDetectionPromptSettings;
   options: TrialInferenceProviderOption[];
   updated_at: string | null;
 }
@@ -44,4 +60,5 @@ export interface TrialInferenceSettingUpdate {
   spalling_prompt: string;
   thermal_prompt: string;
   photo_guard_prompt: string;
+  formal_prompts: FormalDetectionPromptSettings;
 }

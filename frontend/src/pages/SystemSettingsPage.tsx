@@ -5,6 +5,7 @@ import { Link as RouterLink } from "react-router-dom";
 
 import { trialInferenceDisclosureQueryOptions, trialInferenceSettingQueryOptions, updateTrialInferenceSettings } from "@/api/systemSettings";
 import type {
+  FormalDetectionPromptSettings,
   TrialInferenceProvider,
   TrialInferenceSetting,
   TrialInferenceSettingUpdate
@@ -12,7 +13,7 @@ import type {
 import { formatDateTime } from "@/utils/projectDisplay";
 
 
-interface SettingsForm {
+interface SettingsForm extends FormalDetectionPromptSettings {
   provider: TrialInferenceProvider;
   global_job_concurrency: number;
   request_concurrency: number;
@@ -24,6 +25,36 @@ interface SettingsForm {
   thermal_prompt: string;
   photo_guard_prompt: string;
 }
+
+type PromptSettingKey = keyof Pick<
+  SettingsForm,
+  | "visible_prompt"
+  | "crack_prompt"
+  | "spalling_prompt"
+  | "thermal_prompt"
+  | "photo_guard_prompt"
+  | keyof FormalDetectionPromptSettings
+>;
+
+const PROMPT_SETTING_OPTIONS: Array<{ key: PromptSettingKey; label: string }> = [
+  { key: "visible_prompt", label: "裂缝 + 剥落合并提示词" },
+  { key: "crack_prompt", label: "裂缝单独提示词" },
+  { key: "spalling_prompt", label: "剥落单独提示词" },
+  { key: "thermal_prompt", label: "热成像照片提示词" },
+  { key: "photo_guard_prompt", label: "建筑照片相关性判断提示词" },
+  { key: "tile_crack_prompt", label: "面砖 · 裂缝" },
+  { key: "tile_spalling_prompt", label: "面砖 · 剥落" },
+  { key: "tile_visible_prompt", label: "面砖 · 裂缝 + 剥落" },
+  { key: "tile_thermal_prompt", label: "面砖 · 空鼓（热成像）" },
+  { key: "coating_crack_prompt", label: "涂料 · 裂缝" },
+  { key: "coating_spalling_prompt", label: "涂料 · 剥落" },
+  { key: "coating_visible_prompt", label: "涂料 · 裂缝 + 剥落" },
+  { key: "coating_thermal_prompt", label: "涂料 · 空鼓（热成像）" },
+  { key: "stone_crack_prompt", label: "石材 · 裂缝" },
+  { key: "stone_spalling_prompt", label: "石材 · 剥落" },
+  { key: "stone_visible_prompt", label: "石材 · 裂缝 + 剥落" },
+  { key: "stone_thermal_prompt", label: "石材 · 空鼓（热成像）" }
+];
 
 const PROVIDER_RECOMMENDATION_SCORE: Record<TrialInferenceProvider, number> = {
   qwen: 4,
@@ -56,7 +87,8 @@ function formFromSetting(setting: TrialInferenceSetting): SettingsForm {
     crack_prompt: setting.crack_prompt,
     spalling_prompt: setting.spalling_prompt,
     thermal_prompt: setting.thermal_prompt,
-    photo_guard_prompt: setting.photo_guard_prompt
+    photo_guard_prompt: setting.photo_guard_prompt,
+    ...setting.formal_prompts
   };
 }
 
@@ -71,7 +103,21 @@ function updatePayload(form: SettingsForm): TrialInferenceSettingUpdate {
     crack_prompt: form.crack_prompt,
     spalling_prompt: form.spalling_prompt,
     thermal_prompt: form.thermal_prompt,
-    photo_guard_prompt: form.photo_guard_prompt
+    photo_guard_prompt: form.photo_guard_prompt,
+    formal_prompts: {
+      tile_crack_prompt: form.tile_crack_prompt,
+      tile_spalling_prompt: form.tile_spalling_prompt,
+      tile_visible_prompt: form.tile_visible_prompt,
+      tile_thermal_prompt: form.tile_thermal_prompt,
+      coating_crack_prompt: form.coating_crack_prompt,
+      coating_spalling_prompt: form.coating_spalling_prompt,
+      coating_visible_prompt: form.coating_visible_prompt,
+      coating_thermal_prompt: form.coating_thermal_prompt,
+      stone_crack_prompt: form.stone_crack_prompt,
+      stone_spalling_prompt: form.stone_spalling_prompt,
+      stone_visible_prompt: form.stone_visible_prompt,
+      stone_thermal_prompt: form.stone_thermal_prompt
+    }
   };
 }
 
@@ -80,6 +126,7 @@ export function SystemSettingsPage() {
   const settingQuery = useQuery(trialInferenceSettingQueryOptions);
   const [form, setForm] = useState<SettingsForm | null>(null);
   const [notice, setNotice] = useState("");
+  const [activePromptKey, setActivePromptKey] = useState<PromptSettingKey>("visible_prompt");
 
   useEffect(() => {
     if (settingQuery.data) setForm(formFromSetting(settingQuery.data));
@@ -117,6 +164,9 @@ export function SystemSettingsPage() {
     updateMutation.reset();
     updateMutation.mutate(updatePayload(form));
   }
+
+  const activePromptOption = PROMPT_SETTING_OPTIONS.find((option) => option.key === activePromptKey)
+    ?? PROMPT_SETTING_OPTIONS[0];
 
   return (
     <div className="system-settings-page management-list-page">
@@ -204,13 +254,45 @@ export function SystemSettingsPage() {
               </div>
 
               <div className="system-setting-block prompt-setting-block">
-                <h3>检测提示词</h3>
-                <div className="prompt-setting-grid">
-                  <label className="system-setting-field prompt-setting-field is-primary"><span>裂缝 + 剥落合并提示词</span><textarea rows={10} value={form.visible_prompt} onChange={(event) => setForm({ ...form, visible_prompt: event.target.value })} /></label>
-                  <label className="system-setting-field prompt-setting-field"><span>裂缝单独提示词</span><textarea rows={10} value={form.crack_prompt} onChange={(event) => setForm({ ...form, crack_prompt: event.target.value })} /></label>
-                  <label className="system-setting-field prompt-setting-field"><span>剥落单独提示词</span><textarea rows={10} value={form.spalling_prompt} onChange={(event) => setForm({ ...form, spalling_prompt: event.target.value })} /></label>
-                  <label className="system-setting-field prompt-setting-field"><span>热成像照片提示词</span><textarea rows={10} value={form.thermal_prompt} onChange={(event) => setForm({ ...form, thermal_prompt: event.target.value })} /></label>
-                  <label className="system-setting-field prompt-setting-field"><span>建筑照片相关性判断提示词</span><textarea rows={10} value={form.photo_guard_prompt} onChange={(event) => setForm({ ...form, photo_guard_prompt: event.target.value })} /></label>
+                <div className="prompt-setting-heading">
+                  <span>
+                    <h3>检测提示词</h3>
+                    <small>{PROMPT_SETTING_OPTIONS.length} 项高级配置</small>
+                  </span>
+                </div>
+                <div className="prompt-setting-workspace" id="prompt-setting-workspace">
+                  <div className="prompt-setting-list" role="tablist" aria-label="检测提示词类型" aria-orientation="vertical">
+                    {PROMPT_SETTING_OPTIONS.map((option) => {
+                      const selected = option.key === activePromptKey;
+                      return (
+                        <button
+                          key={option.key}
+                          id={`prompt-setting-tab-${option.key}`}
+                          aria-controls="prompt-setting-editor"
+                          aria-selected={selected}
+                          className={`prompt-setting-option ${selected ? "is-selected" : ""}`}
+                          role="tab"
+                          type="button"
+                          onClick={() => setActivePromptKey(option.key)}
+                        >
+                          {option.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div
+                    id="prompt-setting-editor"
+                    aria-labelledby={`prompt-setting-tab-${activePromptKey}`}
+                    className="prompt-setting-editor"
+                    role="tabpanel"
+                  >
+                    <textarea
+                      id="prompt-setting-content"
+                      aria-label={`${activePromptOption.label}内容`}
+                      value={form[activePromptKey]}
+                      onChange={(event) => setForm({ ...form, [activePromptKey]: event.target.value })}
+                    />
+                  </div>
                 </div>
               </div>
 

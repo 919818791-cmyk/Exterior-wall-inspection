@@ -52,11 +52,12 @@ from app.schemas.phase5 import (
     DetectionStartRequest,
     DetectionTaskRead,
 )
-from app.services.local_qwen_lifecycle import start_local_qwen
+from app.services.formal_detection_prompts import formal_detection_prompts
 from app.services.inference_scheduling import (
     InferenceUsageReservation,
     reserve_inference_usage,
 )
+from app.services.local_qwen_lifecycle import start_local_qwen
 from app.services.object_storage import get_object_bytes, presigned_get_url
 from app.services.photo_metadata import extract_photo_metadata
 from app.services.report_data import build_report_data
@@ -276,6 +277,28 @@ def _formal_compatible_inference(
             )
         ],
     }
+
+
+def _formal_inference_prompts(
+    prompts: Any,
+    visible_model_labels: list[str],
+    inference_snapshot: dict[str, Any],
+) -> tuple[str, str]:
+    prompt_snapshot = (
+        inference_snapshot.get("prompts")
+        if isinstance(inference_snapshot.get("prompts"), dict)
+        else {}
+    )
+    snapshot_visible = prompt_snapshot.get("visible")
+    snapshot_thermal = prompt_snapshot.get("thermal")
+    return (
+        snapshot_visible.strip()
+        if isinstance(snapshot_visible, str) and snapshot_visible.strip()
+        else prompts.visible_prompt_for_models(visible_model_labels),
+        snapshot_thermal.strip()
+        if isinstance(snapshot_thermal, str) and snapshot_thermal.strip()
+        else prompts.thermal_prompt,
+    )
 
 
 def _raw_model_output_detection(detection: Any) -> dict[str, Any]:
@@ -556,6 +579,27 @@ async def start_detection(
         for value in selected_model_types
         if value in FORMAL_VISIBLE_DEFECT_TYPES
     ]
+    specialized_prompts = (
+        formal_detection_prompts(
+            payload.facade_type,
+            selected_model_types,
+            db=db,
+        )
+        if payload is not None and payload.facade_type is not None
+        else None
+    )
+    visible_prompt = (
+        specialized_prompts.visible_prompt
+        if specialized_prompts is not None
+        and specialized_prompts.visible_prompt is not None
+        else prompts.visible_prompt_for_models(visible_model_labels)
+    )
+    thermal_prompt = (
+        specialized_prompts.thermal_prompt
+        if specialized_prompts is not None
+        and specialized_prompts.thermal_prompt is not None
+        else prompts.thermal_prompt
+    )
     if not runtime.configured:
         detail = (
             f"{runtime.label} 尚未配置服务地址或模型名称。"
@@ -578,6 +622,7 @@ async def start_detection(
     _remove_rejected_project_photos(db, rejected_photos, deleted_at=now)
     inference_snapshot = {
         "source": "formal_project",
+        "facade_type": payload.facade_type if payload is not None else None,
         "model_types": selected_model_types,
         "high_precision": True,
         "provider": runtime.provider,
@@ -597,8 +642,20 @@ async def start_detection(
             "tile_overlap_ratio": TILE_OVERLAP_RATIO,
         },
         "prompts": {
-            "visible": prompts.visible_prompt_for_models(visible_model_labels),
-            "thermal": prompts.thermal_prompt,
+            "visible": visible_prompt,
+            "thermal": thermal_prompt,
+        },
+        "prompt_files": {
+            "visible": (
+                specialized_prompts.visible_file
+                if specialized_prompts is not None
+                else None
+            ),
+            "thermal": (
+                specialized_prompts.thermal_file
+                if specialized_prompts is not None
+                else None
+            ),
         },
         "qualified_photo_count": len(qualified_photos),
         "rejected_photo_count": rejected_photo_count,
@@ -760,6 +817,11 @@ async def _run_formal_project_inference(
             for value in selected_model_types
             if value in FORMAL_VISIBLE_DEFECT_TYPES
         ]
+        visible_prompt, thermal_prompt = _formal_inference_prompts(
+            prompts,
+            visible_model_labels,
+            inference_snapshot,
+        )
         task_started_at = perf_counter()
         image_pairs = [
             (photo, await _formal_image_input(photo))
@@ -817,10 +879,8 @@ async def _run_formal_project_inference(
                 base_url=runtime.base_url,
                 model=runtime.model,
                 provider=runtime.upstream_provider,
-                visible_prompt=prompts.visible_prompt_for_models(
-                    visible_model_labels
-                ),
-                thermal_prompt=prompts.thermal_prompt,
+                visible_prompt=visible_prompt,
+                thermal_prompt=thermal_prompt,
                 visible_defect_types=[
                     value
                     for value in selected_model_types

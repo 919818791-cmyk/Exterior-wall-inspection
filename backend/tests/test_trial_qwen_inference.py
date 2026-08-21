@@ -520,6 +520,22 @@ def test_qwen_accepts_hollow_only_for_thermal_image(monkeypatch) -> None:
     assert payload["messages"][0]["content"][1]["text"] == qwen.TRIAL_QWEN_THERMAL_PROMPT
 
 
+def test_qwen_normalizes_specialized_hollowing_type() -> None:
+    detection = qwen._normalize_detection(
+        {
+            "type": "hollowing",
+            "confidence": 0.86,
+            "bbox": [300, 200, 500, 400],
+            "description": "疑似墙面空鼓",
+        },
+        qwen._Tile(x=0, y=0, valid_width=1280, valid_height=960),
+        allowed_defect_types=frozenset({"hollow"}),
+    )
+
+    assert detection is not None
+    assert detection["type"] == "hollow"
+
+
 def test_qwen_maps_and_clips_tile_bboxes_to_original_image(monkeypatch) -> None:
     RecordingAsyncClient.reset(
         '[{"type":"crack","confidence":0.4,"bbox":[100,100,200,200],'

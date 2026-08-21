@@ -169,6 +169,7 @@ export function ProjectLocationMap({
   locateSignal = 0,
   onAddressChange,
   onPositionChange,
+  showCredit = true,
   showToolbar = true,
   usageLabel = "项目"
 }: {
@@ -179,6 +180,7 @@ export function ProjectLocationMap({
   locateSignal?: number;
   onAddressChange?: (address: string) => void;
   onPositionChange?: (position: { longitude: number; latitude: number }) => void;
+  showCredit?: boolean;
   showToolbar?: boolean;
   usageLabel?: string;
 }) {
@@ -422,11 +424,11 @@ export function ProjectLocationMap({
           {mapStatus === "error" ? <button type="button" onClick={retryLoad}><RotateCcw aria-hidden="true" />重新加载</button> : null}
         </div> : null}
       </div>
-      <div className="map-credit">
+      {showCredit ? <div className="map-credit">
         <MapPin aria-hidden="true" />
         <span>{statusText}</span>
         <strong>{selectedPosition.longitude.toFixed(6)}, {selectedPosition.latitude.toFixed(6)}</strong>
-      </div>
+      </div> : null}
     </aside>
   );
 }

@@ -1,4 +1,3 @@
-import { Images, ScanSearch } from "lucide-react";
 import { type ReactNode, useId, useState } from "react";
 
 import { ProjectWorkbenchShell } from "@/components/project/ProjectWorkbenchShell";
@@ -111,12 +110,10 @@ export function DetectionGuidePanel({ description }: { description: ReactNode })
     <aside className="trial-guide-panel" aria-label="检测说明">
       <div className="trial-guide-list">
         <article className="trial-guide-card trial-guide-card-detection">
-          <span className="trial-guide-icon" aria-hidden="true"><ScanSearch /></span>
-          <div><p>{description}</p></div>
+          <div><p><span className="trial-guide-symbol" aria-hidden="true">•</span>{description}</p></div>
         </article>
         <article className="trial-guide-card trial-guide-card-photo">
-          <span className="trial-guide-icon" aria-hidden="true"><Images /></span>
-          <div><p>上传画面清晰、墙面完整且无遮挡的照片。</p></div>
+          <div><p><span className="trial-guide-symbol" aria-hidden="true">•</span>上传画面清晰且无遮挡的照片</p></div>
         </article>
         <article className="trial-guide-card trial-guide-example-card">
           <div className="trial-guide-example-tabs" role="tablist" aria-label="示例图片类型">

@@ -9,14 +9,13 @@ import {
   Minus,
   Plus,
   RotateCcw,
-  Trash2,
   ZoomIn
 } from "lucide-react";
 import type { CSSProperties, MouseEvent as ReactMouseEvent } from "react";
 import { useMemo, useRef, useState } from "react";
 import { Link as RouterLink, Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
 
-import { deleteReport, downloadReportDocx, downloadTrialReportPdf, reportQueryOptions } from "@/api/reports";
+import { downloadReportDocx, downloadTrialReportPdf, reportQueryOptions } from "@/api/reports";
 import { completeDetectionReview, reviewDetectionPreviewQueryOptions } from "@/api/review";
 import { TilePreviewDialog, type TilePreviewSource } from "@/components/TilePreviewDialog";
 import type {
@@ -83,14 +82,16 @@ export function ReportDetailPage() {
               >
                 重新加载
               </Button>
-              <Button
-                as={RouterLink}
-                className="report-back-button w-fit rounded-lg border border-slate-300 bg-white font-bold text-slate-700 shadow-none"
-                to={isReviewPreview ? `/review/detections/${reviewTaskId}` : "/detections"}
-                variant="flat"
-              >
-                {isReviewPreview ? "返回修改" : "返回列表"}
-              </Button>
+              {isReviewPreview ? (
+                <Button
+                  as={RouterLink}
+                  className="report-back-button w-fit rounded-lg border border-slate-300 bg-white font-bold text-slate-700 shadow-none"
+                  to={`/review/detections/${reviewTaskId}`}
+                  variant="flat"
+                >
+                  返回修改
+                </Button>
+              ) : null}
             </div>
           </CardBody>
         </Card>
@@ -133,7 +134,6 @@ function TrialResultDetail({
   const previewDragMoved = useRef(false);
   const [tilePreview, setTilePreview] = useState<TilePreviewSource | null>(null);
   const isTrialResult = report.source_type === "trial";
-  const resultListPath = isTrialResult ? "/trials" : "/detections";
   const exportFormat = isTrialResult ? "PDF" : "DOCX";
   const exportMutation = useMutation({
     mutationFn: () => isTrialResult
@@ -142,16 +142,6 @@ function TrialResultDetail({
     onSuccess: (blob) => {
       const extension = isTrialResult ? "pdf" : "docx";
       saveBlobAsFile(blob, `${report.report_no}-${report.title}.${extension}`);
-    }
-  });
-  const deleteMutation = useMutation({
-    mutationFn: () => deleteReport(report.id),
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["projects"] }),
-        queryClient.invalidateQueries({ queryKey: ["reports"] })
-      ]);
-      navigate(resultListPath, { replace: true });
     }
   });
   const completeReviewMutation = useMutation({
@@ -244,48 +234,23 @@ function TrialResultDetail({
               </RouterLink>
             </>
           ) : (
-            <>
-              <button
-                aria-busy={exportMutation.isPending}
-                className="button secondary report-back-button report-export-button"
-                disabled={exportMutation.isPending}
-                type="button"
-                onClick={() => {
-                  if (confirmReportExport()) exportMutation.mutate();
-                }}
-              >
-                <Download aria-hidden="true" />
-                {exportMutation.isPending ? "正在导出" : `导出 ${exportFormat}`}
-              </button>
-              <button
-                aria-busy={deleteMutation.isPending}
-                className="button secondary report-back-button result-delete-button"
-                disabled={deleteMutation.isPending || exportMutation.isPending}
-                type="button"
-                onClick={() => {
-                  const confirmation = isTrialResult
-                    ? `确认删除“${report.title}”免费试用结果？删除后无法在列表中查看。`
-                    : `确认删除检测项目“${report.title}”及其检测结果和关联检测任务？删除后无法在列表中查看。`;
-                  if (window.confirm(confirmation)) {
-                    deleteMutation.mutate();
-                  }
-                }}
-              >
-                <Trash2 aria-hidden="true" />
-                {deleteMutation.isPending ? "删除中…" : "删除"}
-              </button>
-              <RouterLink className="button secondary report-back-button" to={resultListPath}>
-                <ArrowLeft aria-hidden="true" />返回列表
-              </RouterLink>
-            </>
+            <button
+              aria-busy={exportMutation.isPending}
+              className="button secondary report-back-button report-export-button"
+              disabled={exportMutation.isPending}
+              type="button"
+              onClick={() => {
+                if (confirmReportExport()) exportMutation.mutate();
+              }}
+            >
+              <Download aria-hidden="true" />
+              {exportMutation.isPending ? "正在导出" : `导出 ${exportFormat}`}
+            </button>
           )}
         </div>
       </div>
       {exportMutation.isError ? (
         <p className="project-list-error">{exportFormat} 导出失败：{getErrorMessage(exportMutation.error)}<button className="inline-retry-button" type="button" onClick={() => exportMutation.mutate()}>重试</button></p>
-      ) : null}
-      {deleteMutation.isError ? (
-        <p className="project-list-error">删除失败：{getErrorMessage(deleteMutation.error)}<button className="inline-retry-button" type="button" onClick={() => deleteMutation.mutate()}>重试</button></p>
       ) : null}
       {completeReviewMutation.isError ? (
         <p className="project-list-error">完成审核失败：{getErrorMessage(completeReviewMutation.error)}<button className="inline-retry-button" type="button" onClick={() => completeReviewMutation.mutate()}>重试</button></p>

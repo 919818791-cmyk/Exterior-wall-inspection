@@ -2900,7 +2900,7 @@ body.auth-modal-open {
 
 .recommendation-content {
   display: grid;
-  gap: 14px;
+  gap: 18px;
 }
 
 .detection-time-dialog .recommendation-content {
@@ -2922,7 +2922,7 @@ body.auth-modal-open {
 }
 
 .recommendation-form-grid--without-project {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .recommendation-location-section {
@@ -3032,22 +3032,39 @@ body.auth-modal-open {
 
 .recommendation-date-field {
   display: grid;
-  gap: 8px;
+  gap: 10px;
 }
 
-.recommendation-date-field span {
+.recommendation-date-field span,
+.recommendation-section-title {
   color: #344967;
-  font-size: 13px;
-  font-weight: 800;
+  font-size: 16px;
+  font-weight: 500;
 }
 
 .recommendation-results {
   display: grid;
-  gap: 14px;
+  gap: 22px;
 }
 
 .recommendation-results[hidden] {
   display: none;
+}
+
+.recommendation-result-section,
+.recommendation-calculation-section {
+  display: grid;
+  gap: 10px;
+}
+
+.recommendation-section-title {
+  margin: 0;
+  line-height: 1.4;
+}
+
+.recommendation-result-content {
+  display: grid;
+  gap: 14px;
 }
 
 .recommendation-loading {
@@ -3162,10 +3179,8 @@ body.auth-modal-open {
 .recommendation-primary {
   display: grid;
   gap: 7px;
-  padding: 20px;
-  border: 1px solid #d8e4f7;
-  border-radius: 8px;
-  background: #f5f9ff;
+  padding: 8px 0 8px 16px;
+  border-left: 3px solid #245cff;
 }
 
 .recommendation-primary span,
@@ -3186,14 +3201,17 @@ body.auth-modal-open {
   line-height: 1.25;
 }
 
+.recommendation-primary--preferred > span {
+  color: #245cff;
+}
+
 .recommendation-primary small {
   color: #637592;
   font-size: 12px;
 }
 
 .recommendation-primary--usable {
-  border-color: #f1d39a;
-  background: #fff9ed;
+  border-left-color: #d99020;
 }
 
 .recommendation-primary--usable span {
@@ -3205,8 +3223,7 @@ body.auth-modal-open {
 }
 
 .recommendation-primary--unavailable {
-  border-color: #dfe5ec;
-  background: #f7f8fa;
+  border-left-color: #94a3b8;
 }
 
 .recommendation-primary--unavailable span,
@@ -3219,35 +3236,6 @@ body.auth-modal-open {
   border: 1px solid #dce7f5;
   border-radius: 8px;
   background: #fff;
-}
-
-.recommendation-calculation-heading {
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 20px;
-  padding: 16px 18px;
-  border-bottom: 1px solid #e6edf6;
-  background: #f8fbff;
-}
-
-.recommendation-calculation-heading > div {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-}
-
-.recommendation-calculation-heading span,
-.recommendation-calculation-final span {
-  color: #7385a2;
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-}
-
-.recommendation-calculation-heading > div > span {
-  font-size: 18px;
-  line-height: 1.25;
 }
 
 .recommendation-calculation ol {
@@ -3278,7 +3266,7 @@ body.auth-modal-open {
   border-radius: 999px;
   background: #eaf1ff;
   font-size: 11px;
-  font-weight: 800;
+  font-weight: 400;
 }
 
 .recommendation-calculation li div {
@@ -3290,28 +3278,16 @@ body.auth-modal-open {
 .recommendation-calculation li strong {
   color: #2b405f;
   font-size: 13px;
+  font-weight: 400;
 }
 
 .recommendation-calculation li p {
   margin: 0;
   color: #637592;
   font-size: 12px;
+  font-weight: 400;
   line-height: 1.6;
   overflow-wrap: anywhere;
-}
-
-.recommendation-calculation-final {
-  display: grid;
-  gap: 5px;
-  padding: 14px 18px;
-  border-top: 1px solid #dce7f5;
-  background: #f5f9ff;
-}
-
-.recommendation-calculation-final strong {
-  color: #245cff;
-  font-size: 13px;
-  line-height: 1.55;
 }
 
 .recommendation-meta {
@@ -4209,8 +4185,8 @@ body.auth-modal-open {
 }
 
 .detection-time-dialog .recommendation-date-field :is(input, select) {
-  min-height: 54px;
-  font-size: 17px;
+  min-height: 48px;
+  font-size: 16px;
 }
 
 .detection-time-dialog .recommendation-date-field :is(input, select):disabled {

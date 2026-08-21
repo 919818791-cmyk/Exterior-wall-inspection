@@ -5,6 +5,7 @@ import { RequireAuth, RequireRole } from "@/components/auth/RouteGuards";
 import { AppLayout } from "@/layouts/AppLayout";
 
 const AccountManagementPage = lazy(() => import("@/pages/AccountManagementPage").then((module) => ({ default: module.AccountManagementPage })));
+const BuildingModelPage = lazy(() => import("@/pages/BuildingModelPage").then((module) => ({ default: module.BuildingModelPage })));
 const CapabilityDetailPage = lazy(() => import("@/pages/CapabilityDetailPage").then((module) => ({ default: module.CapabilityDetailPage })));
 const DashboardPage = lazy(() => import("@/pages/DashboardPage").then((module) => ({ default: module.DashboardPage })));
 const DataManagementPage = lazy(() => import("@/pages/DataManagementPage").then((module) => ({ default: module.DataManagementPage })));
@@ -48,11 +49,13 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: deferred(<DashboardPage />) },
       { path: "capabilities", element: <Navigate replace to="/capabilities/crack" /> },
+      { path: "capabilities/time", element: <Navigate replace to="/" /> },
       { path: "capabilities/:type", element: deferred(<CapabilityDetailPage />) },
       { path: "trials", element: deferred(<ReportListPage />) },
       { path: "reports", element: <Navigate replace to="/trials" /> },
       { path: "projects", element: <Navigate replace to="/detections" /> },
       { path: "detections", element: deferred(<ProjectListPage />) },
+      { path: "detections/:id/model", element: deferred(<BuildingModelPage />) },
       {
         element: <RequireAuth />,
         children: [

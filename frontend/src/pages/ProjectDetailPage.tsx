@@ -5,22 +5,18 @@ import {
 } from "@heroui/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  ArrowLeft,
   FileText,
-  Send,
-  Trash2
+  ScanSearch
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Link as RouterLink,
   useLocation,
-  useNavigate,
   useOutletContext,
   useParams
 } from "react-router-dom";
 
 import {
-  deleteProject,
   projectQueryOptions,
   projectPhotosQueryOptions,
   startDetection,
@@ -72,7 +68,7 @@ function projectToDraft(project: ProjectDetail): ProjectBasicDraft {
 function getPrimaryAction(status: ProjectStatus) {
   switch (status) {
     case "draft":
-      return { label: "开始 AI 检测", note: "系统会统一检测预检通过的照片。" };
+      return { label: "开始检测", note: "系统会统一检测预检通过的照片。" };
     case "queued":
       return { label: "检测中", note: "检测任务已提交，正在启动检测。" };
     case "detecting":
@@ -92,14 +88,9 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "操作失败，请稍后重试。";
 }
 
-function canDeleteProject(status: ProjectStatus) {
-  return status === "draft" || status === "reviewed" || status === "completed";
-}
-
 export function ProjectDetailPage() {
   const { id = "" } = useParams();
   const location = useLocation();
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const user = useAuthStore((state) => state.user);
   const outletContext = useOutletContext<{
@@ -174,16 +165,6 @@ export function ProjectDetailPage() {
       }
       await queryClient.invalidateQueries({ queryKey: ["projects"], exact: true });
     }
-  });
-
-  const deleteProjectMutation = useMutation({
-    mutationFn: deleteProject,
-    onSuccess: async (_, projectId) => {
-      await queryClient.invalidateQueries({ queryKey: ["projects"] });
-      queryClient.removeQueries({ queryKey: ["projects", projectId] });
-      navigate("/detections", { replace: true });
-    },
-    onError: (error) => setFormError(getErrorMessage(error))
   });
 
   const runAutoSaveQueue = async () => {
@@ -289,15 +270,6 @@ export function ProjectDetailPage() {
     setDetectionModalOpen(true);
   };
 
-  const handleDeleteProject = () => {
-    if (!project || !canManageProject || !canDeleteProject(project.status)) return;
-    if (!window.confirm(`确认删除项目“${project.name}”？此操作会软删除项目及其照片。`)) return;
-
-    queuedAutoSaveRef.current = null;
-    setFormError("");
-    deleteProjectMutation.mutate(project.id);
-  };
-
   if (projectQuery.isLoading) {
     return (
       <ProjectWorkbenchShell actionLabel="返回" hideHeader>
@@ -320,9 +292,6 @@ export function ProjectDetailPage() {
               <p className="text-sm font-bold text-red-700">
                 {getErrorMessage(projectQuery.error)}
               </p>
-              <RouterLink className="button secondary report-back-button w-fit" to="/detections">
-                <ArrowLeft aria-hidden="true" />返回
-              </RouterLink>
             </CardBody>
           </Card>
         </div>
@@ -335,7 +304,6 @@ export function ProjectDetailPage() {
       <ProjectDetailPrototype
         activeError={activeError}
         canManageProject={canManageProject}
-        deleteProjectPending={deleteProjectMutation.isPending}
         formError={formError}
         isEditable={isEditable}
         primaryAction={primaryAction}
@@ -346,8 +314,6 @@ export function ProjectDetailPage() {
         startDetectionPending={startDetectionMutation.isPending}
         detectionModalOpen={detectionModalOpen}
         photos={projectPhotosQuery.data ?? []}
-        updateProjectPending={updateProjectMutation.isPending}
-        onDeleteProject={handleDeleteProject}
         onPrimaryAction={handlePrimaryAction}
         onDetectionModalOpenChange={setDetectionModalOpen}
         onStartDetection={(payload) => startDetectionMutation.mutate(payload)}
@@ -367,14 +333,11 @@ function ProjectDetailPrototype({
   projectDraft,
   formError,
   activeError,
-  deleteProjectPending,
   primaryAction,
   projectCreationNotice,
   startDetectionPending,
   detectionModalOpen,
   photos,
-  updateProjectPending,
-  onDeleteProject,
   onProjectFieldChange,
   onProjectFieldBlur,
   onPrimaryAction,
@@ -388,14 +351,11 @@ function ProjectDetailPrototype({
   projectDraft: ProjectBasicDraft;
   formError: string;
   activeError: unknown;
-  deleteProjectPending: boolean;
   primaryAction: { label: string; note: string };
   projectCreationNotice: string;
   startDetectionPending: boolean;
   detectionModalOpen: boolean;
   photos: Photo[];
-  updateProjectPending: boolean;
-  onDeleteProject: () => void;
   onProjectFieldChange: (field: keyof ProjectBasicDraft, value: string) => void;
   onProjectFieldBlur: () => void;
   onPrimaryAction: () => void;
@@ -428,30 +388,13 @@ function ProjectDetailPrototype({
           )}
           nameActions={(
             <>
-              <RouterLink
-                className="button secondary report-back-button project-workbench-nav-button project-detail-back-button"
-                to="/detections"
-              >
-                <ArrowLeft aria-hidden="true" />返回
-              </RouterLink>
-              {canManageProject && canDeleteProject(project.status) ? (
-                <button
-                  className="button secondary report-back-button project-workbench-nav-button project-detail-delete-button"
-                  disabled={deleteProjectPending || updateProjectPending}
-                  type="button"
-                  onClick={onDeleteProject}
-                >
-                  <Trash2 aria-hidden="true" />
-                  {deleteProjectPending ? "删除中…" : "删除"}
-                </button>
-              ) : null}
               <button
                 className="button primary start-ai-detection-button"
                 disabled={!canManageProject || project.status !== "draft" || startDetectionPending}
                 type="button"
                 onClick={onPrimaryAction}
               >
-                <Send aria-hidden="true" />
+                <ScanSearch aria-hidden="true" />
                 {startDetectionPending ? "检测中" : primaryAction.label}
               </button>
             </>
@@ -474,6 +417,7 @@ function ProjectDetailPrototype({
         />
         <StartDetectionModal
           error={activeError}
+          isProfessional
           isOpen={detectionModalOpen}
           isPending={startDetectionPending}
           nonDronePhotoCount={nonDronePhotoCount}
@@ -506,28 +450,15 @@ function ProjectDetailPrototype({
 
         <div className="create-action-bar detail-action-bar">
           <div className="detail-view-actions">
-            <RouterLink className="button secondary report-back-button project-detail-back-button" to="/detections">
-              <ArrowLeft aria-hidden="true" />返回
-            </RouterLink>
-            {canManageProject && canDeleteProject(project.status) ? (
-              <button
-                className="button secondary project-detail-delete-button"
-                disabled={deleteProjectPending || updateProjectPending}
-                type="button"
-                onClick={onDeleteProject}
-              >
-                <Trash2 aria-hidden="true" />
-                {deleteProjectPending ? "删除中…" : "删除"}
-              </button>
-            ) : null}
             {(project.status === "reviewed" || project.status === "completed") && project.current_report_id
               ? <RouterLink className="button primary" to={`/detections/results/${project.current_report_id}`}><FileText aria-hidden="true" />查看结果</RouterLink>
-              : <button className="button primary start-ai-detection-button" disabled={!canManageProject || project.status !== "draft" || startDetectionPending} type="button" onClick={onPrimaryAction}><Send aria-hidden="true" />{startDetectionPending ? "检测中" : primaryAction.label}</button>}
+              : <button className="button primary start-ai-detection-button" disabled={!canManageProject || project.status !== "draft" || startDetectionPending} type="button" onClick={onPrimaryAction}><ScanSearch aria-hidden="true" />{startDetectionPending ? "检测中" : primaryAction.label}</button>}
           </div>
         </div>
       </section>
       <StartDetectionModal
         error={activeError}
+        isProfessional
         isOpen={detectionModalOpen}
         isPending={startDetectionPending}
         nonDronePhotoCount={nonDronePhotoCount}

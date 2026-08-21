@@ -11,15 +11,24 @@ import { useEffect, useState } from "react";
 import type { StartDetectionPayload } from "@/types/projects";
 
 type DetectionModelType = StartDetectionPayload["model_types"][number];
+type FacadeType = NonNullable<StartDetectionPayload["facade_type"]>;
+
+const FACADE_TYPE_OPTIONS: Array<{
+  value: FacadeType;
+  label: string;
+}> = [
+  { value: "tile", label: "面砖" },
+  { value: "coating", label: "涂料" },
+  { value: "stone", label: "石材" }
+];
 
 const DETECTION_TYPE_OPTIONS: Array<{
   value: DetectionModelType;
   label: string;
-  description: string;
 }> = [
-  { value: "crack", label: "裂缝", description: "分析可见光照片中的线状开裂" },
-  { value: "spalling", label: "剥落", description: "分析可见光照片中的面状材料缺失" },
-  { value: "hollow", label: "空鼓", description: "仅分析热成像照片中的疑似空鼓" }
+  { value: "crack", label: "裂缝" },
+  { value: "spalling", label: "剥落" },
+  { value: "hollow", label: "空鼓" }
 ];
 
 function getErrorMessage(error: unknown) {
@@ -28,6 +37,7 @@ function getErrorMessage(error: unknown) {
 
 export function StartDetectionModal({
   error,
+  isProfessional = false,
   isOpen,
   isPending,
   nonDronePhotoCount = 0,
@@ -38,6 +48,7 @@ export function StartDetectionModal({
   onSubmit
 }: {
   error?: unknown;
+  isProfessional?: boolean;
   isOpen: boolean;
   isPending: boolean;
   nonDronePhotoCount?: number;
@@ -47,12 +58,14 @@ export function StartDetectionModal({
   onOpenChange: (isOpen: boolean) => void;
   onSubmit: (payload: StartDetectionPayload) => void;
 }) {
+  const [facadeType, setFacadeType] = useState<FacadeType>("tile");
   const [modelTypes, setModelTypes] = useState<DetectionModelType[]>(["crack"]);
   const [localError, setLocalError] = useState("");
   const visiblePhotoCount = qualifiedPhotoCount - thermalPhotoCount;
 
   useEffect(() => {
     if (!isOpen) return;
+    setFacadeType("tile");
     setModelTypes(
       thermalPhotoCount > 0
         ? visiblePhotoCount > 0
@@ -91,7 +104,10 @@ export function StartDetectionModal({
       return;
     }
     onOpenChange(false);
-    onSubmit({ model_types: modelTypes });
+    onSubmit({
+      model_types: modelTypes,
+      ...(isProfessional ? { facade_type: facadeType } : {})
+    });
   };
 
   return (
@@ -126,24 +142,75 @@ export function StartDetectionModal({
               <span className="start-detection-modal-title-icon" aria-hidden="true">
                 <ScanLine />
               </span>
-              <span className="start-detection-modal-title-copy">开始 AI 检测</span>
+              <span className="start-detection-modal-title-copy">
+                {isProfessional ? "开始检测" : "开始 AI 检测"}
+              </span>
+              {isProfessional ? (
+                <span className="start-detection-modal-title-count">
+                  · {qualifiedPhotoCount} 张照片
+                </span>
+              ) : null}
             </ModalHeader>
             <ModalBody className="start-detection-modal-body gap-5">
-              <div className="start-detection-summary">
-                <span className="start-detection-summary-icon" aria-hidden="true">
-                  <Images />
-                </span>
-                <span className="start-detection-summary-copy">
-                  <strong>{qualifiedPhotoCount} 张照片将参与检测</strong>
-                  {nonDronePhotoCount ? (
-                    <span>{nonDronePhotoCount} 张非无人机照片将在确认后自动从照片列表中移除</span>
-                  ) : null}
-                  {rejectedPhotoCount - nonDronePhotoCount > 0 ? (
-                    <span>{rejectedPhotoCount - nonDronePhotoCount} 张非建筑照片将在确认后自动从照片列表中移除</span>
-                  ) : null}
-                </span>
-                <span className="start-detection-ready-badge">已就绪</span>
-              </div>
+              {isProfessional ? (
+                nonDronePhotoCount || rejectedPhotoCount - nonDronePhotoCount > 0 ? (
+                  <div className="start-detection-cleanup-notice">
+                    {nonDronePhotoCount ? (
+                      <span>{nonDronePhotoCount} 张非无人机照片将在确认后自动从照片列表中移除</span>
+                    ) : null}
+                    {rejectedPhotoCount - nonDronePhotoCount > 0 ? (
+                      <span>{rejectedPhotoCount - nonDronePhotoCount} 张非建筑照片将在确认后自动从照片列表中移除</span>
+                    ) : null}
+                  </div>
+                ) : null
+              ) : (
+                <div className="start-detection-summary">
+                  <span className="start-detection-summary-icon" aria-hidden="true">
+                    <Images />
+                  </span>
+                  <span className="start-detection-summary-copy">
+                    <strong>{qualifiedPhotoCount} 张照片将参与检测</strong>
+                    {nonDronePhotoCount ? (
+                      <span>{nonDronePhotoCount} 张非无人机照片将在确认后自动从照片列表中移除</span>
+                    ) : null}
+                    {rejectedPhotoCount - nonDronePhotoCount > 0 ? (
+                      <span>{rejectedPhotoCount - nonDronePhotoCount} 张非建筑照片将在确认后自动从照片列表中移除</span>
+                    ) : null}
+                  </span>
+                  <span className="start-detection-ready-badge">已就绪</span>
+                </div>
+              )}
+
+              {isProfessional ? (
+                <fieldset className="start-detection-types start-detection-facade-types">
+                  <legend>外墙类型</legend>
+                  <div className="start-detection-option-grid">
+                    {FACADE_TYPE_OPTIONS.map((option) => (
+                      <label
+                        className={`start-detection-option start-detection-facade-option ${
+                          facadeType === option.value ? "is-selected" : ""
+                        }`}
+                        key={option.value}
+                      >
+                        <span className="start-detection-option-heading">
+                          <input
+                            checked={facadeType === option.value}
+                            disabled={isPending}
+                            name="facade-type"
+                            type="radio"
+                            value={option.value}
+                            onChange={() => {
+                              setFacadeType(option.value);
+                              setLocalError("");
+                            }}
+                          />
+                          <strong>{option.label}</strong>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+              ) : null}
 
               <fieldset className="start-detection-types">
                 <legend>检测类型</legend>
@@ -158,7 +225,10 @@ export function StartDetectionModal({
                       <span className="start-detection-option-heading">
                         <input
                           checked={modelTypes.includes(option.value)}
-                          disabled={isPending}
+                          disabled={
+                            isPending
+                            || (option.value === "hollow" && thermalPhotoCount === 0)
+                          }
                           type="checkbox"
                           onChange={() => toggleModel(option.value)}
                         />
@@ -166,7 +236,6 @@ export function StartDetectionModal({
                           {option.label}{option.value === "hollow" ? "（Beta）" : ""}
                         </strong>
                       </span>
-                      <small>{option.description}</small>
                     </label>
                   ))}
                 </div>

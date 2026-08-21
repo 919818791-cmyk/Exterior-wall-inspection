@@ -27,6 +27,38 @@ class TrialInferenceDisclosureRead(BaseModel):
     privacy_policy_url: str | None = None
 
 
+class FormalDetectionPromptSettingRead(BaseModel):
+    tile_crack_prompt: str
+    tile_spalling_prompt: str
+    tile_visible_prompt: str
+    tile_thermal_prompt: str
+    coating_crack_prompt: str
+    coating_spalling_prompt: str
+    coating_visible_prompt: str
+    coating_thermal_prompt: str
+    stone_crack_prompt: str
+    stone_spalling_prompt: str
+    stone_visible_prompt: str
+    stone_thermal_prompt: str
+
+
+class FormalDetectionPromptSettingUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    tile_crack_prompt: str | None = Field(default=None, min_length=20, max_length=20_000)
+    tile_spalling_prompt: str | None = Field(default=None, min_length=20, max_length=20_000)
+    tile_visible_prompt: str | None = Field(default=None, min_length=20, max_length=20_000)
+    tile_thermal_prompt: str | None = Field(default=None, min_length=20, max_length=20_000)
+    coating_crack_prompt: str | None = Field(default=None, min_length=20, max_length=20_000)
+    coating_spalling_prompt: str | None = Field(default=None, min_length=20, max_length=20_000)
+    coating_visible_prompt: str | None = Field(default=None, min_length=20, max_length=20_000)
+    coating_thermal_prompt: str | None = Field(default=None, min_length=20, max_length=20_000)
+    stone_crack_prompt: str | None = Field(default=None, min_length=20, max_length=20_000)
+    stone_spalling_prompt: str | None = Field(default=None, min_length=20, max_length=20_000)
+    stone_visible_prompt: str | None = Field(default=None, min_length=20, max_length=20_000)
+    stone_thermal_prompt: str | None = Field(default=None, min_length=20, max_length=20_000)
+
+
 class TrialInferenceSettingRead(BaseModel):
     provider: TrialInferenceProvider
     global_job_concurrency: int
@@ -38,6 +70,7 @@ class TrialInferenceSettingRead(BaseModel):
     spalling_prompt: str
     thermal_prompt: str
     photo_guard_prompt: str
+    formal_prompts: FormalDetectionPromptSettingRead
     options: list[TrialInferenceProviderOption]
     updated_at: datetime | None = None
 
@@ -55,3 +88,4 @@ class TrialInferenceSettingUpdate(BaseModel):
     spalling_prompt: str | None = Field(default=None, min_length=20, max_length=20_000)
     thermal_prompt: str | None = Field(default=None, min_length=20, max_length=20_000)
     photo_guard_prompt: str | None = Field(default=None, min_length=20, max_length=20_000)
+    formal_prompts: FormalDetectionPromptSettingUpdate | None = None

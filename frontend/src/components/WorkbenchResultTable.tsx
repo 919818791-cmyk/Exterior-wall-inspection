@@ -1,4 +1,3 @@
-import { Ellipsis, Pencil, Trash2 } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { ResultFolderThumbnail } from "@/components/ResultFolderThumbnail";
@@ -17,16 +16,19 @@ interface WorkbenchResultTableProps<T extends WorkbenchResultListItem> {
   columnLabel?: string;
   completionTimeLabel?: string;
   getDeleteDisabledReason?: (item: T) => string;
-  getActionLabel?: (item: T) => string;
+  getLeadingActionLabel?: (item: T) => string;
   getKey: (item: T) => string;
   items: T[];
   onDelete?: (item: T) => void;
+  onLeadingAction?: (item: T) => void;
   onOpen: (item: T) => void;
+  openOnRowClick?: boolean;
   onRename?: (item: T) => void;
   renderCompletionTime?: (item: T) => ReactNode;
   renderDetectionDescription?: (item: T) => ReactNode;
   renderDetectionType?: (item: T) => ReactNode;
   renderTitleAccessory?: (item: T) => ReactNode;
+  titleAccessoryLabel?: string;
 }
 
 export function WorkbenchResultTable<T extends WorkbenchResultListItem>({
@@ -35,18 +37,22 @@ export function WorkbenchResultTable<T extends WorkbenchResultListItem>({
   columnLabel = "检测名称",
   completionTimeLabel = "完成时间",
   getDeleteDisabledReason,
-  getActionLabel,
+  getLeadingActionLabel,
   getKey,
   items,
   onDelete,
+  onLeadingAction,
   onOpen,
+  openOnRowClick = false,
   onRename,
   renderCompletionTime,
   renderDetectionDescription,
   renderDetectionType,
-  renderTitleAccessory
+  renderTitleAccessory,
+  titleAccessoryLabel = "状态"
 }: WorkbenchResultTableProps<T>) {
-  const hasActions = Boolean(getActionLabel || onRename || onDelete);
+  const hasActions = Boolean((getLeadingActionLabel && onLeadingAction) || onRename || onDelete);
+  const rowsOpenOnClick = openOnRowClick;
 
   return (
     <table className="project-table project-workbench-table workbench-result-table">
@@ -63,7 +69,7 @@ export function WorkbenchResultTable<T extends WorkbenchResultListItem>({
         <tr>
           <th aria-label="照片" scope="col" />
           <th className="workbench-result-name-heading" scope="col">{columnLabel}</th>
-          {renderTitleAccessory ? <th className="workbench-result-status-heading" scope="col">状态</th> : null}
+          {renderTitleAccessory ? <th className="workbench-result-status-heading" scope="col">{titleAccessoryLabel}</th> : null}
           {renderDetectionType ? <th className="workbench-result-detection-type-heading" scope="col">检测类型</th> : null}
           {renderCompletionTime ? <th className="workbench-result-completion-time-heading" scope="col">{completionTimeLabel}</th> : null}
           {renderDetectionDescription ? <th className="workbench-result-description-heading" scope="col">缺陷摘要</th> : null}
@@ -72,12 +78,32 @@ export function WorkbenchResultTable<T extends WorkbenchResultListItem>({
       </thead>
       <tbody>
         {items.map((item) => {
-          const actionLabel = getActionLabel?.(item);
+          const leadingActionLabel = getLeadingActionLabel?.(item);
+          const leadingActionIcon = leadingActionLabel === "3D模型"
+            ? <img alt="" aria-hidden="true" className="workbench-solid-action-icon" src="/icons/action-cube.png" />
+            : null;
           const deleteEnabled = canDelete?.(item) ?? true;
           const renameEnabled = canRename?.(item) ?? true;
           const deleteDisabledReason = deleteEnabled ? undefined : getDeleteDisabledReason?.(item);
 
-          return <tr className="workbench-result-row" key={getKey(item)}>
+          return <tr
+            aria-label={rowsOpenOnClick ? `打开：${item.title}` : undefined}
+            className={`workbench-result-row${rowsOpenOnClick ? " is-row-openable" : ""}`}
+            key={getKey(item)}
+            tabIndex={rowsOpenOnClick ? 0 : undefined}
+            onClick={rowsOpenOnClick ? (event) => {
+              const target = event.target;
+              if (target instanceof Element && target.closest("button, a, input, select, textarea, summary, details, [role='menuitem']")) return;
+              onOpen(item);
+            } : undefined}
+            onKeyDown={rowsOpenOnClick ? (event) => {
+              if (event.key !== "Enter") return;
+              const target = event.target;
+              if (target instanceof Element && target.closest("button, a, input, select, textarea, summary, details, [role='menuitem']")) return;
+              event.preventDefault();
+              onOpen(item);
+            } : undefined}
+          >
             <td className="result-folder-column">
               <ResultFolderThumbnail
                 firstPhotoUrl={item.first_photo_url}
@@ -93,7 +119,7 @@ export function WorkbenchResultTable<T extends WorkbenchResultListItem>({
               </span>
             </td>
             {renderTitleAccessory ? (
-              <td className="workbench-result-status-column" data-label="状态">
+              <td className="workbench-result-status-column" data-label={titleAccessoryLabel}>
                 {renderTitleAccessory(item)}
               </td>
             ) : null}
@@ -115,63 +141,39 @@ export function WorkbenchResultTable<T extends WorkbenchResultListItem>({
             {hasActions ? (
               <td className="workbench-result-action-column" data-label="操作">
                 <div className="workbench-result-actions">
-                  {actionLabel ? (
+                  {leadingActionLabel && onLeadingAction ? (
                     <button
-                      aria-label={`${actionLabel}：${item.title}`}
-                      className="workbench-result-action-button"
+                      aria-label={`${leadingActionLabel}：${item.title}`}
+                      className={`workbench-result-action-button workbench-result-leading-action-button${leadingActionIcon ? " workbench-result-icon-button" : ""}`}
+                      title={`${leadingActionLabel}：${item.title}`}
                       type="button"
-                      onClick={() => onOpen(item)}
+                      onClick={() => onLeadingAction(item)}
                     >
-                      {actionLabel}
+                      {leadingActionIcon ?? leadingActionLabel}
                     </button>
                   ) : null}
-                  {onRename || onDelete ? (
-                    <details
-                      className="workbench-result-more"
-                      onBlur={(event) => {
-                        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-                          event.currentTarget.removeAttribute("open");
-                        }
-                      }}
-                      onKeyDown={(event) => {
-                        if (event.key !== "Escape") return;
-                        event.currentTarget.removeAttribute("open");
-                        event.currentTarget.querySelector<HTMLElement>("summary")?.focus();
-                      }}
+                  {onRename && renameEnabled ? (
+                    <button
+                      aria-label={`重命名：${item.title}`}
+                      className="workbench-result-action-button workbench-result-icon-button"
+                      title={`重命名：${item.title}`}
+                      type="button"
+                      onClick={() => onRename(item)}
                     >
-                      <summary aria-label={`更多操作：${item.title}`} title="更多操作">
-                        <Ellipsis aria-hidden="true" />
-                      </summary>
-                      <div className="workbench-result-more-menu" role="menu">
-                        {onRename && renameEnabled ? (
-                          <button
-                            role="menuitem"
-                            type="button"
-                            onClick={(event) => {
-                              event.currentTarget.closest("details")?.removeAttribute("open");
-                              onRename(item);
-                            }}
-                          >
-                            <Pencil aria-hidden="true" />重命名
-                          </button>
-                        ) : null}
-                        {onDelete ? (
-                          <button
-                            className="danger"
-                            disabled={!deleteEnabled}
-                            role="menuitem"
-                            title={deleteDisabledReason}
-                            type="button"
-                            onClick={(event) => {
-                              event.currentTarget.closest("details")?.removeAttribute("open");
-                              onDelete(item);
-                            }}
-                          >
-                            <Trash2 aria-hidden="true" />删除
-                          </button>
-                        ) : null}
-                      </div>
-                    </details>
+                      <img alt="" aria-hidden="true" className="workbench-solid-action-icon" src="/icons/action-pencil.png" />
+                    </button>
+                  ) : null}
+                  {onDelete ? (
+                    <button
+                      aria-label={`删除：${item.title}`}
+                      className="workbench-result-action-button workbench-result-icon-button workbench-result-danger-action-button"
+                      disabled={!deleteEnabled}
+                      title={deleteEnabled ? `删除：${item.title}` : deleteDisabledReason}
+                      type="button"
+                      onClick={() => onDelete(item)}
+                    >
+                      <img alt="" aria-hidden="true" className="workbench-solid-action-icon" src="/icons/action-trash.png" />
+                    </button>
                   ) : null}
                 </div>
               </td>

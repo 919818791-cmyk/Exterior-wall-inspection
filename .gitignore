@@ -1,6 +1,7 @@
 .env
 .env.*
 !.env.example
+/AccessKey.csv
 
 # Local planning, prototype, and design-review artifacts
 /.agents/

@@ -1175,6 +1175,8 @@ def _normalize_detection(
     defect_type = raw_type.strip().lower()
     if defect_type == "missing":
         defect_type = "spalling"
+    if defect_type == "hollowing":
+        defect_type = "hollow"
     if defect_type not in allowed_defect_types:
         return None
 

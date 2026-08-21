@@ -1,4 +1,4 @@
-import { CalendarClock, ChevronLeft, ChevronRight, Sparkles, X } from "lucide-react";
+import { CalendarClock, Check, ChevronDown, ChevronLeft, ChevronRight, Sparkles, X } from "lucide-react";
 import gsap from "gsap";
 import type { CSSProperties } from "react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -211,23 +211,36 @@ const orientationAzimuth = {
 
 type Orientation = keyof typeof orientationAzimuth;
 type RecommendationPosition = { longitude: number; latitude: number };
+const recommendationCalculationSteps = [
+  { title: "确定参与计算的时段", detail: "正在筛选所选日期的有效预报时段…" },
+  { title: "建立气温变化曲线", detail: "正在拟合逐时气温变化…" },
+  { title: "计算墙面太阳辐照", detail: "正在结合立面朝向计算太阳辐照…" },
+  { title: "计算风速散热影响", detail: "正在评估风速对墙面的散热影响…" },
+  { title: "判断正温差窗口", detail: "正在识别适合检测的正温差时段…" },
+  { title: "判断负温差窗口", detail: "正在识别适合检测的负温差时段…" }
+] as const;
+const recommendationCalculationStepCount = recommendationCalculationSteps.length;
+const recommendationCalculationStepDuration = 550;
+const recommendationCalculationCompletionHold = 1500;
 
-function RecommendationLoadingSkeleton() {
+function RecommendationCalculationProgress({ activeStep }: { activeStep: number }) {
   return (
-    <div className="recommendation-loading" role="status" aria-live="polite">
-      <div className="recommendation-loading-status">
-        <div>
-          <strong>正在生成推荐结果</strong>
-          <span>正在分析天气与立面条件，请稍候</span>
-        </div>
-        <i aria-hidden="true" />
+    <section className="recommendation-calculation-section" aria-labelledby="recommendation-running-calculation-title">
+      <h3 className="recommendation-section-title" id="recommendation-running-calculation-title">计算过程</h3>
+      <div className="recommendation-calculation" role="status" aria-live="polite">
+        <ol>
+          {recommendationCalculationSteps.map((step, index) => (
+            <li className={index < activeStep ? "is-complete" : index === activeStep ? "is-current" : ""} key={step.title}>
+              <span>{index < activeStep ? <Check aria-hidden="true" /> : index + 1}</span>
+              <div>
+                <strong>{step.title}</strong>
+                {index <= activeStep ? <p>{step.detail}</p> : null}
+              </div>
+            </li>
+          ))}
+        </ol>
       </div>
-      <div className="recommendation-primary recommendation-skeleton-primary" aria-hidden="true">
-        <i className="recommendation-skeleton-block recommendation-skeleton-block--short" />
-        <i className="recommendation-skeleton-block recommendation-skeleton-block--title" />
-        <i className="recommendation-skeleton-block recommendation-skeleton-block--wide" />
-      </div>
-    </div>
+    </section>
   );
 }
 
@@ -246,10 +259,8 @@ function dateFromToday(offsetDays: number) {
   return `${date.getFullYear()}-${month}-${day}`;
 }
 
-export function TimeRecommendation() {
-  const heroRef = useRef<HTMLElement>(null);
+export function TimeRecommendationDialog({ openSignal }: { openSignal: number }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
-  usePublicHeroAnimation(heroRef);
 
   const authStatus = useAuthStore((state) => state.status);
   const { requestAuthentication } = useOutletContext<{
@@ -266,6 +277,9 @@ export function TimeRecommendation() {
   const [recommendation, setRecommendation] = useState<TimeRecommendationResult | null>(null);
   const [recommendationError, setRecommendationError] = useState("");
   const [isQuerying, setIsQuerying] = useState(false);
+  const [calculationProgressStep, setCalculationProgressStep] = useState(0);
+  const [isCalculationAnimationComplete, setIsCalculationAnimationComplete] = useState(false);
+  const [isCalculationDetailsExpanded, setIsCalculationDetailsExpanded] = useState(false);
   const earliestDate = today();
   const latestDate = dateFromToday(29);
   const showsTwoRecommendationWindows = Boolean(
@@ -288,6 +302,48 @@ export function TimeRecommendation() {
     };
   }, [isDialogOpen]);
 
+  useEffect(() => {
+    if (openSignal > 0) openDialog();
+  }, [openSignal]);
+
+  useEffect(() => {
+    if (!isQuerying) {
+      setCalculationProgressStep(0);
+      setIsCalculationAnimationComplete(false);
+      return undefined;
+    }
+    setCalculationProgressStep(0);
+    setIsCalculationAnimationComplete(false);
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setCalculationProgressStep(recommendationCalculationStepCount);
+      setIsCalculationAnimationComplete(true);
+      return undefined;
+    }
+
+    let nextStep = 0;
+    let completionTimer = 0;
+    const timer = window.setInterval(() => {
+      nextStep = Math.min(nextStep + 1, recommendationCalculationStepCount);
+      setCalculationProgressStep(nextStep);
+      if (nextStep >= recommendationCalculationStepCount) {
+        window.clearInterval(timer);
+        completionTimer = window.setTimeout(
+          () => setIsCalculationAnimationComplete(true),
+          recommendationCalculationCompletionHold
+        );
+      }
+    }, recommendationCalculationStepDuration);
+    return () => {
+      window.clearInterval(timer);
+      if (completionTimer) window.clearTimeout(completionTimer);
+    };
+  }, [isQuerying]);
+
+  useEffect(() => {
+    if (!isQuerying || !isCalculationAnimationComplete || (!recommendation && !recommendationError)) return;
+    setIsQuerying(false);
+  }, [isQuerying, isCalculationAnimationComplete, recommendation, recommendationError]);
+
   function openDialog() {
     if (authStatus !== "authenticated") {
       requestAuthentication(openRecommendationDialog);
@@ -301,12 +357,14 @@ export function TimeRecommendation() {
     setLocateSignal(0);
     setRecommendation(null);
     setRecommendationError("");
+    setIsCalculationDetailsExpanded(false);
     setIsDialogOpen(true);
   }
 
   function resetResult() {
     setRecommendation(null);
     setRecommendationError("");
+    setIsCalculationDetailsExpanded(false);
   }
 
   function updatePosition(nextPosition: RecommendationPosition) {
@@ -345,6 +403,7 @@ export function TimeRecommendation() {
     setIsQuerying(true);
     setRecommendation(null);
     setRecommendationError("");
+    setIsCalculationDetailsExpanded(false);
     try {
       const queryLocation = `${queryPosition.longitude.toFixed(2)},${queryPosition.latitude.toFixed(2)}`;
       const dailyForecast = await getWeatherDaily(queryLocation, dailyDays);
@@ -371,51 +430,70 @@ export function TimeRecommendation() {
       setRecommendation(nextRecommendation);
     } catch (error) {
       setRecommendationError(readableError(error));
-    } finally {
-      setIsQuerying(false);
     }
   }
 
-  return <>
-    <section ref={heroRef} className="detail-hero recommendation-hero"><div className="detail-hero-copy"><h1>检测时段推荐</h1><StaggeredLead>综合计划时间、立面朝向与气象条件，提前筛选更稳定、更安全的无人机采集窗口。</StaggeredLead><div className="detail-actions"><button className="button primary" type="button" onClick={openDialog}><CalendarClock aria-hidden="true" />查询推荐时段</button></div></div></section>
-    <dialog ref={dialogRef} aria-labelledby="time-recommendation-title" className={`project-dialog recommendation-dialog detection-time-dialog${recommendation ? ` detection-time-dialog--results${showsTwoRecommendationWindows ? " detection-time-dialog--two-windows" : ""}` : isQuerying ? " detection-time-dialog--loading" : ""}`} onCancel={(event) => { event.preventDefault(); requestDialogClose(); }} onClose={() => setIsDialogOpen(false)}>
+  return (
+    <dialog ref={dialogRef} aria-labelledby="time-recommendation-title" className={`project-dialog recommendation-dialog detection-time-dialog${isQuerying ? " detection-time-dialog--loading" : recommendation ? ` detection-time-dialog--results${showsTwoRecommendationWindows ? " detection-time-dialog--two-windows" : ""}${isCalculationDetailsExpanded ? "" : " detection-time-dialog--details-collapsed"}` : ""}`} onCancel={(event) => { event.preventDefault(); requestDialogClose(); }} onClose={() => setIsDialogOpen(false)}>
       <div className="dialog-heading"><div className="recommendation-dialog-title"><CalendarClock aria-hidden="true" className="recommendation-dialog-title-icon" /><h2 id="time-recommendation-title">检测时段推荐</h2></div><button aria-label="关闭检测时段推荐" className="icon-button" type="button" onClick={requestDialogClose}><X aria-hidden="true" /></button></div>
       <div className="recommendation-content">
         <div className="recommendation-form-grid recommendation-form-grid--without-project">
-          <label className="recommendation-date-field"><span>日期</span><input aria-label="选择日期" className="recommendation-date-input" disabled={Boolean(recommendation)} max={latestDate} min={earliestDate} type="date" value={date} onChange={(event) => { setDate(event.target.value); resetResult(); }} /></label>
-          <label className="recommendation-date-field"><span>立面朝向</span><select aria-label="选择立面朝向" disabled={Boolean(recommendation)} value={orientation} onChange={(event) => { setOrientation(event.target.value as Orientation); resetResult(); }}>{(Object.keys(orientationAzimuth) as Orientation[]).map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+          <label className="recommendation-date-field"><span>日期</span><input aria-label="选择日期" className="recommendation-date-input" disabled={Boolean(recommendation) || isQuerying} max={latestDate} min={earliestDate} type="date" value={date} onChange={(event) => { setDate(event.target.value); resetResult(); }} /></label>
+          <label className="recommendation-date-field"><span>立面朝向</span><div className="recommendation-select-control"><select aria-label="选择立面朝向" disabled={Boolean(recommendation) || isQuerying} value={orientation} onChange={(event) => { setOrientation(event.target.value as Orientation); resetResult(); }}>{(Object.keys(orientationAzimuth) as Orientation[]).map((item) => <option key={item} value={item}>{item}</option>)}</select><ChevronDown aria-hidden="true" /></div></label>
         </div>
-        {!isQuerying ? <div className="recommendation-location-section">
-          <label className="recommendation-date-field recommendation-address-field"><span>检测位置</span><input aria-label="输入检测位置" disabled={Boolean(recommendation)} placeholder="输入地址后按回车定位，也可直接点击地图" value={address} onChange={(event) => { setAddress(event.target.value); setIsPositionConfirmed(false); resetResult(); }} onKeyDown={(event) => { if (event.key !== "Enter" || event.nativeEvent.isComposing || !address.trim()) return; event.preventDefault(); setLocateSignal((signal) => signal + 1); }} /></label>
-          {isMapMounted && !recommendation ? <ProjectLocationMap address={address} className="recommendation-location-map" initialPosition={position} locateSignal={locateSignal} onAddressChange={setAddress} onPositionChange={updatePosition} showToolbar={false} usageLabel="检测位置" /> : null}
+        <div className={`recommendation-location-section${isQuerying ? " is-querying" : ""}`}>
+          <label className="recommendation-date-field recommendation-address-field"><span>检测位置</span><input aria-label="输入检测位置" disabled={Boolean(recommendation) || isQuerying} placeholder="输入地址后按回车定位，也可直接点击地图" value={address} onChange={(event) => { setAddress(event.target.value); setIsPositionConfirmed(false); resetResult(); }} onKeyDown={(event) => { if (event.key !== "Enter" || event.nativeEvent.isComposing || !address.trim()) return; event.preventDefault(); setLocateSignal((signal) => signal + 1); }} /></label>
+          {isMapMounted && !isQuerying && !recommendation ? <ProjectLocationMap address={address} className="recommendation-location-map" initialPosition={position} locateSignal={locateSignal} onAddressChange={setAddress} onPositionChange={updatePosition} showCredit={false} showToolbar={false} usageLabel="检测位置" /> : null}
           {!recommendation && address.trim() && position && !isPositionConfirmed ? <p className="recommendation-location-warning" role="status">地址已修改，请按回车定位或在地图上重新选点，确认坐标后才能查询。</p> : null}
-        </div> : null}
-        {isQuerying ? <RecommendationLoadingSkeleton /> : null}
+        </div>
+        {isQuerying ? <RecommendationCalculationProgress activeStep={calculationProgressStep} /> : null}
         {recommendationError ? <div className="recommendation-weather-input recommendation-weather-input--error"><span>计算失败</span><strong>{recommendationError}</strong></div> : null}
-        {recommendation && position ? <div className="recommendation-results">
-          <div className={`recommendation-primary recommendation-primary--${recommendation.recommendationLevel === "优选时段" ? "preferred" : recommendation.recommendationLevel === "可用时段" ? "usable" : "unavailable"}`}>
-            {recommendation.recommendationLevel !== "不推荐" ? <span>{recommendation.recommendationLevel}</span> : null}
-            <strong>{recommendation.primaryWindow?.label ?? "不推荐检测"}</strong>
-          </div>
-          {recommendation.recommendationLevel === "优选时段" && recommendation.usableWindow ? <div className="recommendation-primary recommendation-primary--usable">
-            <span>可用时段</span>
-            <strong>{recommendation.usableWindow.label}</strong>
-          </div> : null}
-          <section className="recommendation-calculation" aria-labelledby="recommendation-calculation-title">
-            <div className="recommendation-calculation-heading">
-              <div>
-                <span id="recommendation-calculation-title">结果说明</span>
+        {!isQuerying && recommendation && position ? <div className="recommendation-results">
+          <section className="recommendation-result-section" aria-labelledby="recommendation-result-title">
+            <h3 className="recommendation-section-title" id="recommendation-result-title">检测结果</h3>
+            <div className="recommendation-result-content">
+              <div className={`recommendation-primary recommendation-primary--${recommendation.recommendationLevel === "优选时段" ? "preferred" : recommendation.recommendationLevel === "可用时段" ? "usable" : "unavailable"}`}>
+                {recommendation.recommendationLevel !== "不推荐" ? <span>{recommendation.recommendationLevel}</span> : null}
+                <strong>{recommendation.primaryWindow?.label ?? "无推荐时段"}</strong>
               </div>
+              {recommendation.recommendationLevel === "优选时段" && recommendation.usableWindow ? <div className="recommendation-primary recommendation-primary--usable">
+                <span>可用时段</span>
+                <strong>{recommendation.usableWindow.label}</strong>
+              </div> : null}
             </div>
-            <ol>
-              <li><span>1</span><div><strong>确定参与计算的时段</strong><p>{recommendation.calculation.evaluationRange}</p></div></li>
-              <li><span>2</span><div><strong>建立气温变化曲线</strong><p>{recommendation.calculation.temperatureModel}</p></div></li>
-              <li><span>3</span><div><strong>计算墙面太阳辐照</strong><p>{orientation}向立面（方位角 {orientationAzimuth[orientation]}°）；{recommendation.calculation.radiationModel}</p></div></li>
-              <li><span>4</span><div><strong>计算风速散热影响</strong><p>{recommendation.calculation.convectionModel}</p></div></li>
-              <li><span>5</span><div><strong>判断正温差窗口</strong><p>{recommendation.calculation.positiveJudgement}</p></div></li>
-              <li><span>6</span><div><strong>判断负温差窗口</strong><p>{recommendation.calculation.negativeJudgement}</p></div></li>
-            </ol>
-            <div className="recommendation-calculation-final"><span>最终判定</span><strong>{recommendation.calculation.finalJudgement}</strong></div>
+          </section>
+          <section className={`recommendation-calculation-section recommendation-calculation-section--collapsible${isCalculationDetailsExpanded ? " is-expanded" : ""}`} aria-labelledby="recommendation-calculation-title">
+            <button
+              aria-controls="recommendation-calculation-details"
+              aria-expanded={isCalculationDetailsExpanded}
+              className="recommendation-calculation-toggle"
+              id="recommendation-calculation-title"
+              type="button"
+              onClick={() => setIsCalculationDetailsExpanded((isExpanded) => !isExpanded)}
+            >
+              <span className="recommendation-section-title">计算过程</span>
+              <ChevronDown aria-hidden="true" />
+            </button>
+            {isCalculationDetailsExpanded ? <div className="recommendation-calculation" id="recommendation-calculation-details">
+              <ol>
+                {[
+                  { title: "确定参与计算的时段", detail: recommendation.calculation.evaluationRange },
+                  { title: "建立气温变化曲线", detail: recommendation.calculation.temperatureModel },
+                  { title: "计算墙面太阳辐照", detail: `${orientation}向立面（方位角 ${orientationAzimuth[orientation]}°）；${recommendation.calculation.radiationModel}` },
+                  { title: "计算风速散热影响", detail: recommendation.calculation.convectionModel },
+                  { title: "判断正温差窗口", detail: recommendation.calculation.positiveJudgement },
+                  { title: "判断负温差窗口", detail: recommendation.calculation.negativeJudgement }
+                ].map((step, index) => (
+                  <li className="is-complete" key={step.title}>
+                    <span><Check aria-hidden="true" /></span>
+                    <div>
+                      <strong>{step.title}</strong>
+                      <p>{step.detail}</p>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            </div> : null}
           </section>
         </div> : null}
       </div>
@@ -428,7 +506,7 @@ export function TimeRecommendation() {
               </>}
         </div> : null}
     </dialog>
-  </>;
+  );
 }
 
 function readableError(error: unknown) {
@@ -438,7 +516,6 @@ function readableError(error: unknown) {
 
 export function CapabilityDetailPage() {
   const { type } = useParams();
-  if (type === "time") return <TimeRecommendation />;
   if (type && type in legacyDetailRoutes) return <Navigate replace to={`/capabilities/${legacyDetailRoutes[type]}`} />;
   if (!type || !(type in details)) return <Navigate replace to="/" />;
   return <DefectDetail key={type} detail={details[type as keyof typeof details]} />;

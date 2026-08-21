@@ -16,6 +16,10 @@ from app.schemas.system_settings import (
     TrialInferenceSettingRead,
     TrialInferenceSettingUpdate,
 )
+from app.services.formal_detection_prompts import (
+    FORMAL_PROMPT_SETTING_KEYS,
+    formal_prompt_values,
+)
 from app.services.local_qwen_lifecycle import (
     LocalQwenLifecycleError,
     local_qwen_status,
@@ -83,6 +87,7 @@ def _setting_read(db: Session) -> TrialInferenceSettingRead:
         spalling_prompt=prompts.spalling_prompt,
         thermal_prompt=prompts.thermal_prompt,
         photo_guard_prompt=prompts.photo_guard_prompt,
+        formal_prompts=formal_prompt_values(db),
         options=[
             TrialInferenceProviderOption(
                 provider=runtime.provider,
@@ -153,6 +158,14 @@ def update_trial_inference_setting(
         set_setting_value(db, TRIAL_THERMAL_PROMPT_KEY, payload.thermal_prompt.strip(), updated_by=current_user.id)
     if payload.photo_guard_prompt is not None:
         set_setting_value(db, PHOTO_GUARD_PROMPT_KEY, payload.photo_guard_prompt.strip(), updated_by=current_user.id)
+    if payload.formal_prompts is not None:
+        for field_name, value in payload.formal_prompts.model_dump(exclude_none=True).items():
+            set_setting_value(
+                db,
+                FORMAL_PROMPT_SETTING_KEYS[field_name],
+                value.strip(),
+                updated_by=current_user.id,
+            )
     if payload.provider is not None:
         set_trial_inference_provider(db, payload.provider, updated_by=current_user.id)
 

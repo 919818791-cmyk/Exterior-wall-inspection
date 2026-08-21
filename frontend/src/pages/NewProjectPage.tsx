@@ -1,5 +1,5 @@
 ﻿import { useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Send } from "lucide-react";
+import { ScanSearch } from "lucide-react";
 import {
   useEffect,
   useRef,
@@ -477,7 +477,6 @@ export function NewProjectPage() {
         <Label label="检测名称">
           <input
             value={form.name}
-            placeholder="请输入检测名称"
             onBlur={flushDraftSync}
             onChange={(event) => field("name", event.target.value)}
           />
@@ -485,21 +484,14 @@ export function NewProjectPage() {
       )}
       nameActions={(
         <>
-          <Link
-            className="button secondary report-back-button project-workbench-nav-button new-project-back-button"
-            to="/detections"
-          >
-            <ArrowLeft aria-hidden="true" />
-            返回
-          </Link>
           <button
             className="button primary start-ai-detection-button"
             disabled={startDetectionPending}
             type="button"
             onClick={() => void startDetection()}
           >
-            <Send aria-hidden="true" />
-            {startDetectionPending ? "正在准备…" : "开始AI检测"}
+            <ScanSearch aria-hidden="true" />
+            {startDetectionPending ? "正在准备…" : "开始检测"}
           </button>
         </>
       )}
@@ -522,9 +514,8 @@ export function NewProjectPage() {
           ) : failedPhotoCount ? (
             <span className="new-project-upload-summary is-error">{failedPhotoCount} 张上传失败</span>
           ) : allPhotosUploaded ? (
-            <span className="new-project-upload-summary is-complete">上传完成</span>
+            <span className="new-project-upload-summary is-complete photo-upload-complete-status">上传完成</span>
           ) : null}
-          <span className="new-project-photo-count">{totalPhotoCount} 张</span>
         </>
       )}
       photoUploader={(

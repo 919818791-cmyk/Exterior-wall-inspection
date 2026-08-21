@@ -304,6 +304,9 @@ def test_admin_updates_runtime_limits_and_prompts(monkeypatch) -> None:
                 "spalling_prompt": "剥落单独检测提示词，必须只输出符合约定的 JSON 数组。",
                 "thermal_prompt": "热成像检测提示词，必须只输出符合约定的 JSON 数组。",
                 "photo_guard_prompt": "建筑照片相关性判断提示词，必须只输出符合约定的 JSON 对象。",
+                "formal_prompts": {
+                    "tile_crack_prompt": "自定义面砖裂缝检测提示词，必须只输出符合约定的 JSON 数组。",
+                },
             },
         )
     finally:
@@ -319,11 +322,13 @@ def test_admin_updates_runtime_limits_and_prompts(monkeypatch) -> None:
     assert body["crack_prompt"].startswith("裂缝单独检测提示词")
     assert body["spalling_prompt"].startswith("剥落单独检测提示词")
     assert body["photo_guard_prompt"].startswith("建筑照片相关性判断提示词")
+    assert body["formal_prompts"]["tile_crack_prompt"].startswith("自定义面砖裂缝")
     assert fake_db.settings["trial_daily_api_request_limit"].value == "1200"
     assert fake_db.settings["trial_generate_limit_per_user"].value == "8"
     assert fake_db.settings["trial_crack_prompt"].value.startswith("裂缝单独检测提示词")
     assert fake_db.settings["trial_spalling_prompt"].value.startswith("剥落单独检测提示词")
     assert fake_db.settings["photo_guard_prompt"].value.startswith("建筑照片相关性判断提示词")
+    assert fake_db.settings["formal_tile_crack_prompt"].value.startswith("自定义面砖裂缝")
     runtime = trial_inference_runtime("zhipu", settings, fake_db)
     assert runtime.max_concurrency == 3
     assert runtime.timeout_seconds == 300
