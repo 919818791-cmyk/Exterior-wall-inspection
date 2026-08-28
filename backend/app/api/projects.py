@@ -5,7 +5,7 @@ from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -14,20 +14,29 @@ from app.api.dependencies import (
     ensure_project_access,
     ensure_project_write_access,
     get_current_user,
+    get_optional_current_user,
 )
 from app.core.config import get_settings
 from app.db.session import get_db
-from app.enums.status import ProjectStatus
-from app.models.tables import AiDetectionResult, DetectionConfig, DetectionTask, Photo, Project
+from app.enums.status import PhotoPrecheckStatus, ProjectStatus
+from app.models.tables import (
+    AiDetectionResult,
+    BuildingModel,
+    DetectionConfig,
+    DetectionTask,
+    Photo,
+    Project,
+)
 from app.schemas.projects import (
     DeleteResponse,
     ProjectCreateRequest,
     ProjectDraftCreateRequest,
     ProjectDetailRead,
+    ProjectFinalizeRequest,
     ProjectListItem,
     ProjectUpdateRequest,
 )
-from app.services.object_storage import signed_object_url
+from app.services.object_storage import remove_object, signed_object_url
 
 router = APIRouter(tags=["projects"])
 
@@ -64,10 +73,6 @@ def _now_project_no(db: Session) -> str:
             detail="The daily project number limit has been reached.",
         )
     return f"{prefix}{next_sequence:03d}"
-
-
-def _generated_project_name(project_no: str) -> str:
-    return project_no
 
 
 def _get_project_or_404(db: Session, project_id: UUID) -> Project:
@@ -149,6 +154,9 @@ def _project_list_item(
         created_by=project.created_by,
         project_no=project.project_no,
         name=project.name,
+        drone_type=project.drone_type,
+        facade_type=project.facade_type,
+        description=project.description,
         client_name=project.client_name,
         province=project.province,
         city=project.city,
@@ -157,6 +165,7 @@ def _project_list_item(
         longitude=project.longitude,
         latitude=project.latitude,
         status=project.status,
+        is_example=bool(getattr(project, "is_example", False)),
         current_report_id=project.current_report_id,
         photo_count=_count_photos(db, project.id) if photo_count is None else photo_count,
         valid_photo_count=_count_valid_photos(db, project.id),
@@ -176,6 +185,8 @@ def _project_list_item(
         completed_at=project.completed_at,
         created_at=project.created_at,
         updated_at=project.updated_at,
+        setup_completed_at=project.setup_completed_at,
+        setup_step=getattr(project, "setup_step", 3),
     )
 
 
@@ -199,13 +210,23 @@ def _create_project_record(
     current_user: AuthenticatedUser,
     *,
     client_draft_key: str | None = None,
+    setup_completed: bool = True,
+    setup_step: int = 3,
 ) -> Project:
+    project_name = payload.name.strip()
+    if not project_name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="请输入项目名称。",
+        )
     project_no = _now_project_no(db)
-    project_name = payload.name.strip() if payload.name and payload.name.strip() else None
     project = Project(
         project_no=project_no,
         client_draft_key=client_draft_key,
-        name=project_name or _generated_project_name(project_no),
+        name=project_name,
+        drone_type=payload.drone_type,
+        facade_type=payload.facade_type,
+        description=payload.description.strip() if payload.description and payload.description.strip() else None,
         client_name=payload.client_name,
         province=payload.province,
         city=payload.city,
@@ -215,6 +236,8 @@ def _create_project_record(
         latitude=payload.latitude,
         status=ProjectStatus.DRAFT.value,
         created_by=current_user.id,
+        setup_completed_at=datetime.now(UTC) if setup_completed else None,
+        setup_step=setup_step,
     )
     db.add(project)
     db.flush()
@@ -240,16 +263,21 @@ def _find_project_by_draft_key(
 def list_projects(
     request: Request,
     db: Session = Depends(get_db),
-    current_user: AuthenticatedUser = Depends(get_current_user),
+    current_user: AuthenticatedUser | None = Depends(get_optional_current_user),
 ) -> list[ProjectListItem]:
-    criteria = [Project.deleted_at.is_(None)]
-    if current_user.role == "customer":
-        criteria.append(Project.created_by == current_user.id)
+    criteria = [
+        Project.deleted_at.is_(None),
+        Project.setup_completed_at.is_not(None),
+    ]
+    if current_user is None:
+        criteria.append(Project.is_example.is_(True))
+    elif current_user.role == "customer":
+        criteria.append(or_(Project.created_by == current_user.id, Project.is_example.is_(True)))
     projects = list(
         db.scalars(
             select(Project)
             .where(*criteria)
-            .order_by(Project.updated_at.desc(), Project.created_at.desc())
+            .order_by(Project.is_example.desc(), Project.updated_at.desc(), Project.created_at.desc())
         )
     )
     if not projects:
@@ -358,6 +386,8 @@ def create_project_draft(
             payload,
             current_user,
             client_draft_key=payload.client_draft_key,
+            setup_completed=True,
+            setup_step=2,
         )
         db.commit()
     except IntegrityError:
@@ -377,11 +407,93 @@ def create_project_draft(
     return _project_detail(db, project)
 
 
+@router.post(
+    "/projects/{project_id}/finalize",
+    response_model=ProjectDetailRead,
+)
+def finalize_project(
+    project_id: UUID,
+    payload: ProjectFinalizeRequest,
+    db: Session = Depends(get_db),
+    current_user: AuthenticatedUser = Depends(get_current_user),
+) -> ProjectDetailRead:
+    project = _get_project_or_404(db, project_id)
+    ensure_project_write_access(project, current_user)
+    _ensure_project_editable(project)
+    if project.setup_step >= 3:
+        return _project_detail(db, project)
+
+    project_name = payload.name.strip()
+    if not project_name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="请输入项目名称。",
+        )
+
+    photos = list(
+        db.scalars(
+            select(Photo)
+            .where(Photo.project_id == project.id, Photo.deleted_at.is_(None))
+            .order_by(Photo.created_at.asc())
+        )
+    )
+    if not photos:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="请至少上传一张照片。",
+        )
+
+    incomplete_photos = [
+        photo
+        for photo in photos
+        if (photo.precheck_status or PhotoPrecheckStatus.PENDING.value)
+        in {
+            PhotoPrecheckStatus.PENDING.value,
+            PhotoPrecheckStatus.RUNNING.value,
+            PhotoPrecheckStatus.ERROR.value,
+        }
+    ]
+    if incomplete_photos:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="照片上传或预检尚未全部完成，请等待完成；预检失败照片请删除后重新上传。",
+        )
+
+    qualified_photos = [
+        photo
+        for photo in photos
+        if photo.precheck_status == PhotoPrecheckStatus.PASSED.value
+    ]
+    if not qualified_photos:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="当前没有通过预检的照片，请重新上传合格照片。",
+        )
+
+    now = datetime.now(UTC)
+    project.name = project_name
+    if payload.drone_type is not None:
+        project.drone_type = getattr(payload.drone_type, "value", payload.drone_type)
+    project.facade_type = getattr(payload.facade_type, "value", payload.facade_type)
+    project.description = (
+        payload.description.strip()
+        if payload.description and payload.description.strip()
+        else None
+    )
+    project.setup_completed_at = project.setup_completed_at or now
+    project.setup_step = 3
+    project.updated_at = now
+    db.commit()
+    db.refresh(project)
+
+    return _project_detail(db, project)
+
+
 @router.get("/projects/{project_id}", response_model=ProjectDetailRead)
 def get_project(
     project_id: UUID,
     db: Session = Depends(get_db),
-    current_user: AuthenticatedUser = Depends(get_current_user),
+    current_user: AuthenticatedUser | None = Depends(get_optional_current_user),
 ) -> ProjectDetailRead:
     project = _get_project_or_404(db, project_id)
     ensure_project_access(project, current_user)
@@ -397,11 +509,15 @@ def update_project(
 ) -> ProjectDetailRead:
     project = _get_project_or_404(db, project_id)
     ensure_project_write_access(project, current_user)
+    _ensure_project_editable(project)
     if "name" in payload.model_fields_set:
-        project_name = payload.name.strip() if payload.name and payload.name.strip() else None
-        payload = payload.model_copy(
-            update={"name": project_name or _generated_project_name(project.project_no)}
-        )
+        project_name = payload.name.strip() if payload.name else ""
+        if not project_name:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="请输入项目名称。",
+            )
+        payload = payload.model_copy(update={"name": project_name})
     _apply_update(project, payload)
     db.commit()
     db.refresh(project)
@@ -417,8 +533,43 @@ def delete_project(
     project = _get_project_or_404(db, project_id)
     ensure_project_write_access(project, current_user)
     _ensure_project_deletable(project)
+    building_model = db.scalar(
+        select(BuildingModel).where(BuildingModel.project_id == project.id)
+    )
+    building_model_storage = (
+        (building_model.storage_bucket, building_model.storage_object_key)
+        if building_model is not None
+        else None
+    )
     deleted_at = datetime.now(UTC)
+    discarded_photo_storage: list[tuple[str, str | None]] = []
+    if (
+        getattr(project, "client_draft_key", None)
+        and getattr(project, "setup_step", 3) < 3
+    ):
+        discarded_photos = list(
+            db.scalars(
+                select(Photo).where(
+                    Photo.project_id == project.id,
+                    Photo.deleted_at.is_(None),
+                )
+            )
+        )
+        for photo in discarded_photos:
+            photo.deleted_at = deleted_at
+            discarded_photo_storage.extend(
+                [
+                    (photo.storage_bucket, photo.storage_object_key),
+                    (photo.storage_bucket, photo.thumbnail_object_key),
+                ]
+            )
     project.deleted_at = deleted_at
+    if building_model is not None:
+        db.delete(building_model)
 
     db.commit()
+    if building_model_storage is not None:
+        remove_object(*building_model_storage)
+    for bucket, object_key in discarded_photo_storage:
+        remove_object(bucket, object_key)
     return DeleteResponse()

@@ -17,6 +17,8 @@ from app.models.tables import (
     Project,
     ReviewResult,
 )
+from app.services.defect_area import approximate_bbox_area_m2
+from app.services.defect_numbering import number_defects
 from app.services.photo_metadata import facade_orientation_from_yaw
 
 
@@ -92,9 +94,18 @@ def build_report_data(
             "thumbnail_object_key": photo.thumbnail_object_key,
             "image_width": photo.image_width,
             "image_height": photo.image_height,
+            "camera_make": photo.camera_make,
+            "camera_model": photo.camera_model,
+            "camera_product_name": photo.camera_product_name,
+            "drone_model": photo.drone_model,
+            "camera_image_source": photo.camera_image_source,
             "photo_type": photo.photo_type,
             "relative_altitude": photo.relative_altitude,
             "gimbal_yaw_degree": photo.gimbal_yaw_degree,
+            "calibrated_focal_length": photo.calibrated_focal_length,
+            "focal_length_mm": photo.focal_length_mm,
+            "focal_length_35mm": photo.focal_length_35mm,
+            "lrf_target_distance": photo.lrf_target_distance,
             "facade_orientation": facade_orientation_from_yaw(
                 float(photo.gimbal_yaw_degree) if photo.gimbal_yaw_degree is not None else None
             ),
@@ -112,6 +123,11 @@ def build_report_data(
 
         photo = photo_by_id.get(result.photo_id)
         ai_result = ai_by_id.get(result.ai_result_id) if result.ai_result_id is not None else None
+        estimated_area = (
+            approximate_bbox_area_m2(photo, result.bbox_json)
+            if photo is not None
+            else None
+        )
         defect_items.append(
             {
                 "id": str(result.id),
@@ -122,7 +138,8 @@ def build_report_data(
                 "bbox_json": result.bbox_json,
                 "polygon_json": result.polygon_json,
                 "severity": result.severity,
-                "area": result.area,
+                "area": result.area if result.area is not None else estimated_area,
+                "area_estimated": result.area is None and estimated_area is not None,
                 "length": result.length,
                 "status": result.status,
                 "confidence": ai_result.confidence if ai_result else None,
@@ -131,6 +148,8 @@ def build_report_data(
                 "reviewed_at": result.reviewed_at,
             }
         )
+
+    defect_items = number_defects(defect_items)
 
     data = {
         "project": {

@@ -8,6 +8,7 @@ export interface ReportListItem {
   report_no: string;
   title: string;
   status: InspectionReportStatus;
+  is_example: boolean;
   project_name: string;
   client_name: string | null;
   address: string | null;
@@ -42,8 +43,17 @@ export interface ReportPhotoSnapshot {
   mime_type?: string | null;
   image_width?: number | null;
   image_height?: number | null;
+  camera_make?: string | null;
+  camera_model?: string | null;
+  camera_product_name?: string | null;
+  drone_model?: string | null;
+  camera_image_source?: string | null;
   relative_altitude?: number | string | null;
   gimbal_yaw_degree?: number | string | null;
+  calibrated_focal_length?: number | string | null;
+  focal_length_mm?: number | string | null;
+  focal_length_35mm?: number | string | null;
+  lrf_target_distance?: number | string | null;
   facade_orientation?: string | null;
   photo_type?: string | null;
   metadata_json?: {
@@ -59,6 +69,7 @@ export interface ReportPhotoSnapshot {
 
 export interface ReportDefectSnapshot {
   id?: string;
+  defect_no?: string | null;
   photo_id?: string;
   photo_filename?: string | null;
   photo_preview_url?: string | null;
@@ -71,7 +82,8 @@ export interface ReportDefectSnapshot {
     height?: number | string;
   };
   severity?: string | null;
-  area?: string | null;
+  area?: number | string | null;
+  area_estimated?: boolean;
   length?: string | null;
   status?: string;
   confidence?: string | null;
@@ -166,6 +178,7 @@ export interface ReportDetail {
   report_no: string;
   title: string;
   status: InspectionReportStatus;
+  is_example: boolean;
   report_data_json: Record<string, unknown> | null;
   project: ReportProjectSnapshot;
   detection_config: {

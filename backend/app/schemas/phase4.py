@@ -49,8 +49,22 @@ class PhotoRead(ApiSchema):
     thumbnail_object_key: str | None
     image_width: int | None
     image_height: int | None
+    camera_make: str | None
+    camera_model: str | None
+    camera_product_name: str | None
+    drone_model: str | None
+    camera_image_source: str | None
+    longitude: float | None
+    latitude: float | None
+    absolute_altitude: float | None
     relative_altitude: float | None
     gimbal_yaw_degree: float | None
+    gimbal_pitch_degree: float | None
+    gimbal_roll_degree: float | None
+    calibrated_focal_length: float | None
+    focal_length_mm: float | None
+    focal_length_35mm: float | None
+    lrf_target_distance: float | None
     facade_orientation: str | None
     photo_type: PhotoType
     status: PhotoStatus

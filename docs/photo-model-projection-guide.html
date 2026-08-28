@@ -1,0 +1,674 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="照片缺陷如何通过 Metashape 相机参数对应到三维建筑模型的可视化说明">
+  <title>照片如何对应到三维模型｜原理汇报材料</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+      color: #123b66;
+      background: #f4f8fc;
+      font-synthesis: none;
+    }
+
+    * { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      min-width: 320px;
+      margin: 0;
+      background:
+        radial-gradient(circle at 88% 2%, rgba(55, 128, 235, 0.13), transparent 24rem),
+        linear-gradient(180deg, #f7fbff, #fff 32rem, #f5f8fc);
+    }
+
+    button { font: inherit; }
+
+    .page {
+      display: grid;
+      width: min(1480px, calc(100% - 40px));
+      margin: 0 auto;
+      padding: 28px 0 64px;
+      gap: 52px;
+    }
+
+    .hero {
+      position: relative;
+      display: grid;
+      grid-template-columns: minmax(310px, .82fr) minmax(560px, 1.55fr);
+      min-height: 620px;
+      align-items: center;
+      gap: 42px;
+      padding: clamp(36px, 4vw, 64px);
+      overflow: hidden;
+      color: #fff;
+      border-radius: 30px;
+      background:
+        radial-gradient(circle at 78% 16%, rgba(53, 128, 255, .34), transparent 32%),
+        radial-gradient(circle at 4% 100%, rgba(26, 176, 221, .18), transparent 34%),
+        linear-gradient(145deg, #07182a, #0a2948 54%, #0c3560);
+      box-shadow: 0 30px 80px rgba(22, 64, 110, .18);
+    }
+
+    .hero::before,
+    .hero::after {
+      position: absolute;
+      width: 240px;
+      height: 240px;
+      border: 1px solid rgba(117, 187, 255, .14);
+      border-radius: 50%;
+      content: "";
+    }
+
+    .hero::before { top: -130px; left: 32%; }
+    .hero::after { right: -90px; bottom: -140px; width: 330px; height: 330px; }
+
+    .hero-copy,
+    .demo { position: relative; z-index: 1; }
+
+    .eyebrow {
+      display: inline-flex;
+      min-height: 34px;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 12px;
+      color: #b9dcff;
+      border: 1px solid rgba(137, 194, 255, .24);
+      border-radius: 999px;
+      background: rgba(70, 140, 215, .13);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .eyebrow::before {
+      width: 8px;
+      height: 8px;
+      border: 2px solid #75baff;
+      border-radius: 50%;
+      content: "";
+      box-shadow: 0 0 0 4px rgba(117, 186, 255, .12);
+    }
+
+    .hero h1 {
+      max-width: 580px;
+      margin: 26px 0 18px;
+      font-size: clamp(38px, 4vw, 62px);
+      letter-spacing: -.045em;
+      line-height: 1.11;
+    }
+
+    .hero-copy > p {
+      max-width: 570px;
+      margin: 0;
+      color: rgba(220, 237, 255, .75);
+      font-size: 16px;
+      line-height: 1.9;
+    }
+
+    .equation {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      gap: 16px;
+      margin-top: 34px;
+      padding-top: 24px;
+      border-top: 1px solid rgba(170, 210, 245, .17);
+    }
+
+    .equation div { display: grid; gap: 3px; }
+    .equation div:nth-child(2) { min-width: 76px; justify-items: center; }
+    .equation strong { font-size: 26px; }
+    .equation span { color: rgba(198, 223, 245, .66); font-size: 12px; }
+
+    .demo {
+      min-width: 0;
+      padding: 18px;
+      color: #143b66;
+      border: 1px solid rgba(179, 211, 239, .66);
+      border-radius: 24px;
+      background: rgba(249, 252, 255, .98);
+      box-shadow: 0 28px 70px rgba(0, 12, 29, .32);
+    }
+
+    .demo-head {
+      display: flex;
+      min-height: 48px;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 0 4px 13px;
+    }
+
+    .demo-head div { display: grid; gap: 2px; }
+    .demo-head span { color: #7890a9; font-size: 11px; font-weight: 700; letter-spacing: .12em; }
+    .demo-head strong { font-size: 15px; }
+
+    .demo-head button {
+      min-height: 34px;
+      padding: 0 11px;
+      color: #245ca0;
+      border: 1px solid #cfdfed;
+      border-radius: 9px;
+      background: #fff;
+      cursor: pointer;
+    }
+
+    .stage {
+      overflow: hidden;
+      border: 1px solid #dce8f2;
+      border-radius: 18px;
+      background:
+        linear-gradient(rgba(150, 181, 210, .08) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(150, 181, 210, .08) 1px, transparent 1px),
+        linear-gradient(180deg, #f9fcff, #edf5fc);
+      background-size: 28px 28px, 28px 28px, auto;
+    }
+
+    .stage svg { display: block; width: 100%; height: auto; }
+
+    .timeline {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      padding: 0 14px 14px;
+    }
+
+    .timeline span {
+      position: relative;
+      display: grid;
+      min-height: 34px;
+      place-items: center;
+      overflow: hidden;
+      color: #7890a9;
+      border-radius: 8px;
+      background: #eaf2fa;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .timeline span::after {
+      position: absolute;
+      right: 100%;
+      bottom: 0;
+      left: 0;
+      height: 3px;
+      border-radius: 3px;
+      background: #2d72ff;
+      content: "";
+      animation: timeline 1s ease forwards;
+    }
+
+    .timeline span:nth-child(1)::after { animation-delay: .25s; }
+    .timeline span:nth-child(2)::after { animation-delay: 1.05s; }
+    .timeline span:nth-child(3)::after { animation-delay: 1.8s; }
+    .timeline span:nth-child(4)::after { animation-delay: 2.8s; }
+
+    .photo-defect {
+      opacity: 0;
+      transform-box: fill-box;
+      transform-origin: center;
+      animation: defect 5.4s .2s cubic-bezier(.2, .8, .2, 1) both;
+    }
+
+    .camera {
+      opacity: 0;
+      transform: translateX(-18px);
+      animation: camera 5.4s .85s cubic-bezier(.2, .8, .2, 1) both;
+    }
+
+    .ray,
+    .ray-halo {
+      stroke-dasharray: 250;
+      stroke-dashoffset: 250;
+      animation: ray 5.4s 1.55s cubic-bezier(.3, .7, .2, 1) both;
+    }
+
+    .ray-halo { opacity: .16; }
+
+    .hit {
+      opacity: 0;
+      transform-box: fill-box;
+      transform-origin: center;
+      animation: hit 5.4s 2.75s cubic-bezier(.2, .8, .2, 1) both;
+    }
+
+    .tag {
+      opacity: 0;
+      transform: translate(-12px, 10px);
+      animation: tag 5.4s 3.25s cubic-bezier(.2, .8, .2, 1) both;
+    }
+
+    .axis { opacity: 0; animation: fade 5.4s 1.2s ease both; }
+
+    .section-heading {
+      display: grid;
+      justify-items: center;
+      gap: 9px;
+      text-align: center;
+    }
+
+    .section-heading span,
+    .coordinates-copy > span {
+      color: #2c6bc1;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: .18em;
+    }
+
+    .section-heading h2,
+    .coordinates-copy h2 {
+      margin: 0;
+      color: #133b66;
+      font-size: clamp(28px, 3vw, 42px);
+      letter-spacing: -.025em;
+      line-height: 1.2;
+    }
+
+    .steps { display: grid; gap: 28px; }
+
+    .step-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+    }
+
+    .step {
+      position: relative;
+      min-height: 252px;
+      padding: 30px 26px;
+      overflow: hidden;
+      border: 1px solid #e1eaf2;
+      border-radius: 20px;
+      background: #fff;
+      box-shadow: 0 18px 48px rgba(31, 72, 110, .07);
+    }
+
+    .step-number {
+      position: absolute;
+      top: 15px;
+      right: 20px;
+      color: #e5eef7;
+      font-size: 44px;
+      font-weight: 800;
+      letter-spacing: -.08em;
+    }
+
+    .step-icon {
+      display: grid;
+      width: 44px;
+      height: 44px;
+      place-items: center;
+      color: #2a6dcc;
+      border-radius: 13px;
+      background: #edf5ff;
+      font-size: 20px;
+      font-weight: 800;
+    }
+
+    .step h3 { margin: 24px 0 10px; color: #173f69; font-size: 19px; }
+    .step p { margin: 0; color: #6b8298; font-size: 14px; line-height: 1.8; }
+
+    .coordinates {
+      display: grid;
+      grid-template-columns: minmax(380px, .88fr) minmax(0, 1.12fr);
+      align-items: center;
+      gap: clamp(36px, 6vw, 90px);
+      padding: clamp(38px, 5vw, 72px);
+      border: 1px solid #dfe9f3;
+      border-radius: 28px;
+      background: #fff;
+      box-shadow: 0 24px 70px rgba(31, 72, 110, .07);
+    }
+
+    .coordinate-visual {
+      position: relative;
+      display: grid;
+      aspect-ratio: 1 / .76;
+      place-items: center;
+      overflow: hidden;
+      border-radius: 24px;
+      background:
+        radial-gradient(circle, rgba(50, 130, 231, .17), transparent 32%),
+        linear-gradient(rgba(121, 166, 210, .09) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(121, 166, 210, .09) 1px, transparent 1px),
+        #f3f8fd;
+      background-size: auto, 24px 24px, 24px 24px, auto;
+    }
+
+    .globe {
+      z-index: 2;
+      display: grid;
+      width: 78px;
+      height: 78px;
+      place-items: center;
+      color: #fff;
+      border-radius: 50%;
+      background: linear-gradient(145deg, #397ee1, #174f9e);
+      box-shadow: 0 16px 36px rgba(33, 91, 170, .3);
+      font-size: 34px;
+    }
+
+    .orbit {
+      position: absolute;
+      width: 62%;
+      height: 30%;
+      border: 2px solid rgba(45, 114, 255, .3);
+      border-radius: 50%;
+      transform: rotate(-18deg);
+    }
+
+    .orbit.two { transform: rotate(62deg); }
+
+    .axis-label {
+      position: absolute;
+      z-index: 3;
+      padding: 6px 9px;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, .9);
+      box-shadow: 0 8px 22px rgba(24, 66, 107, .1);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .axis-x { right: 7%; bottom: 37%; color: #d64b4b; }
+    .axis-y { top: 8%; left: 47%; color: #23946b; }
+    .axis-z { bottom: 32%; left: 7%; color: #2d67c2; }
+    .origin { bottom: 15%; left: 50%; color: #355f87; transform: translateX(-50%); }
+
+    .coordinates-copy { display: grid; justify-items: start; gap: 16px; }
+
+    .coordinates-copy p {
+      margin: 2px 0 0;
+      color: #657f98;
+      font-size: 15px;
+      line-height: 1.9;
+    }
+
+    .check-list {
+      display: grid;
+      margin: 4px 0 0;
+      padding: 0;
+      gap: 12px;
+      list-style: none;
+    }
+
+    .check-list li {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      color: #3b5e80;
+      font-size: 14px;
+      font-weight: 650;
+    }
+
+    .check-list li::before {
+      display: grid;
+      width: 19px;
+      height: 19px;
+      place-items: center;
+      color: #fff;
+      border-radius: 50%;
+      background: #24a572;
+      content: "✓";
+      font-size: 11px;
+    }
+
+    .case-study {
+      display: grid;
+      gap: 24px;
+      padding: clamp(34px, 4vw, 56px);
+      color: #e3f1ff;
+      border-radius: 24px;
+      background: linear-gradient(135deg, #153d65, #0d2945);
+    }
+
+    .case-study-head {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 20px;
+    }
+
+    .case-study-head div { display: grid; gap: 7px; }
+    .case-study-head span { color: #86bfff; font-size: 11px; font-weight: 800; letter-spacing: .14em; }
+    .case-study-head h2 { margin: 0; color: #fff; font-size: clamp(25px, 3vw, 38px); }
+    .case-study-head p { max-width: 560px; margin: 0; color: rgba(218, 237, 255, .68); line-height: 1.8; }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+    }
+
+    .metric {
+      display: grid;
+      min-height: 126px;
+      align-content: center;
+      gap: 5px;
+      padding: 20px;
+      border: 1px solid rgba(144, 191, 235, .17);
+      border-radius: 15px;
+      background: rgba(98, 156, 211, .08);
+    }
+
+    .metric strong { color: #fff; font-size: 28px; }
+    .metric span { color: rgba(204, 227, 248, .65); font-size: 12px; }
+
+    .requirements {
+      display: grid;
+      grid-template-columns: minmax(240px, .75fr) minmax(0, 1.25fr);
+      align-items: center;
+      gap: 30px;
+      padding: 28px 34px;
+      border: 1px solid #e0e9f2;
+      border-radius: 18px;
+      background: #fff;
+    }
+
+    .requirements strong { color: #153e69; font-size: 18px; }
+    .requirements p { margin: 0; color: #6b8298; font-size: 13px; line-height: 1.8; }
+
+    footer {
+      padding-top: 4px;
+      color: #8195a8;
+      font-size: 12px;
+      text-align: center;
+    }
+
+    @keyframes defect {
+      0% { opacity: 0; transform: scale(1.45); }
+      8%, 100% { opacity: 1; transform: scale(1); }
+      14% { transform: scale(1.12); }
+    }
+
+    @keyframes camera {
+      0% { opacity: 0; transform: translateX(-18px); }
+      10%, 100% { opacity: 1; transform: translateX(0); }
+    }
+
+    @keyframes ray {
+      0% { stroke-dashoffset: 250; }
+      18%, 100% { stroke-dashoffset: 0; }
+    }
+
+    @keyframes hit {
+      0% { opacity: 0; transform: scale(2); }
+      8%, 100% { opacity: 1; transform: scale(1); }
+      14% { transform: scale(1.35); }
+    }
+
+    @keyframes tag {
+      0% { opacity: 0; transform: translate(-12px, 10px); }
+      10%, 100% { opacity: 1; transform: translate(0); }
+    }
+
+    @keyframes fade {
+      0% { opacity: 0; }
+      12%, 100% { opacity: 1; }
+    }
+
+    @keyframes timeline { to { right: 0; } }
+
+    @media (max-width: 1080px) {
+      .hero { grid-template-columns: 1fr; }
+      .hero-copy { text-align: center; }
+      .hero-copy > * { margin-right: auto; margin-left: auto; }
+      .step-grid { grid-template-columns: repeat(2, 1fr); }
+      .coordinates { grid-template-columns: 1fr; }
+      .coordinate-visual { width: min(540px, 100%); justify-self: center; }
+      .coordinates-copy { justify-items: center; text-align: center; }
+      .case-study-head { align-items: start; flex-direction: column; }
+    }
+
+    @media (max-width: 680px) {
+      .page { width: calc(100% - 20px); padding-top: 10px; gap: 34px; }
+      .hero { min-height: 0; gap: 28px; padding: 28px 14px 14px; border-radius: 20px; }
+      .hero-copy { padding: 0 10px; }
+      .hero h1 { font-size: clamp(34px, 11vw, 46px); }
+      .hero-copy > p { font-size: 14px; line-height: 1.75; }
+      .equation { gap: 8px; }
+      .equation div:nth-child(2) { min-width: 50px; }
+      .demo { padding: 10px; border-radius: 16px; }
+      .timeline { grid-template-columns: repeat(2, 1fr); }
+      .step-grid, .metrics { grid-template-columns: 1fr; }
+      .step { min-height: 220px; }
+      .coordinates { gap: 30px; padding: 20px; border-radius: 20px; }
+      .coordinates-copy { justify-items: start; text-align: left; }
+      .case-study { padding: 26px 20px; }
+      .requirements { grid-template-columns: 1fr; gap: 12px; padding: 24px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      .photo-defect, .camera, .ray, .ray-halo, .hit, .tag, .axis, .timeline span::after {
+        opacity: 1;
+        animation: none;
+        transform: none;
+        stroke-dashoffset: 0;
+      }
+    }
+
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="hero">
+      <div class="hero-copy">
+        <span class="eyebrow">同一坐标系 · 一条射线 · 一个交点</span>
+        <h1>把照片上的二维缺陷，准确放回三维墙面</h1>
+        <p>
+          Metashape 同时保存模型坐标、相机位置、相机方向和镜头参数。
+          系统用这些参数把缺陷框中心还原成空间射线，再与 GLB 模型求交。
+        </p>
+        <div class="equation" aria-label="从二维缺陷到三维标签">
+          <div><strong>2D</strong><span>照片缺陷框</span></div>
+          <div><strong>→</strong><span>相机反投影</span></div>
+          <div><strong>3D</strong><span>墙面标签</span></div>
+        </div>
+      </div>
+
+      <div class="demo">
+        <div class="demo-head">
+          <div><span>动态演示</span><strong>从缺陷框到墙面标签</strong></div>
+          <button id="replay-demo" type="button">↻ 重播</button>
+        </div>
+        <div id="stage" class="stage">
+          <svg viewBox="0 0 760 430" role="img" aria-labelledby="diagram-title diagram-desc">
+            <title id="diagram-title">照片缺陷反投影到三维模型</title>
+            <desc id="diagram-desc">左侧照片的缺陷框经过相机生成射线，命中右侧建筑墙面并生成标签。</desc>
+            <defs>
+              <linearGradient id="photo-gradient" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#cfe8ff"/><stop offset="1" stop-color="#81b5e8"/></linearGradient>
+              <linearGradient id="building-gradient" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#2f70b7"/><stop offset="1" stop-color="#123d72"/></linearGradient>
+              <marker id="arrow" marker-height="8" marker-width="8" orient="auto" ref-x="7" ref-y="4"><path d="M0 0 L8 4 L0 8 Z" fill="#2d72ff"/></marker>
+            </defs>
+            <g>
+              <rect x="24" y="74" width="190" height="254" rx="18" fill="#fff" stroke="#bed4e8" stroke-width="3"/>
+              <rect x="38" y="91" width="162" height="205" rx="10" fill="url(#photo-gradient)"/>
+              <path d="M38 245 L78 204 L106 226 L148 164 L200 220 L200 296 L38 296 Z" fill="#5c8eb7" opacity=".72"/>
+              <path d="M38 267 L84 234 L121 255 L165 214 L200 244 L200 296 L38 296 Z" fill="#356b96" opacity=".8"/>
+              <g class="photo-defect"><rect x="112" y="168" width="48" height="42" rx="4" fill="#ff5d64" fill-opacity=".13" stroke="#ff4a54" stroke-width="4"/><circle cx="136" cy="189" r="5" fill="#ff4a54"/></g>
+              <rect x="55" y="309" width="126" height="7" rx="3.5" fill="#dbe8f2"/>
+            </g>
+            <g class="camera">
+              <path d="M247 184 L296 168 L296 245 L247 229 Z" fill="#d9e9f7" stroke="#6f9fc8" stroke-width="3"/>
+              <rect x="280" y="178" width="86" height="59" rx="14" fill="#fff" stroke="#6f9fc8" stroke-width="3"/>
+              <circle cx="318" cy="207.5" r="22" fill="#153b68"/><circle cx="318" cy="207.5" r="12" fill="#4ea2ff"/><circle cx="314" cy="203" r="4" fill="#d8efff"/>
+              <text x="306" y="268" fill="#486b8d" font-size="15" font-weight="600" text-anchor="middle">相机内参 + 外参</text>
+            </g>
+            <path class="ray-halo" d="M337 207 L574 191" fill="none" stroke="#69a1ff" stroke-linecap="round" stroke-width="12"/>
+            <path class="ray" d="M337 207 L574 191" fill="none" marker-end="url(#arrow)" stroke="#2d72ff" stroke-linecap="round" stroke-width="4"/>
+            <g>
+              <path d="M574 87 L690 122 L690 346 L574 314 Z" fill="url(#building-gradient)"/>
+              <path d="M690 122 L733 99 L733 319 L690 346 Z" fill="#0d2d54"/><path d="M574 87 L618 62 L733 99 L690 122 Z" fill="#6ca6db"/>
+              <g fill="#9dc9ef" opacity=".86"><path d="M594 119 L620 126 L620 158 L594 151 Z"/><path d="M641 133 L667 140 L667 172 L641 165 Z"/><path d="M594 180 L620 187 L620 219 L594 212 Z"/><path d="M641 194 L667 201 L667 233 L641 226 Z"/><path d="M594 241 L620 248 L620 280 L594 273 Z"/><path d="M641 255 L667 262 L667 294 L641 287 Z"/></g>
+            </g>
+            <g class="hit"><circle cx="574" cy="191" r="18" fill="#ff725c" fill-opacity=".16" stroke="#ff725c" stroke-width="3"/><circle cx="574" cy="191" r="6" fill="#ff5d47"/></g>
+            <g class="tag"><path d="M583 185 L605 170" stroke="#245cff" stroke-dasharray="4 4" stroke-width="2"/><rect x="601" y="143" width="112" height="38" rx="9" fill="#fff" stroke="#245cff" stroke-width="3"/><text x="657" y="168" fill="#245cff" font-size="17" font-weight="700" text-anchor="middle">剥落 X15</text></g>
+            <g class="axis" transform="translate(468 320)"><circle r="5" fill="#294d70"/><path d="M0 0 L42 0" stroke="#e75252" stroke-width="3"/><path d="M0 0 L0 -42" stroke="#27a76f" stroke-width="3"/><path d="M0 0 L-26 20" stroke="#397de3" stroke-width="3"/><text x="48" y="5" fill="#e75252" font-size="13" font-weight="700">X 东</text><text x="5" y="-46" fill="#27a76f" font-size="13" font-weight="700">Y 高</text><text x="-63" y="34" fill="#397de3" font-size="13" font-weight="700">Z -北</text></g>
+          </svg>
+          <div class="timeline" aria-hidden="true"><span>识别缺陷</span><span>匹配相机</span><span>生成射线</span><span>命中模型</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="steps">
+      <div class="section-heading"><span>HOW IT WORKS</span><h2>四步完成照片与模型配准</h2></div>
+      <div class="step-grid">
+        <article class="step"><span class="step-number">01</span><span class="step-icon">框</span><h3>找到照片上的缺陷</h3><p>读取检测结果中的缺陷框，使用框中心及附近缺陷点作为照片定位坐标。</p></article>
+        <article class="step"><span class="step-number">02</span><span class="step-icon">镜</span><h3>还原拍摄相机</h3><p>通过照片文件名匹配 Metashape 相机，读取焦距、畸变参数和相机姿态。</p></article>
+        <article class="step"><span class="step-number">03</span><span class="step-icon">线</span><h3>发射空间射线</h3><p>把二维像素反投影为模型坐标中的三维射线，模型与相机共享同一局部坐标系。</p></article>
+        <article class="step"><span class="step-number">04</span><span class="step-icon">点</span><h3>命中墙面并显示标签</h3><p>射线首次命中的模型表面就是标签位置，相机光轴用于确定标签平面朝向。</p></article>
+      </div>
+    </section>
+
+    <section class="coordinates">
+      <div class="coordinate-visual" aria-hidden="true">
+        <div class="orbit"></div><div class="orbit two"></div><div class="globe">◎</div>
+        <span class="axis-label axis-x">X · East</span><span class="axis-label axis-y">Y · Up</span><span class="axis-label axis-z">Z · -North</span><span class="axis-label origin">局部原点</span>
+      </div>
+      <div class="coordinates-copy">
+        <span>LOCAL COORDINATES (m)</span>
+        <h2>使用局部米制坐标，照片依然能够对应</h2>
+        <p>对应关系不依赖模型顶点直接保存经纬度，而依赖模型和相机共享同一套 Metashape Chunk 坐标。导出脚本把模型与相机一起完成 Z-up 到 Web Y-up 转换，因此二者始终保持一致。</p>
+        <ul class="check-list"><li>模型与相机来自同一个 Chunk</li><li>GLB 内嵌 camera_to_glb_yup 矩阵</li><li>移动模型时对相机射线施加相同偏移</li></ul>
+      </div>
+    </section>
+
+    <section class="case-study">
+      <div class="case-study-head">
+        <div><span>555.GLB CASE CHECK</span><h2>当前项目实测验证</h2></div>
+        <p>模型、相机和照片均来自同一 Metashape 工程。照片依靠内嵌相机矩阵完成定位，经纬高程主要用于说明局部坐标原点及外部地理参考。</p>
+      </div>
+      <div class="metrics">
+        <div class="metric"><strong>487</strong><span>GLB 内嵌对齐相机</span></div>
+        <div class="metric"><strong>10 / 10</strong><span>项目照片文件名匹配</span></div>
+        <div class="metric"><strong>10 / 10</strong><span>缺陷标签射线命中</span></div>
+        <div class="metric"><strong>Local m</strong><span>模型局部米制坐标</span></div>
+      </div>
+    </section>
+
+    <aside class="requirements">
+      <strong>准确定位前提：同源、已对齐、未改名、未单独变换模型</strong>
+      <p>GLB 与照片应来自同一个 Metashape Chunk，相机必须完成对齐；导出后不要单独旋转、缩放或移动网格，照片原始文件名也应保留。</p>
+    </aside>
+
+    <footer>照片—模型空间配准原理 · Agisoft Metashape / GLB / Camera Projection</footer>
+  </main>
+
+  <script>
+    (function () {
+      var stage = document.getElementById("stage");
+      function replay() {
+        var replacement = stage.cloneNode(true);
+        stage.replaceWith(replacement);
+        stage = replacement;
+      }
+      document.getElementById("replay-demo").addEventListener("click", replay);
+    }());
+  </script>
+</body>
+</html>

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -35,7 +35,6 @@ class DetectionTaskRead(ApiSchema):
 
 
 class DetectionStartRequest(ApiSchema):
-    facade_type: Literal["tile", "coating", "stone"] | None = None
     model_types: list[DefectType] = Field(
         default_factory=lambda: [
             DefectType.CRACK,

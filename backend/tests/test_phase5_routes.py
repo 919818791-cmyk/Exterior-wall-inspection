@@ -7,13 +7,15 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
+from app.api import detection_tasks
+from app.api.dependencies import AuthenticatedUser
 from app.api.detection_tasks import (
     _formal_compatible_inference,
     _remove_rejected_project_photos,
     _run_formal_project_inference,
     _validate_formal_photo_model_compatibility,
 )
-from app.enums.status import PhotoPrecheckStatus
+from app.enums.status import PhotoPrecheckStatus, ProjectStatus, UserRole
 from app.main import app
 from app.schemas.phase5 import (
     AlgorithmResultPayload,
@@ -86,11 +88,41 @@ def test_detection_start_defaults_to_all_supported_report_types() -> None:
     assert payload.model_types == ["crack", "spalling", "hollow"]
 
 
-@pytest.mark.parametrize("facade_type", ["tile", "coating", "stone"])
-def test_detection_start_accepts_supported_facade_types(facade_type: str) -> None:
-    payload = DetectionStartRequest.model_validate({"facade_type": facade_type})
+def test_detection_start_uses_project_facade_type_instead_of_request_payload() -> None:
+    assert "facade_type" not in DetectionStartRequest.model_fields
 
-    assert payload.facade_type == facade_type
+
+def test_start_detection_requires_the_confirmation_step(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = SimpleNamespace(
+        id=uuid4(),
+        status=ProjectStatus.DRAFT.value,
+        setup_step=2,
+    )
+    current_user = AuthenticatedUser(
+        id=uuid4(),
+        username="customer",
+        real_name="客户",
+        role=UserRole.CUSTOMER.value,
+        organization=None,
+    )
+
+    monkeypatch.setattr(detection_tasks, "_get_project_or_404", lambda *_: project)
+    monkeypatch.setattr(detection_tasks, "ensure_project_write_access", lambda *_: None)
+
+    with pytest.raises(HTTPException) as exc_info:
+        asyncio.run(
+            detection_tasks.start_detection(
+                project.id,
+                DetectionStartRequest(model_types=["crack"]),
+                SimpleNamespace(),
+                current_user,
+            )
+        )
+
+    assert exc_info.value.status_code == 409
+    assert "确认项目信息" in exc_info.value.detail
 
 
 def test_formal_detection_does_not_wait_before_starting(monkeypatch: pytest.MonkeyPatch) -> None:

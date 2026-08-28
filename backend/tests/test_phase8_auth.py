@@ -13,8 +13,10 @@ from app.api.dependencies import (
     ensure_project_write_access,
     get_current_session,
     get_current_user,
+    get_optional_current_user,
     require_roles,
 )
+from app.api.projects import list_projects
 from app.core.security import create_access_token, decode_access_token, hash_password, verify_password
 from app.db.session import get_db
 from app.enums.status import UserRole, UserStatus
@@ -534,6 +536,55 @@ def test_project_owner_and_admin_have_project_write_access() -> None:
     ensure_project_write_access(project, admin)
 
 
+def test_customer_can_read_shared_example_project() -> None:
+    project = SimpleNamespace(
+        created_by=UUID("00000000-0000-0000-0000-000000000003"),
+        is_example=True,
+    )
+    customer = AuthenticatedUser(
+        id=UUID("00000000-0000-0000-0000-000000000001"),
+        username="customer",
+        real_name=None,
+        role=UserRole.CUSTOMER.value,
+        organization=None,
+    )
+
+    ensure_project_access(project, customer)
+
+
+def test_anonymous_viewer_can_only_read_shared_example_projects() -> None:
+    ensure_project_access(SimpleNamespace(is_example=True), None)
+
+    with raises(HTTPException) as raised:
+        ensure_project_access(SimpleNamespace(is_example=False), None)
+
+    assert raised.value.status_code == 404
+
+
+def test_shared_example_project_is_read_only_for_owner_and_admin() -> None:
+    owner_id = UUID("00000000-0000-0000-0000-000000000001")
+    project = SimpleNamespace(created_by=owner_id, is_example=True)
+    owner = AuthenticatedUser(
+        id=owner_id,
+        username="owner",
+        real_name=None,
+        role=UserRole.CUSTOMER.value,
+        organization=None,
+    )
+    admin = AuthenticatedUser(
+        id=UUID("00000000-0000-0000-0000-000000000003"),
+        username="admin",
+        real_name=None,
+        role=UserRole.ADMIN.value,
+        organization=None,
+    )
+
+    for user in (owner, admin):
+        with raises(HTTPException) as raised:
+            ensure_project_write_access(project, user)
+        assert raised.value.status_code == 403
+
+
 def test_all_authenticated_roles_can_access_project_workbench() -> None:
     class EmptyProjectDb:
         def scalars(self, _: object) -> list[object]:
@@ -551,7 +602,7 @@ def test_all_authenticated_roles_can_access_project_workbench() -> None:
             role=role.value,
             organization=None,
         )
-        app.dependency_overrides[get_current_user] = lambda user=current_user: user
+        app.dependency_overrides[get_optional_current_user] = lambda user=current_user: user
         app.dependency_overrides[get_db] = EmptyProjectDb
 
         try:
@@ -561,6 +612,24 @@ def test_all_authenticated_roles_can_access_project_workbench() -> None:
 
         assert response.status_code == 200
         assert response.json() == []
+
+
+def test_anonymous_project_list_only_includes_shared_example() -> None:
+    class CapturingProjectDb:
+        def __init__(self) -> None:
+            self.statements: list[object] = []
+
+        def scalars(self, statement: object) -> list[object]:
+            self.statements.append(statement)
+            return []
+
+    fake_db = CapturingProjectDb()
+
+    assert list_projects(request=None, db=fake_db, current_user=None) == []
+    assert len(fake_db.statements) == 1
+    project_query = str(fake_db.statements[0])
+    assert "project.is_example IS true" in project_query
+    assert "project.created_by =" not in project_query
 
 
 def test_customer_can_reach_project_photo_config_and_detection_apis() -> None:

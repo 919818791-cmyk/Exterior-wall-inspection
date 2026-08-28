@@ -1,4 +1,4 @@
-import { ChevronDown, Gauge, LogOut, Menu, RefreshCw, UserRound, X } from "lucide-react";
+import { ChevronDown, Gauge, LogOut, Menu, Plus, RefreshCw, Sparkles, UserRound, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -17,15 +17,17 @@ function pageClass(pathname: string) {
   if (pathname === "/trials/new") return "project-page new-project-page project-list-chrome trial-route";
   if (pathname === "/trials") return "project-page project-list-route report-list-route";
   if (pathname === "/detections") return "project-page project-list-route";
+  if (/^\/review\/detections\/[^/]+\/model$/.test(pathname)) return "building-model-route";
   if (/^\/detections\/[^/]+\/model$/.test(pathname)) return "building-model-route";
   if (pathname.startsWith("/accounts")) return "project-page account-management-route";
   if (pathname.startsWith("/data-management")) return "project-page data-management-route";
   if (pathname === "/review") return "project-page review-workbench-route review-workbench-list-route";
   if (/^\/review\/detections\/[^/]+$/.test(pathname)) return "project-page review-workbench-route review-workbench-detail-route";
   if (pathname.startsWith("/review")) return "project-page review-workbench-route";
-  if (/^\/trials\/[^/]+$/.test(pathname) || /^\/detections\/results\/[^/]+$/.test(pathname) || /^\/reports\/[^/]+$/.test(pathname)) return "project-page report-detail-route";
+  if (/^\/detections\/results\/[^/]+$/.test(pathname)) return "project-page report-detail-route formal-result-route";
+  if (/^\/trials\/[^/]+$/.test(pathname) || /^\/reports\/[^/]+$/.test(pathname)) return "project-page report-detail-route formal-result-route";
   if (pathname === "/detections/new") return "project-page new-project-page project-list-chrome";
-  if (/^\/detections\/[^/]+$/.test(pathname)) return "project-page project-detail-page";
+  if (/^\/detections\/[^/]+$/.test(pathname)) return "project-page new-project-page project-list-chrome";
   if (pathname.startsWith("/detections") || pathname.startsWith("/trials") || pathname.startsWith("/accounts") || pathname.startsWith("/data-management") || pathname.startsWith("/system-settings") || pathname.startsWith("/review")) {
     return "project-page";
   }
@@ -64,6 +66,7 @@ export function AppLayout() {
   const pendingAuthenticationActionRef = useRef<(() => void) | null>(null);
   const defectKey = location.pathname.match(/^\/capabilities\/(crack|spalling|missing|moisture|corrosion|hollow)$/)?.[1];
   const isBuildingModelRoute = /^\/detections\/[^/]+\/model$/.test(location.pathname);
+  const isReviewBuildingModelRoute = /^\/review\/detections\/[^/]+\/model$/.test(location.pathname);
   const isReviewDetailRoute = /^\/review\/detections\/[^/]+$/.test(location.pathname);
   const isStandaloneManagementRoute = (
     location.pathname === "/system-settings"
@@ -71,16 +74,54 @@ export function AppLayout() {
     || location.pathname.startsWith("/data-management")
     || location.pathname === "/review"
   );
+  const isReviewRoute = location.pathname.startsWith("/review");
   const isDetectionRoute = location.pathname.startsWith("/detections") && !isBuildingModelRoute;
-  const isManagementRoute = location.pathname.startsWith("/accounts") || location.pathname.startsWith("/data-management") || location.pathname.startsWith("/system-settings") || location.pathname.startsWith("/review");
+  const isManagementRoute = location.pathname.startsWith("/accounts") || location.pathname.startsWith("/data-management") || location.pathname.startsWith("/system-settings");
   const isHomeRoute = location.pathname === "/";
   const isTrialSectionRoute = location.pathname.startsWith("/trials");
   const isCreationRoute = location.pathname === "/detections/new" || location.pathname === "/trials/new";
+  const isProfessionalWizardRoute = location.pathname === "/detections/new"
+    || /^\/detections\/[^/]+$/.test(location.pathname);
   const currentPageClass = pageClass(location.pathname);
   const resolvedPageClass = `${currentPageClass}${projectDetailListChrome ? " project-list-chrome" : ""}`;
   const isCapabilityDetailRoute = location.pathname.startsWith("/capabilities");
-  const showsSiteHeader = !isBuildingModelRoute && !isReviewDetailRoute && !isStandaloneManagementRoute;
-  const isThemeHeroRoute = isTrialSectionRoute || isDetectionRoute || isManagementRoute;
+  const isDetectionInnerRoute = location.pathname !== "/detections" && location.pathname.startsWith("/detections/");
+  const isTrialInnerRoute = location.pathname !== "/trials" && location.pathname.startsWith("/trials/");
+  const isLegacyReportDetailRoute = /^\/reports\/[^/]+$/.test(location.pathname);
+  const listPageHeader = location.pathname === "/detections"
+    ? {
+        actionLabel: "开始检测",
+        actionTo: "/detections/new",
+        icon: (
+          <img
+            alt=""
+            aria-hidden="true"
+            className="list-page-header-icon list-page-header-icon-image"
+            src="/icons/detections.png"
+          />
+        ),
+        title: "专业检测",
+        subtitle: "更准确的检测结果，更全面的数据分析"
+      }
+    : location.pathname === "/trials"
+      ? {
+          actionLabel: "开始体验",
+          actionTo: "/trials/new",
+          icon: <Sparkles aria-hidden="true" className="list-page-header-icon" />,
+          title: "快速体验",
+          subtitle: "上传照片即可体验 AI 外墙缺陷检测"
+        }
+      : null;
+  const showsSiteHeader = !isBuildingModelRoute
+    && !isReviewBuildingModelRoute
+    && !isReviewDetailRoute
+    && !isStandaloneManagementRoute
+    && !isDetectionInnerRoute
+    && !isTrialInnerRoute
+    && !isLegacyReportDetailRoute;
+  const isThemeHeroRoute = (
+    isTrialSectionRoute || isDetectionRoute || isManagementRoute || (isReviewRoute && !isReviewBuildingModelRoute)
+  ) && !isProfessionalWizardRoute;
   const usesPermanentDarkShell = isCapabilityDetailRoute || isThemeHeroRoute;
   const usesDarkShell = usesPermanentDarkShell;
   const canAccessAdmin = user?.role === "admin";
@@ -279,9 +320,44 @@ export function AppLayout() {
 
   const displayName = user?.real_name?.trim() || user?.username || "";
   const managementLinks = [
-    ...(canAccessAdmin ? [{ label: "账号管理", to: "/accounts" }, { label: "数据管理", to: "/data-management" }, { label: "推理设置", to: "/system-settings" }] : []),
-    ...(canAccessReview ? [{ label: "审核工作台", to: "/review" }] : [])
+    ...(canAccessAdmin ? [{ label: "账号管理", to: "/accounts" }, { label: "数据管理", to: "/data-management" }, { label: "推理设置", to: "/system-settings" }] : [])
   ];
+  const accountControl = user ? (
+    <div ref={accountMenuRef} className={`account-menu ${accountMenuOpen ? "is-open" : ""}`}>
+      <button
+        aria-controls="account-dropdown"
+        aria-expanded={accountMenuOpen}
+        className="account-trigger"
+        type="button"
+        onClick={() => setAccountMenuOpen((open) => !open)}
+      >
+        <span aria-hidden="true" className="account-avatar"><UserRound /></span>
+        <span className="account-trigger-name">{displayName}</span>
+        <ChevronDown aria-hidden="true" className="account-trigger-chevron" />
+      </button>
+      <div id="account-dropdown" className="account-dropdown" role="dialog" aria-label="本账号用量、余额和账户操作">
+        <AccountUsageSummary
+          isError={accountUsageQuery.isError}
+          isLoading={accountUsageQuery.isLoading}
+          onRetry={() => void accountUsageQuery.refetch()}
+          usage={accountUsageQuery.data}
+        />
+        <div className="account-menu-actions">
+          <button type="button" onClick={() => { setAccountMenuOpen(false); setMobileNavOpen(false); setPersonalInfoModalOpen(true); }}>
+            <UserRound aria-hidden="true" />个人信息
+          </button>
+          <button type="button" onClick={() => void handleLogout()}>
+            <LogOut aria-hidden="true" />退出登录
+          </button>
+        </div>
+      </div>
+    </div>
+  ) : (
+    <button className="nav-cta auth-trigger" type="button" onClick={() => { setMobileNavOpen(false); requestAuthentication(); }}>
+      <UserRound aria-hidden="true" />
+      <span>登录</span>
+    </button>
+  );
 
   return (
     <div
@@ -291,7 +367,7 @@ export function AppLayout() {
       <header
         ref={headerRef}
         hidden={!showsSiteHeader || (isHomeRoute && !homeNavigationVisible)}
-        className={`site-header centered-nav home-site-header ${isCreationRoute ? "creation-page-header" : ""} ${headerScrolled ? "is-scrolled" : ""} ${mobileNavOpen ? "mobile-nav-open" : ""}`}
+        className={`site-header centered-nav home-site-header ${listPageHeader ? "list-page-site-header" : ""} ${isCreationRoute ? "creation-page-header" : ""} ${headerScrolled ? "is-scrolled" : ""} ${mobileNavOpen ? "mobile-nav-open" : ""}`}
         aria-label="顶部导航"
       >
         <NavLink className="brand" to="/" aria-label="外墙智能巡检平台首页" onClick={() => setMobileNavOpen(false)}>
@@ -299,7 +375,21 @@ export function AppLayout() {
           <span className="brand-name">外墙智能巡检平台</span>
         </NavLink>
 
-        <button
+        {listPageHeader ? <div className="list-page-header-copy">
+          <h1>
+            {listPageHeader.title}
+            {listPageHeader.icon}
+          </h1>
+          <p>{listPageHeader.subtitle}</p>
+        </div> : null}
+
+        {listPageHeader ? <div className="list-page-header-action-slot">
+          <Link className="list-page-header-action" to={listPageHeader.actionTo}>
+            <Plus aria-hidden="true" />{listPageHeader.actionLabel}
+          </Link>
+        </div> : null}
+
+        {!listPageHeader ? <button
           aria-controls="mobile-navigation-panel"
           aria-expanded={mobileNavOpen}
           aria-label={mobileNavOpen ? "收起主导航" : "展开主导航"}
@@ -312,13 +402,16 @@ export function AppLayout() {
           }}
         >
           {mobileNavOpen ? <X aria-hidden="true" /> : <Menu aria-hidden="true" />}
-        </button>
+        </button> : null}
 
-        <div id="mobile-navigation-panel" className="mobile-nav-panel">
+        {!listPageHeader ? <div id="mobile-navigation-panel" className="mobile-nav-panel">
           <nav className="main-nav" aria-label="主导航">
           <NavLink className={({ isActive }) => (isActive ? "active" : "")} end to="/" onClick={() => setMobileNavOpen(false)}>首页</NavLink>
           <NavLink className={({ isActive }) => (isActive ? "active" : "")} to="/detections" onClick={() => { setManagementMenuOpen(false); setMobileNavOpen(false); }}>专业检测</NavLink>
-          <NavLink className={({ isActive }) => (isActive ? "active" : "")} to="/trials" onClick={() => { setManagementMenuOpen(false); setMobileNavOpen(false); }}>免费试用</NavLink>
+          <NavLink className={({ isActive }) => (isActive ? "active" : "")} to="/trials" onClick={() => { setManagementMenuOpen(false); setMobileNavOpen(false); }}>快速体验</NavLink>
+          {canAccessReview ? (
+            <NavLink className={({ isActive }) => (isActive ? "active" : "")} to="/review" onClick={() => { setManagementMenuOpen(false); setMobileNavOpen(false); }}>审核工作台</NavLink>
+          ) : null}
           {managementLinks.length > 0 ? (
             <div ref={managementMenuRef} className={`nav-menu ${managementMenuOpen ? "is-open" : ""}`}>
               <button
@@ -346,43 +439,8 @@ export function AppLayout() {
           ) : null}
           </nav>
 
-          {user ? (
-          <div ref={accountMenuRef} className={`account-menu ${accountMenuOpen ? "is-open" : ""}`}>
-            <button
-              aria-controls="account-dropdown"
-              aria-expanded={accountMenuOpen}
-              className="account-trigger"
-              type="button"
-              onClick={() => setAccountMenuOpen((open) => !open)}
-            >
-              <span aria-hidden="true" className="account-avatar"><UserRound /></span>
-              <span className="account-trigger-name">{displayName}</span>
-              <ChevronDown aria-hidden="true" className="account-trigger-chevron" />
-            </button>
-            <div id="account-dropdown" className="account-dropdown" role="dialog" aria-label="本账号用量、余额和账户操作">
-              <AccountUsageSummary
-                isError={accountUsageQuery.isError}
-                isLoading={accountUsageQuery.isLoading}
-                onRetry={() => void accountUsageQuery.refetch()}
-                usage={accountUsageQuery.data}
-              />
-              <div className="account-menu-actions">
-                <button type="button" onClick={() => { setAccountMenuOpen(false); setMobileNavOpen(false); setPersonalInfoModalOpen(true); }}>
-                  <UserRound aria-hidden="true" />个人信息
-                </button>
-                <button type="button" onClick={() => void handleLogout()}>
-                  <LogOut aria-hidden="true" />退出登录
-                </button>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <button className="nav-cta auth-trigger" type="button" onClick={() => { setMobileNavOpen(false); requestAuthentication(); }}>
-            <UserRound aria-hidden="true" />
-            <span>登录</span>
-          </button>
-          )}
-        </div>
+          {accountControl}
+        </div> : null}
       </header>
 
       <main className="app-main">

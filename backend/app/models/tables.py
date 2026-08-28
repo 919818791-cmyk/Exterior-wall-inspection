@@ -15,6 +15,7 @@ from sqlalchemy import (
     Index,
     Integer,
     Numeric,
+    SmallInteger,
     String,
     Text,
     UniqueConstraint,
@@ -28,6 +29,8 @@ from app.enums.status import (
     AiResultStatus,
     DefectType,
     DetectionTaskStatus,
+    DroneType,
+    FacadeType,
     InspectionReportStatus,
     PhotoPrecheckStatus,
     PhotoStatus,
@@ -89,6 +92,9 @@ class Project(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     __tablename__ = "project"
     __table_args__ = (
         enum_check("status", ProjectStatus, "status"),
+        enum_check("drone_type", DroneType, "project_drone_type"),
+        enum_check("facade_type", FacadeType, "project_facade_type"),
+        CheckConstraint("setup_step IN (2, 3)", name="project_setup_step"),
         Index(
             "uq_project_created_by_client_draft_key",
             "created_by",
@@ -96,6 +102,7 @@ class Project(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
             unique=True,
         ),
         Index("idx_project_status", "status"),
+        Index("idx_project_is_example", "is_example"),
         Index("idx_project_created_by", "created_by"),
         Index("idx_project_created_at", "created_at"),
     )
@@ -103,6 +110,13 @@ class Project(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     project_no: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     client_draft_key: Mapped[str | None] = mapped_column(String(64))
     name: Mapped[str] = mapped_column(String(128), nullable=False)
+    drone_type: Mapped[str | None] = mapped_column(String(64))
+    facade_type: Mapped[str] = mapped_column(
+        String(32),
+        default=FacadeType.TILE.value,
+        nullable=False,
+    )
+    description: Mapped[str | None] = mapped_column(Text)
     client_name: Mapped[str | None] = mapped_column(String(128))
     province: Mapped[str | None] = mapped_column(String(64))
     city: Mapped[str | None] = mapped_column(String(64))
@@ -111,6 +125,7 @@ class Project(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     longitude: Mapped[Decimal | None] = mapped_column(Numeric(10, 7))
     latitude: Mapped[Decimal | None] = mapped_column(Numeric(10, 7))
     status: Mapped[str] = status_column(ProjectStatus.DRAFT)
+    is_example: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_by: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("user_account.id", ondelete="RESTRICT"),
@@ -126,6 +141,30 @@ class Project(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     )
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    setup_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    setup_step: Mapped[int] = mapped_column(SmallInteger, default=3, nullable=False)
+
+
+class BuildingModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "building_model"
+    __table_args__ = (
+        UniqueConstraint("project_id", name="uq_building_model_project_id"),
+    )
+
+    project_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("project.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    file_size: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    mime_type: Mapped[str | None] = mapped_column(String(128))
+    storage_bucket: Mapped[str] = mapped_column(String(64), nullable=False)
+    storage_object_key: Mapped[str] = mapped_column(String(512), nullable=False)
+    uploaded_by: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("user_account.id", ondelete="SET NULL"),
+    )
 
 
 class CollectionTimeRecommendation(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
@@ -239,12 +278,24 @@ class Photo(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     thumbnail_object_key: Mapped[str | None] = mapped_column(String(512))
     image_width: Mapped[int | None] = mapped_column(Integer)
     image_height: Mapped[int | None] = mapped_column(Integer)
+    camera_make: Mapped[str | None] = mapped_column(String(64))
+    camera_model: Mapped[str | None] = mapped_column(String(128))
+    camera_product_name: Mapped[str | None] = mapped_column(String(128))
+    drone_model: Mapped[str | None] = mapped_column(String(128))
+    camera_image_source: Mapped[str | None] = mapped_column(String(64))
     photo_type: Mapped[str] = mapped_column(String(32), nullable=False)
     capture_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     longitude: Mapped[Decimal | None] = mapped_column(Numeric(10, 7))
     latitude: Mapped[Decimal | None] = mapped_column(Numeric(10, 7))
+    absolute_altitude: Mapped[Decimal | None] = mapped_column(Numeric(10, 3))
     relative_altitude: Mapped[Decimal | None] = mapped_column(Numeric(10, 3))
     gimbal_yaw_degree: Mapped[Decimal | None] = mapped_column(Numeric(8, 3))
+    gimbal_pitch_degree: Mapped[Decimal | None] = mapped_column(Numeric(8, 3))
+    gimbal_roll_degree: Mapped[Decimal | None] = mapped_column(Numeric(8, 3))
+    calibrated_focal_length: Mapped[Decimal | None] = mapped_column(Numeric(12, 4))
+    focal_length_mm: Mapped[Decimal | None] = mapped_column(Numeric(10, 4))
+    focal_length_35mm: Mapped[Decimal | None] = mapped_column(Numeric(10, 4))
+    lrf_target_distance: Mapped[Decimal | None] = mapped_column(Numeric(12, 3))
     status: Mapped[str] = status_column(PhotoStatus.UPLOADED)
     precheck_status: Mapped[str] = status_column(PhotoPrecheckStatus.PENDING)
     precheck_category: Mapped[str | None] = mapped_column(String(32))
@@ -482,6 +533,8 @@ class TrialDetectionResult(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin,
         enum_check("status", InspectionReportStatus, "status"),
         Index("idx_trial_result_generated_by", "generated_by"),
         Index("idx_trial_result_generated_at", "generated_at"),
+        Index("idx_trial_result_is_example", "is_example"),
+        Index("idx_trial_result_deleted_at", "deleted_at"),
         Index("idx_trial_result_status", "status"),
     )
 
@@ -492,6 +545,7 @@ class TrialDetectionResult(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin,
     photo_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     finding_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     thermal_available_photo_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    is_example: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     generated_by: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("user_account.id", ondelete="RESTRICT"),

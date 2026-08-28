@@ -46,6 +46,9 @@ class EmptyReportRows:
     def all(self) -> list[object]:
         return []
 
+    def first(self) -> None:
+        return None
+
 
 class EmptyReportScalars:
     def __iter__(self):
@@ -652,7 +655,7 @@ def test_report_list_item_accepts_trial_result_contract() -> None:
     assert payload.photo_count == 2
 
 
-def test_customer_trial_report_list_is_limited_to_own_results() -> None:
+def test_customer_trial_report_list_includes_own_and_shared_example_results() -> None:
     fake_db = CapturingReportDb()
 
     list_reports(db=fake_db, current_user=_trial_customer())
@@ -660,10 +663,38 @@ def test_customer_trial_report_list_is_limited_to_own_results() -> None:
     assert len(fake_db.statements) == 1
     trial_result_query = str(fake_db.statements[0])
     assert "trial_detection_result.generated_by = :generated_by_1" in trial_result_query
+    assert "trial_detection_result.is_example IS true" in trial_result_query
     assert "inspection_report" not in trial_result_query
 
 
-def test_reviewer_trial_report_list_is_limited_to_own_results() -> None:
+def test_anonymous_trial_report_list_only_includes_shared_example() -> None:
+    fake_db = CapturingReportDb()
+
+    list_reports(db=fake_db, current_user=None)
+
+    assert len(fake_db.statements) == 1
+    trial_result_query = str(fake_db.statements[0])
+    assert "trial_detection_result.is_example IS true" in trial_result_query
+    assert "trial_detection_result.generated_by =" not in trial_result_query
+
+
+def test_anonymous_formal_report_detail_only_queries_shared_examples() -> None:
+    fake_db = CapturingReportDb()
+
+    with pytest.raises(HTTPException) as raised:
+        reports._get_report_or_404(
+            fake_db,
+            UUID("00000000-0000-0000-0000-000000000001"),
+            current_user=None,
+        )
+
+    assert raised.value.status_code == 404
+    report_query = str(fake_db.statements[0])
+    assert "project.is_example IS true" in report_query
+    assert "project.created_by =" not in report_query
+
+
+def test_reviewer_trial_report_list_includes_own_and_shared_example_results() -> None:
     fake_db = CapturingReportDb()
 
     list_reports(db=fake_db, current_user=_reviewer())
@@ -671,6 +702,7 @@ def test_reviewer_trial_report_list_is_limited_to_own_results() -> None:
     assert len(fake_db.statements) == 1
     trial_result_query = str(fake_db.statements[0])
     assert "trial_detection_result.generated_by = :generated_by_1" in trial_result_query
+    assert "trial_detection_result.is_example IS true" in trial_result_query
     assert "inspection_report" not in trial_result_query
 
 
@@ -683,6 +715,18 @@ def test_admin_trial_report_list_can_include_cross_user_results() -> None:
     trial_result_query = str(fake_db.statements[0])
     assert "trial_detection_result.generated_by =" not in trial_result_query
     assert "inspection_report" not in trial_result_query
+
+
+def test_shared_trial_example_is_read_only() -> None:
+    with pytest.raises(HTTPException) as raised:
+        reports._ensure_trial_result_writable(SimpleNamespace(is_example=True))
+
+    assert raised.value.status_code == 403
+    assert "只读" in raised.value.detail
+
+
+def test_regular_trial_result_remains_writable() -> None:
+    reports._ensure_trial_result_writable(SimpleNamespace(is_example=False))
 
 
 def test_trial_report_request_accepts_optional_report_name() -> None:
@@ -1484,7 +1528,7 @@ def test_docx_report_builder_creates_valid_package() -> None:
     assert "可见光图像" in document
     assert "热红外图像" in document
     assert "facade-001.jpg" in document
-    assert "疑似裂缝: 1处" in document
+    assert "裂缝-001" in document
 
 
 def _jpeg_with_metadata(*, image_source: str, image_description: str) -> bytes:

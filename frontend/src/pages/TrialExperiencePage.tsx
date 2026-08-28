@@ -16,7 +16,6 @@ import {
   ScanSearch,
   Send,
   ShieldCheck,
-  Sparkles,
   TriangleAlert,
   X,
   ZoomIn,
@@ -46,6 +45,7 @@ import {
   type TrialGeneratedResult,
   type TrialUploadedPhoto
 } from "@/api/reports";
+import { ListPagination } from "@/components/ListPagination";
 import { PhotoUploadThumbnail } from "@/components/project/PhotoUploadThumbnail";
 import { DetectionGuidePanel } from "@/components/project/DetectionCreateWorkbench";
 import { ProjectPhotoUploader } from "@/components/project/ProjectPhotoUploader";
@@ -55,12 +55,13 @@ import { useAuthStore } from "@/stores/useAuthStore";
 import type { StartDetectionPayload } from "@/types/projects";
 import { createAsyncLimiter } from "@/utils/asyncLimiter";
 import { createClientId } from "@/utils/id";
-import { validatePhotoUpload } from "@/utils/photoUpload";
+import { PHOTO_UPLOAD_WINDOW_WARNING, validatePhotoUpload } from "@/utils/photoUpload";
 import { trialDefectBoxLabel, trialDefectDisplayFromModel } from "@/utils/trialDefectDisplay";
 import { readTrialPhotoMetadata, type TrialPhotoMetadata } from "@/utils/photoMetadata";
 
 const MODEL_OPTIONS = ["裂缝", "剥落", "空鼓"] as const;
 const MAX_TRIAL_PHOTO_COUNT = 30;
+const TRIAL_PHOTO_PAGE_SIZE = 12;
 const MAX_TRIAL_PHOTO_SIZE_BYTES = 5 * 1024 * 1024;
 const TRIAL_RESULT_CONFIDENCE_THRESHOLD = 0.6;
 const PHOTO_PREVIEW_DEFAULT_ZOOM = 1;
@@ -157,6 +158,7 @@ export function TrialExperiencePage() {
   const [isReportNameSaving, setIsReportNameSaving] = useState(false);
   const [archivedReportId, setArchivedReportId] = useState<string | null>(null);
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
+  const [photoPage, setPhotoPage] = useState(1);
   const [annotatedPreview, setAnnotatedPreview] = useState<TrialAnnotatedPreview | null>(null);
   const [previewZoom, setPreviewZoom] = useState(PHOTO_PREVIEW_DEFAULT_ZOOM);
   const [previewPan, setPreviewPan] = useState({ x: 0, y: 0 });
@@ -436,6 +438,7 @@ export function TrialExperiencePage() {
       ...current,
       ...nextPhotos
     ]);
+    setPhotoPage(Math.max(1, Math.ceil((selectedPhotos.length + nextPhotos.length) / TRIAL_PHOTO_PAGE_SIZE)));
     nextPhotos.forEach((photo, offset) => {
       void uploadTrialPhoto(photo, startIndex + offset);
     });
@@ -908,6 +911,12 @@ export function TrialExperiencePage() {
   }
 
   const previewingPhoto = previewIndex === null ? null : photoPreviews[previewIndex] ?? null;
+  const totalPhotoPages = Math.max(1, Math.ceil(photoPreviews.length / TRIAL_PHOTO_PAGE_SIZE));
+  const visiblePhotoPage = Math.min(photoPage, totalPhotoPages);
+  const paginatedPhotos = useMemo(() => {
+    const startIndex = (visiblePhotoPage - 1) * TRIAL_PHOTO_PAGE_SIZE;
+    return photoPreviews.slice(startIndex, startIndex + TRIAL_PHOTO_PAGE_SIZE);
+  }, [photoPreviews, visiblePhotoPage]);
   const detectionProgress = [18, 42, 68, 88][generationStepIndex] ?? 88;
   const totalPhotoCount = pendingPhotos.length;
   const uploadedPhotoCount = pendingPhotos.filter((photo) => photo.uploadStatus === "uploaded").length;
@@ -933,11 +942,11 @@ export function TrialExperiencePage() {
           <h1 className="sr-only">AI检测体验</h1>
           <section className="project-editor-panel" aria-label="AI检测体验">
             <div className="project-fields project-editor-basic-fields">
-              <label className="form-field">
-                <span>检测名称：</span>
+              <label className="form-field floating-line-field">
                 <input
                   disabled={isReportNameLocked}
                   maxLength={255}
+                  placeholder=" "
                   value={reportName}
                   onBlur={() => void saveArchivedReportName()}
                   onChange={(event) => updateReportName(event.target.value)}
@@ -945,53 +954,50 @@ export function TrialExperiencePage() {
                     if (event.key === "Enter") void saveArchivedReportName();
                   }}
                 />
+                <span>检测名称</span>
               </label>
-              <div className="trial-name-actions">
-                <button
-                  className="button primary start-ai-detection-button"
-                  disabled={isPhotoEditingLocked}
-                  type="button"
-                  onClick={generateReport}
-                >
-                  <ScanSearch aria-hidden="true" />
-                  {isGenerating ? "检测中" : "开始检测"}
-                </button>
-              </div>
             </div>
 
             <div className="project-editor-photo-block">
-              <section className="project-photo-workspace" aria-labelledby="trial-project-photo-title">
-                <header className="project-photo-workspace-heading">
-                  <h2 id="trial-project-photo-title">检测照片</h2>
-                  <div className="new-project-photo-heading-status">
-                    {activePhotoUploadCount ? (
-                      <div className="new-project-upload-overview" role="status" aria-live="polite">
-                        <span>正在上传，已完成 {uploadedPhotoCount}/{totalPhotoCount}</span>
-                        <span
-                          aria-label={`照片上传进度 ${photoUploadProgress}%`}
-                          aria-valuemax={100}
-                          aria-valuemin={0}
-                          aria-valuenow={photoUploadProgress}
-                          className="new-project-upload-track"
-                          role="progressbar"
-                        >
-                          <i style={{ width: `${photoUploadProgress}%` }} />
-                        </span>
-                      </div>
-                    ) : failedPhotoCount ? (
-                      <span className="new-project-upload-summary is-error">{failedPhotoCount} 张上传失败</span>
-                    ) : allPhotosUploaded ? (
-                      <span className="new-project-upload-summary is-complete photo-upload-complete-status">上传完成</span>
-                    ) : null}
-                  </div>
-                </header>
+              <section className="project-photo-workspace professional-create-photos" aria-label="检测照片">
+                {activePhotoUploadCount || failedPhotoCount || allPhotosUploaded ? (
+                  <header className="project-photo-workspace-heading">
+                    <div className="new-project-photo-heading-status">
+                      {activePhotoUploadCount ? (
+                        <div className="new-project-upload-overview" role="status" aria-live="polite">
+                          <span>
+                            正在上传，已完成 {uploadedPhotoCount}/{totalPhotoCount}<br />
+                            <span className="photo-upload-window-warning">{PHOTO_UPLOAD_WINDOW_WARNING}</span>
+                          </span>
+                          <span
+                            aria-label={`照片上传进度 ${photoUploadProgress}%`}
+                            aria-valuemax={100}
+                            aria-valuemin={0}
+                            aria-valuenow={photoUploadProgress}
+                            className="new-project-upload-track"
+                            role="progressbar"
+                          >
+                            <i style={{ width: `${photoUploadProgress}%` }} />
+                          </span>
+                        </div>
+                      ) : failedPhotoCount ? (
+                        <span className="new-project-upload-summary is-error">{failedPhotoCount} 张上传失败</span>
+                      ) : (
+                        <span className="new-project-upload-summary is-complete photo-upload-complete-status">上传完成</span>
+                      )}
+                    </div>
+                  </header>
+                ) : null}
                 <ProjectPhotoUploader
                   addDisabled={isPhotoEditingLocked}
                   disabled={isPhotoEditingLocked}
+                  emptyHint={<span className="professional-drone-upload-hint">{UPLOAD_LIMIT_TIP}</span>}
                   hasPhotos={Boolean(photoPreviews.length)}
                   onFilesSelected={(files) => void applyFiles(files)}
+                  presentation="line"
                 >
-                  {photoPreviews.map((photo, index) => {
+                  {paginatedPhotos.map((photo, index) => {
+                    const photoIndex = (visiblePhotoPage - 1) * TRIAL_PHOTO_PAGE_SIZE + index;
                     const precheckStatus = photo.uploadedPhoto?.precheck_status;
                     const thermalAvailable = photo.uploadStatus === "uploaded"
                       && (photo.uploadedPhoto?.thermal_imaging_available ?? photo.metadata.thermalImagingAvailable);
@@ -1006,7 +1012,7 @@ export function TrialExperiencePage() {
                               className="trial-photo-retry-button"
                               disabled={isPhotoEditingLocked}
                               type="button"
-                              onClick={() => void retryPhoto(index)}
+                              onClick={() => void retryPhoto(photoIndex)}
                             >
                               <RefreshCcw aria-hidden="true" />
                               重新上传
@@ -1018,10 +1024,11 @@ export function TrialExperiencePage() {
                         precheckStatus={precheckStatus}
                         previewUrl={photo.previewUrl}
                         removeDisabled={isPhotoEditingLocked}
+                        removePlacement="footer"
                         statusClassName={`is-${photo.uploadStatus}`}
                         unsupportedFormat={photo.unsupportedFormat}
-                        onPreview={photo.uploadStatus === "uploaded" ? () => previewPhoto(index) : undefined}
-                        onRemove={!photo.isArchived ? () => void removePhoto(index) : undefined}
+                        onPreview={photo.uploadStatus === "uploaded" ? () => previewPhoto(photoIndex) : undefined}
+                        onRemove={!photo.isArchived ? () => void removePhoto(photoIndex) : undefined}
                       >
                         {photo.uploadStatus === "ready" || photo.uploadStatus === "uploading" ? (
                           <span
@@ -1037,6 +1044,34 @@ export function TrialExperiencePage() {
                     );
                   })}
                 </ProjectPhotoUploader>
+                <ListPagination
+                  ariaLabel="照片分页"
+                  className="professional-create-photo-pagination"
+                  currentPage={visiblePhotoPage}
+                  itemUnit="张"
+                  onPageChange={setPhotoPage}
+                  pageSize={TRIAL_PHOTO_PAGE_SIZE}
+                  showWhenEmpty
+                  totalItems={photoPreviews.length}
+                />
+                <footer className="professional-create-actions">
+                  <button
+                    className="button secondary"
+                    disabled={isPhotoEditingLocked || isReportNameSaving}
+                    type="button"
+                    onClick={() => navigate("/trials")}
+                  >
+                    取消
+                  </button>
+                  <button
+                    className="button primary professional-create-submit"
+                    disabled={isPhotoEditingLocked || isReportNameSaving}
+                    type="button"
+                    onClick={generateReport}
+                  >
+                    {isGenerating ? "检测中" : "开始检测"}
+                  </button>
+                </footer>
               </section>
             </div>
 
@@ -1050,429 +1085,13 @@ export function TrialExperiencePage() {
                 </p>
               ) : null}
             </section>
-          </section>
+        </section>
         </form>
         <DetectionGuidePanel
-          description={<>支持<span className="trial-defect-types">裂缝、剥落、空鼓</span>外墙缺陷识别</>}
+          description={<>支持裂缝、剥落、空鼓外墙缺陷识别</>}
         />
         </div>
       </ProjectWorkbenchShell>
-      {false ? <div className="trial-detection-page management-list-page">
-        <div className="project-workspace">
-          <div className="trial-experience-shell trial-experience-content-shell trial-live-shell">
-            <section className="trial-experience-grid trial-workbench-layout">
-          <aside className="trial-upload-panel trial-workbench-sidebar">
-            <header className="trial-workbench-sidebar-heading">
-              <span aria-hidden="true"><Sparkles /></span>
-              <div>
-                <strong>AI检测体验</strong>
-                <small>上传照片，直接生成检测结果</small>
-              </div>
-            </header>
-            <div className="trial-report-name-field">
-              <h2>检测名称：</h2>
-              <div className="trial-report-name-control">
-                <label className="sr-only" htmlFor="trial-report-name">检测名称</label>
-                <input
-                  id="trial-report-name"
-                  disabled={isReportNameLocked}
-                  maxLength={255}
-                  placeholder="请输入检测名称"
-                  value={reportName}
-                  onChange={(event) => updateReportName(event.target.value)}
-                  onBlur={() => void saveArchivedReportName()}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") void saveArchivedReportName();
-                  }}
-                />
-                {archivedReportId ? (
-                  <button
-                    className="trial-report-name-save"
-                    disabled={isReportNameSaving || !isReportNameDirty}
-                    type="button"
-                    onClick={() => void saveArchivedReportName()}
-                  >
-                    {isReportNameSaving ? "保存中" : "保存名称"}
-                  </button>
-                ) : null}
-              </div>
-            </div>
-            <fieldset
-              className={`trial-model-selector ${isModelSelectionInvalid ? "is-invalid" : ""}`}
-              aria-describedby={[
-                isModelSelectionInvalid ? "trial-model-selection-error" : "",
-                isHollowSelected ? "trial-hollow-beta-warning" : ""
-              ].filter(Boolean).join(" ") || undefined}
-              aria-invalid={isModelSelectionInvalid}
-              aria-label="选择检测类型"
-              disabled={isInteractionBusy}
-            >
-              <legend className="sr-only">检测类型</legend>
-              <div className="trial-model-selector-row">
-                <span aria-hidden="true" className="trial-model-selector-title">检测类型：</span>
-                <div className="trial-model-options">
-                  {MODEL_OPTIONS.map((model) => (
-                    <label
-                      key={model}
-                      className={[
-                        selectedModels.includes(model) ? "is-selected" : "",
-                        model === "空鼓" ? "is-beta-model" : ""
-                      ].filter(Boolean).join(" ")}
-                    >
-                      <input
-                        checked={selectedModels.includes(model)}
-                        type="checkbox"
-                        onChange={() => toggleModel(model)}
-                      />
-                      <span><Check aria-hidden="true" /></span>
-                      <strong>{model}{model === "空鼓" ? "（Beta）" : ""}</strong>
-                    </label>
-                  ))}
-                </div>
-              </div>
-              {isHollowSelected ? (
-                <p id="trial-hollow-beta-warning" className="trial-model-warning" role="status">
-                  <TriangleAlert aria-hidden="true" />
-                  空鼓检测处于测试阶段，可能存在误检，请结合现场情况复核。
-                </p>
-              ) : null}
-              {isModelSelectionInvalid ? (
-                <p id="trial-model-selection-error" className="trial-model-selection-error">
-                  {modelSelectionError}
-                </p>
-              ) : null}
-            </fieldset>
-            <ProjectPhotoUploader
-              disabled={isPhotoEditingLocked}
-              emptyHint={<span className="trial-upload-note">{UPLOAD_LIMIT_TIP}</span>}
-              hasPhotos={Boolean(photoPreviews.length)}
-              variant="trial"
-              onFilesSelected={(files) => void applyFiles(files)}
-            >
-              {photoPreviews.map((photo, index) => {
-                const precheckStatus = photo.uploadedPhoto?.precheck_status;
-                const thermalAvailable = photo.uploadStatus === "uploaded"
-                  && (photo.uploadedPhoto?.thermal_imaging_available ?? photo.metadata.thermalImagingAvailable);
-                return (
-                  <PhotoUploadThumbnail
-                    badges={thermalAvailable ? <span className="trial-thermal-available-tag">热成像</span> : null}
-                    fileName={photo.file.name}
-                    footer={photo.uploadStatus === "failed" && !photo.unsupportedFormat ? (
-                      <>
-                        <p className="trial-photo-upload-error">{photo.uploadError || "上传失败，请重新上传。"}</p>
-                        <button
-                          className="trial-photo-retry-button"
-                          disabled={isPhotoEditingLocked}
-                          type="button"
-                          onClick={() => void retryPhoto(index)}
-                        >
-                          <RefreshCcw aria-hidden="true" />
-                          重新上传
-                        </button>
-                      </>
-                    ) : null}
-                    key={photo.id}
-                    precheckReason={photo.uploadedPhoto?.precheck_reason}
-                    precheckStatus={precheckStatus}
-                    previewUrl={photo.previewUrl}
-                    removeDisabled={isPhotoEditingLocked}
-                    statusClassName={`is-${photo.uploadStatus}`}
-                    unsupportedFormat={photo.unsupportedFormat}
-                    variant="trial"
-                    onPreview={photo.uploadStatus === "uploaded" ? () => previewPhoto(index) : undefined}
-                    onRemove={!photo.isArchived ? () => void removePhoto(index) : undefined}
-                  >
-                    {photo.uploadStatus === "ready" || photo.uploadStatus === "uploading" ? (
-                      <span
-                        aria-label={`${photo.file.name}${photo.uploadStatus === "ready" ? "等待上传" : "正在上传"}`}
-                        className="new-project-photo-upload-indicator"
-                        role="status"
-                      >
-                        <span aria-hidden="true" className="new-project-photo-upload-ring" />
-                        <small>{photo.uploadStatus === "ready" ? "等待上传" : "上传中"}</small>
-                      </span>
-                    ) : null}
-                  </PhotoUploadThumbnail>
-                );
-              })}
-            </ProjectPhotoUploader>
-            <div className="trial-feedback" aria-live="polite">
-              {error ? <p className="trial-error">{error}</p> : null}
-              {actionHint ? <p className="trial-action-hint">{actionHint}</p> : null}
-              {recentlyRemovedPhoto ? (
-                <p className="trial-undo-message" role="status">
-                  已移除“{recentlyRemovedPhoto?.photo.file.name}”
-                  <button type="button" onClick={undoPhotoRemoval}>撤销</button>
-                </p>
-              ) : null}
-              {isArchiving ? <p className="trial-status-message">检测完成，正在自动存档...</p> : null}
-            </div>
-            <div className="trial-actions">
-              {generatedResult ? (
-                <>
-                  <button
-                    className={`button primary${archivedReportId && !canContinueDetection ? " is-awaiting-photos" : ""}`}
-                    disabled={isGenerating || isArchiving || (Boolean(archivedReportId) && isUploading)}
-                    type="button"
-                    onClick={handleGeneratedPrimaryAction}
-                  >
-                    <Send aria-hidden="true" />
-                    {isGenerating
-                      ? "检测中"
-                      : isArchiving
-                        ? "自动存档中"
-                        : archivedReportId
-                          ? "继续检测"
-                          : "重试自动存档"}
-                  </button>
-                  <button
-                    className="button secondary trial-exit-button"
-                    disabled={isGenerating || isArchiving}
-                    type="button"
-                    onClick={() => void finishAndExit()}
-                  >
-                    <Home aria-hidden="true" />
-                    完成并退出
-                  </button>
-                </>
-              ) : (
-                <button
-                  className="button primary trial-generate-button"
-                  disabled={isPhotoEditingLocked}
-                  type="button"
-                  onClick={() => void generateReport()}
-                >
-                  <Send aria-hidden="true" />
-                  {isGenerating ? "检测中" : "开始检测"}
-                </button>
-              )}
-            </div>
-          </aside>
-          <section
-            ref={resultPanelRef}
-            className="trial-report-panel trial-workbench-content-panel"
-            aria-label="AI检测结果"
-            tabIndex={-1}
-          >
-            <header className="trial-workbench-result-heading">
-              <div><ScanSearch aria-hidden="true" /><h2>检测结果</h2></div>
-              <span><ShieldCheck aria-hidden="true" />无需审核，完成后直接出结果</span>
-            </header>
-            {generatedResult ? (
-              <div className="trial-report-result is-headless">
-                <div className="trial-report-table-wrap">
-                  <table className="trial-report-table trial-report-table--without-tile" aria-busy={isGenerating}>
-                    <colgroup>
-                      <col className="trial-sequence-col" />
-                      <col className="trial-photo-col" />
-                      <col className="trial-description-col" />
-                    </colgroup>
-                    <thead>
-                      <tr>
-                        <th className="trial-sequence-column">序号</th>
-                        <th className="trial-photo-column">含标注的照片</th>
-                        <th className="trial-report-description">检测说明</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {reportRows.map((row, index) => (
-                        <tr key={`finding-${row.filename}-${index}`}>
-                          <td className="trial-sequence-column">
-                            <span className="trial-report-index">
-                              {String(index + 1).padStart(2, "0")}
-                            </span>
-                          </td>
-                          <td className="trial-photo-column">
-                            <figure className="trial-annotated-photo-frame">
-                              <div
-                                className={`trial-annotated-photo ${row.previewUrl ? "is-clickable" : ""}`}
-                                title={row.previewUrl ? "点击放大查看" : undefined}
-                                onClick={() => previewAnnotatedPhoto({
-                                  filename: row.filename,
-                                  previewUrl: row.previewUrl,
-                                  findings: row.findings
-                                })}
-                              >
-                                <img alt={`${row.filename} 检测标注`} src={row.previewUrl} />
-                                {row.findings.map((finding, findingIndex) => {
-                                  const display = trialDefectDisplayFromModel(finding.model);
-                                  const boxStyle = trialFindingBoxStyle(finding);
-                                  if (!boxStyle) return null;
-                                  return (
-                                    <span
-                                      key={finding.detection_id ?? `${finding.model}-${findingIndex}`}
-                                      className={`trial-defect-box ${display.boxClassName}`}
-                                      style={boxStyle}
-                                    >
-                                      <span className="trial-defect-label">
-                                        {trialDefectBoxLabel(display)}
-                                      </span>
-                                    </span>
-                                  );
-                                })}
-                                {row.previewUrl ? (
-                                  <div className="trial-annotated-photo-actions">
-                                    <button
-                                      type="button"
-                                      aria-label="放大查看含标注的照片"
-                                      title="放大查看"
-                                      onClick={(event) => {
-                                        event.stopPropagation();
-                                        previewAnnotatedPhoto({
-                                          filename: row.filename,
-                                          previewUrl: row.previewUrl,
-                                          findings: row.findings
-                                        });
-                                      }}
-                                    >
-                                      <ZoomIn aria-hidden="true" />
-                                    </button>
-                                  </div>
-                                ) : null}
-                              </div>
-                              <figcaption>{row.filename}</figcaption>
-                            </figure>
-                          </td>
-                          <td className="trial-report-description">
-                            {row.findings.length ? (
-                              <p>
-                                {trialFindingSummary(row.findings).map((item) => (
-                                  <span key={item.model} className={trialFindingClass(item.model)}>
-                                    疑似{trialDefectDisplayFromModel(item.model).label}: {item.count}处
-                                  </span>
-                                ))}
-                              </p>
-                            ) : (
-                              <p><span>未检出明显缺陷</span></p>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            ) : (
-              <div className="trial-report-result is-headless">
-                <div className="trial-report-table-wrap">
-                  <table className="trial-report-table trial-report-table--without-tile" aria-label="检测结果">
-                    <colgroup>
-                      <col className="trial-sequence-col" />
-                      <col className="trial-photo-col" />
-                      <col className="trial-description-col" />
-                    </colgroup>
-                    <thead>
-                      <tr>
-                        <th className="trial-sequence-column">序号</th>
-                        <th className="trial-photo-column">含标注的照片</th>
-                        <th className="trial-report-description">检测说明</th>
-                      </tr>
-                    </thead>
-                    <tbody />
-                  </table>
-                  <div className="trial-report-start-guide">
-                    <p>完成以下 3 步，即可查看检测结果</p>
-                    <ol>
-                      <li><span>1</span>选择检测类型</li>
-                      <li><span>2</span>上传外墙照片</li>
-                      <li><span>3</span>点击开始AI检测</li>
-                    </ol>
-                  </div>
-                </div>
-              </div>
-            )}
-          </section>
-          <aside className="trial-guide-panel" aria-label="检测示例">
-            <div className="trial-guide-list" id="trial-guide-content">
-              <article className="trial-guide-card trial-guide-card-detection">
-                <span className="trial-guide-icon" aria-hidden="true">
-                  <ScanSearch />
-                </span>
-                <div>
-                  <p>支持<span className="trial-defect-types">裂缝、剥落、空鼓</span>外墙缺陷识别</p>
-                </div>
-              </article>
-              <article className="trial-guide-card trial-guide-card-photo">
-                <span className="trial-guide-icon" aria-hidden="true">
-                  <Images />
-                </span>
-                <div>
-                  <p>上传画面清晰、墙面完整且无遮挡的照片。</p>
-                </div>
-              </article>
-              <article className="trial-guide-card trial-guide-example-card">
-                <div className="trial-guide-example-tabs" role="tablist" aria-label="示例图片类型">
-                  <button
-                    aria-controls="trial-guide-original-examples"
-                    aria-selected={guideExampleTab === "original"}
-                    className={guideExampleTab === "original" ? "is-active" : ""}
-                    id="trial-guide-original-tab"
-                    onClick={() => setGuideExampleTab("original")}
-                    role="tab"
-                    type="button"
-                  >
-                    原图示例
-                  </button>
-                  <button
-                    aria-controls="trial-guide-annotated-examples"
-                    aria-selected={guideExampleTab === "annotated"}
-                    className={guideExampleTab === "annotated" ? "is-active" : ""}
-                    id="trial-guide-annotated-tab"
-                    onClick={() => setGuideExampleTab("annotated")}
-                    role="tab"
-                    type="button"
-                  >
-                    标注示例
-                  </button>
-                </div>
-                {guideExampleTab === "original" ? (
-                  <div
-                    aria-labelledby="trial-guide-original-tab"
-                    className="trial-guide-example-images"
-                    id="trial-guide-original-examples"
-                    role="tabpanel"
-                  >
-                    {(["裂缝.jpeg", "剥落.jpg", "空鼓.JPG"] as const).map((filename) => (
-                      <figure className="trial-guide-example-item" key={filename}>
-                        <div className="trial-guide-example-image-frame">
-                          <img
-                            alt={`${filename.replace(/\.[^.]+$/, "")}检测原图示例`}
-                            loading="lazy"
-                            src={`/images/trial/examples/original/${filename}`}
-                          />
-                        </div>
-                        <figcaption>{filename.replace(/\.[^.]+$/, "")}原图</figcaption>
-                      </figure>
-                    ))}
-                  </div>
-                ) : (
-                  <div
-                    aria-labelledby="trial-guide-annotated-tab"
-                    className="trial-guide-example-images"
-                    id="trial-guide-annotated-examples"
-                    role="tabpanel"
-                  >
-                    {(["裂缝标注图.jpeg", "剥落标注图.png", "空鼓标注图.png"] as const).map((filename) => (
-                      <figure className="trial-guide-example-item" key={filename}>
-                        <div className="trial-guide-example-image-frame">
-                          <img
-                            alt={`${filename.replace("标注图", "").replace(/\.[^.]+$/, "")}检测标注结果示例`}
-                            loading="lazy"
-                            src={`/images/trial/examples/annotated/${filename}`}
-                          />
-                        </div>
-                        <figcaption>{filename.replace(/\.[^.]+$/, "")}</figcaption>
-                      </figure>
-                    ))}
-                  </div>
-                )}
-              </article>
-            </div>
-          </aside>
-          </section>
-          </div>
-        </div>
-      </div> : null}
       {previewingPhoto || annotatedPreview ? (
         <div
           className="trial-photo-preview-modal"
@@ -1717,9 +1336,6 @@ export function TrialExperiencePage() {
       >
         <ModalContent>
           <ModalHeader className="trial-version-modal-header">
-            <span className="trial-version-modal-icon" aria-hidden="true">
-              <Sparkles />
-            </span>
             <div className="trial-version-modal-heading">
               <h2>选择适合您的检测方式</h2>
             </div>
@@ -1733,17 +1349,16 @@ export function TrialExperiencePage() {
             <button
               className="button secondary"
               type="button"
-              onClick={() => setIsVersionNoticeOpen(false)}
+              onClick={openProfessionalDetection}
             >
-              继续免费体验
+              前往专业版检测
             </button>
             <button
               className="button primary"
               type="button"
-              onClick={openProfessionalDetection}
+              onClick={() => setIsVersionNoticeOpen(false)}
             >
-              <ScanSearch aria-hidden="true" />
-              前往专业版检测
+              继续快速体验
             </button>
           </ModalFooter>
         </ModalContent>

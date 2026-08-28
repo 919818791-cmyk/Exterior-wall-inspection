@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import {
   ArrowLeft,
+  Box,
   ClipboardCheck,
   Eye,
   Timer,
@@ -146,6 +147,17 @@ export function ReviewProjectListPage() {
                         <td data-label="更新时间">{formatDateTime(result.updated_at)}</td>
                         <td data-label="操作">
                           <div className="table-actions">
+                            <Link
+                              className="table-action"
+                              state={{
+                                backLabel: "返回审核工作台",
+                                backTo: "/review",
+                                projectTitle: result.project_name
+                              }}
+                              to={`/review/detections/${result.project_id}/model`}
+                            >
+                              <Box aria-hidden="true" />三维模型
+                            </Link>
                             {action.disabled ? (
                               <span className="table-action is-disabled">
                                 <Icon aria-hidden="true" />{action.label}

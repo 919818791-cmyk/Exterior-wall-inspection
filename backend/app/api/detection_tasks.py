@@ -481,6 +481,11 @@ async def start_detection(
             status_code=status.HTTP_409_CONFLICT,
             detail="Only draft projects can start AI detection.",
         )
+    if getattr(project, "setup_step", 3) < 3:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="请先确认项目信息和照片，再开始检测。",
+        )
 
     all_photos = list(
         db.scalars(
@@ -579,14 +584,11 @@ async def start_detection(
         for value in selected_model_types
         if value in FORMAL_VISIBLE_DEFECT_TYPES
     ]
-    specialized_prompts = (
-        formal_detection_prompts(
-            payload.facade_type,
-            selected_model_types,
-            db=db,
-        )
-        if payload is not None and payload.facade_type is not None
-        else None
+    facade_type = getattr(project, "facade_type", None) or "tile"
+    specialized_prompts = formal_detection_prompts(
+        facade_type,
+        selected_model_types,
+        db=db,
     )
     visible_prompt = (
         specialized_prompts.visible_prompt
@@ -622,7 +624,7 @@ async def start_detection(
     _remove_rejected_project_photos(db, rejected_photos, deleted_at=now)
     inference_snapshot = {
         "source": "formal_project",
-        "facade_type": payload.facade_type if payload is not None else None,
+        "facade_type": facade_type,
         "model_types": selected_model_types,
         "high_precision": True,
         "provider": runtime.provider,

@@ -11,6 +11,7 @@ from app.enums.status import (
     AiResultStatus,
     DefectType,
     DetectionTaskStatus,
+    DroneType,
     InspectionReportStatus,
     PhotoPrecheckStatus,
     PhotoStatus,
@@ -58,6 +59,8 @@ class UserAccountRead(OrmSchema):
 class ProjectBase(OrmSchema):
     project_no: str
     name: str
+    drone_type: DroneType | None = None
+    description: str | None = None
     client_name: str | None = None
     province: str | None = None
     city: str | None = None
@@ -79,6 +82,8 @@ class ProjectRead(ProjectBase):
     current_report_id: UUID | None
     started_at: datetime | None
     completed_at: datetime | None
+    setup_completed_at: datetime | None
+    setup_step: int
     created_at: datetime
     updated_at: datetime
     deleted_at: datetime | None
@@ -146,12 +151,24 @@ class PhotoBase(OrmSchema):
     thumbnail_object_key: str | None = None
     image_width: int | None = None
     image_height: int | None = None
+    camera_make: str | None = None
+    camera_model: str | None = None
+    camera_product_name: str | None = None
+    drone_model: str | None = None
+    camera_image_source: str | None = None
     photo_type: PhotoType
     capture_time: datetime | None = None
     longitude: Decimal | None = None
     latitude: Decimal | None = None
+    absolute_altitude: Decimal | None = None
     relative_altitude: Decimal | None = None
     gimbal_yaw_degree: Decimal | None = None
+    gimbal_pitch_degree: Decimal | None = None
+    gimbal_roll_degree: Decimal | None = None
+    calibrated_focal_length: Decimal | None = None
+    focal_length_mm: Decimal | None = None
+    focal_length_35mm: Decimal | None = None
+    lrf_target_distance: Decimal | None = None
     status: PhotoStatus = PhotoStatus.UPLOADED
     precheck_status: PhotoPrecheckStatus = PhotoPrecheckStatus.PENDING
     precheck_category: str | None = None

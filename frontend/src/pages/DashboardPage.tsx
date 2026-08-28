@@ -230,7 +230,7 @@ export function DashboardPage() {
             <div className="hero-actions">
               <div className="hero-primary-action">
                 <Link className="button primary" to="/trials">
-                  <Sparkles aria-hidden="true" />上传照片免费体验<ArrowRight className="hero-action-arrow" aria-hidden="true" />
+                  <Sparkles aria-hidden="true" />上传照片快速体验<ArrowRight className="hero-action-arrow" aria-hidden="true" />
                 </Link>
               </div>
               <Link className="button secondary" to="/detections">

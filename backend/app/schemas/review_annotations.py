@@ -23,6 +23,7 @@ class AnnotationBBox(ApiSchema):
 class AnnotationBox(ApiSchema):
     id: str = Field(min_length=1, max_length=128)
     source_annotation_id: str | None = Field(default=None, max_length=128)
+    defect_no: str | None = Field(default=None, max_length=64)
     defect_type: str = Field(min_length=1, max_length=32)
     bbox: AnnotationBBox
     confidence: float | None = Field(default=None, ge=0, le=1)

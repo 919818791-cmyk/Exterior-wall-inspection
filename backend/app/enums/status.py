@@ -21,6 +21,27 @@ class ProjectStatus(StrEnum):
     COMPLETED = "completed"
 
 
+class DroneType(StrEnum):
+    DJI_MAVIC_3_ENTERPRISE = "dji_mavic_3_enterprise"
+    DJI_MAVIC_3_THERMAL = "dji_mavic_3_thermal"
+    DJI_MATRICE_4E = "dji_matrice_4e"
+    DJI_MATRICE_4T = "dji_matrice_4t"
+    DJI_MATRICE_30 = "dji_matrice_30"
+    DJI_MATRICE_30T = "dji_matrice_30t"
+    DJI_MATRICE_300_RTK = "dji_matrice_300_rtk"
+    DJI_MATRICE_350_RTK = "dji_matrice_350_rtk"
+    DJI_MATRICE_400 = "dji_matrice_400"
+    DJI_PHANTOM_4_RTK = "dji_phantom_4_rtk"
+    AUTEL_EVO_MAX_4T = "autel_evo_max_4t"
+    OTHER_PROFESSIONAL = "other_professional"
+
+
+class FacadeType(StrEnum):
+    TILE = "tile"
+    COATING = "coating"
+    STONE = "stone"
+
+
 class DetectionTaskStatus(StrEnum):
     PENDING = "pending"
     RUNNING = "running"

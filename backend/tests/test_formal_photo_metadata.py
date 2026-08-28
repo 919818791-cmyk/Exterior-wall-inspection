@@ -4,7 +4,7 @@ from zipfile import ZipFile
 import pytest
 from docx import Document
 from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
-from PIL import Image
+from PIL import Image, TiffImagePlugin
 
 from app import models  # noqa: F401
 from app.db.base import Base
@@ -13,6 +13,7 @@ from app.services.photo_metadata import (
     extract_formal_photo_metadata_from_bytes,
     extract_photo_metadata_from_bytes,
     facade_orientation_from_yaw,
+    infer_drone_type,
 )
 
 
@@ -21,12 +22,24 @@ def _dji_xmp(
     relative_altitude: str,
     gimbal_yaw_degree: str,
     camera_model: str | None = None,
+    projection_pose: bool = False,
 ) -> bytes:
     model_attribute = f'tiff:Model="{camera_model}" '.encode() if camera_model else b""
+    projection_attributes = (
+        b'drone-dji:GpsLongitude="114.106574821" '
+        b'drone-dji:GpsLatitude="22.578338627" '
+        b'drone-dji:AbsoluteAltitude="36.533" '
+        b'drone-dji:GimbalPitchDegree="-8.20" '
+        b'drone-dji:GimbalRollDegree="0.00" '
+        b'drone-dji:CalibratedFocalLength="3725.151611" '
+        if projection_pose
+        else b""
+    )
     return (
         b"\xff\xd8"
         b'<rdf:Description drone-dji:ImageSource="Visible" '
         + model_attribute
+        + projection_attributes
         + f'drone-dji:RelativeAltitude="{relative_altitude}" '.encode()
         + f'drone-dji:GimbalYawDegree="{gimbal_yaw_degree}" />'.encode()
         + b"\xff\xd9"
@@ -38,12 +51,19 @@ def test_formal_photo_metadata_extracts_altitude_and_facade_orientation() -> Non
         relative_altitude="+42.500",
         gimbal_yaw_degree="90.0",
         camera_model="M3T",
+        projection_pose=True,
     )
 
     metadata = extract_formal_photo_metadata_from_bytes(data)
 
     assert metadata["relative_altitude"] == 42.5
     assert metadata["gimbal_yaw_degree"] == 90.0
+    assert metadata["longitude"] == pytest.approx(114.106574821)
+    assert metadata["latitude"] == pytest.approx(22.578338627)
+    assert metadata["absolute_altitude"] == 36.533
+    assert metadata["gimbal_pitch_degree"] == -8.2
+    assert metadata["gimbal_roll_degree"] == 0.0
+    assert metadata["calibrated_focal_length"] == pytest.approx(3725.151611)
     assert metadata["facade_orientation"] == "西立面"
     assert metadata["camera_model"] == "M3T"
     assert metadata["drone_metadata_available"] is True
@@ -82,6 +102,32 @@ def test_formal_photo_reads_camera_model_from_exif() -> None:
     assert metadata["camera_make"] == "DJI"
     assert metadata["camera_model"] == "FC3582"
     assert metadata["professional_drone_photo"] is True
+
+
+def test_formal_photo_extracts_measurement_and_product_metadata() -> None:
+    output = BytesIO()
+    exif = Image.Exif()
+    exif[0x010F] = "DJI"
+    exif[0x0110] = "M4T"
+    exif[0x920A] = TiffImagePlugin.IFDRational(6.72)
+    exif[0xA405] = 24
+    Image.new("RGB", (8, 8), "white").save(output, format="JPEG", exif=exif)
+    data = output.getvalue() + (
+        b'<rdf:Description drone-dji:RelativeAltitude="7.4" '
+        b'drone-dji:ImageSource="WideCamera" '
+        b'drone-dji:ProductName="DJI Matrice 4T" '
+        b'drone-dji:DroneModel="M4T" '
+        b'drone-dji:LRFTargetDistance="6.182" />'
+    )
+
+    metadata = extract_formal_photo_metadata_from_bytes(data)
+
+    assert metadata["camera_product_name"] == "DJI Matrice 4T"
+    assert metadata["drone_model"] == "M4T"
+    assert metadata["focal_length_mm"] == pytest.approx(6.72)
+    assert metadata["focal_length_35mm"] == 24
+    assert metadata["lrf_target_distance"] == pytest.approx(6.182)
+    assert infer_drone_type(metadata) == "dji_matrice_4t"
 
 
 def test_formal_photo_accepts_non_dji_drone_metadata_namespace() -> None:
@@ -137,6 +183,13 @@ def test_formal_photo_table_persists_pose_metadata() -> None:
 
     assert "relative_altitude" in photo.c
     assert "gimbal_yaw_degree" in photo.c
+    assert "absolute_altitude" in photo.c
+    assert "gimbal_pitch_degree" in photo.c
+    assert "gimbal_roll_degree" in photo.c
+    assert "calibrated_focal_length" in photo.c
+    assert "focal_length_mm" in photo.c
+    assert "focal_length_35mm" in photo.c
+    assert "lrf_target_distance" in photo.c
     assert photo.c.relative_altitude.nullable
     assert photo.c.gimbal_yaw_degree.nullable
 
@@ -250,7 +303,7 @@ def test_formal_docx_uses_reference_layout_and_pairs_four_by_three_photos() -> N
     )
     assert table.rows[1].cells[1].text.endswith("DJI_0165_V.JPG")
     assert table.rows[1].cells[2].text.endswith("DJI_0165_T.JPG")
-    assert table.rows[1].cells[3].text == "疑似裂缝: 1处\n疑似空鼓: 1处"
+    assert table.rows[1].cells[3].text == "裂缝-001\n空鼓-001"
     assert table.rows[1].cells[4].text == "西立面\n38.6 m"
     assert reads == [
         ("inspection", "photos/0165-v.jpg"),

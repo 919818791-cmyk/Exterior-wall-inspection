@@ -1,26 +1,37 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
 interface ListPaginationProps {
+  ariaLabel?: string;
+  className?: string;
   currentPage: number;
+  itemUnit?: string;
   onPageChange: (page: number) => void;
   pageSize: number;
+  showWhenEmpty?: boolean;
   totalItems: number;
 }
 
 export function ListPagination({
+  ariaLabel = "列表分页",
+  className = "",
   currentPage,
+  itemUnit = "条",
   onPageChange,
   pageSize,
+  showWhenEmpty = false,
   totalItems
 }: ListPaginationProps) {
-  if (totalItems <= pageSize) return null;
+  if (totalItems === 0 && !showWhenEmpty) return null;
 
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
   const pages = visiblePages(currentPage, totalPages);
 
   return (
-    <nav className="project-pagination workbench-list-pagination" aria-label="列表分页">
-      <span>共 {totalItems} 条</span>
+    <nav
+      className={`project-pagination workbench-list-pagination ${className}`.trim()}
+      aria-label={ariaLabel}
+    >
+      {totalItems > 0 ? <span>共 {totalItems} {itemUnit}</span> : null}
       <div>
         <button
           aria-label="上一页"

@@ -147,6 +147,8 @@ def test_project_supports_idempotent_draft_creation() -> None:
     project = Base.metadata.tables["project"]
 
     assert "client_draft_key" in project.c
+    assert "setup_step" in project.c
+    assert not project.c.setup_step.nullable
     assert project.c.client_draft_key.nullable
     assert any(
         index.name == "uq_project_created_by_client_draft_key" and index.unique

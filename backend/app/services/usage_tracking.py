@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.models.tables import UsageEvent
 
-UsageSourceType = Literal["formal", "trial"]
+UsageSourceType = Literal["formal", "trial", "building_model"]
 
 
 def api_request_count(
@@ -79,6 +79,26 @@ def add_photo_upload_event(
         photo_count=1,
         storage_bytes=max(0, int(storage_bytes or 0)),
         occurred_at=occurred_at or datetime.now(UTC),
+    )
+    db.add(event)
+    return event
+
+
+def add_building_model_upload_event(
+    db: Session,
+    *,
+    upload_id: UUID,
+    actor_id: UUID,
+    storage_bytes: int,
+    occurred_at: datetime,
+) -> UsageEvent:
+    event = UsageEvent(
+        event_key=f"building-model:{upload_id}",
+        event_type="model_upload",
+        source_type="building_model",
+        actor_id=actor_id,
+        storage_bytes=max(0, storage_bytes),
+        occurred_at=occurred_at,
     )
     db.add(event)
     return event

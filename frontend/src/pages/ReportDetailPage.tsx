@@ -1,32 +1,31 @@
 import { Button, Card, CardBody, Skeleton } from "@heroui/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  ArrowLeft,
   CheckCircle2,
   Download,
-  FileCheck2,
   FileImage,
   Minus,
   Plus,
   RotateCcw,
   ZoomIn
 } from "lucide-react";
-import type { CSSProperties, MouseEvent as ReactMouseEvent } from "react";
+import type { MouseEvent as ReactMouseEvent } from "react";
 import { useMemo, useRef, useState } from "react";
 import { Link as RouterLink, Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
 
 import { downloadReportDocx, downloadTrialReportPdf, reportQueryOptions } from "@/api/reports";
 import { completeDetectionReview, reviewDetectionPreviewQueryOptions } from "@/api/review";
-import { TilePreviewDialog, type TilePreviewSource } from "@/components/TilePreviewDialog";
+import { ReportDefectBox } from "@/components/ReportDefectBox";
+import { WorkspaceTitleBar } from "@/components/WorkspaceTitleBar";
 import type {
-  ModelOutputPhoto,
   ReportDefectSnapshot,
   ReportDetail
 } from "@/types/reports";
 import { useAuthStore } from "@/stores/useAuthStore";
 import { formatDateTime } from "@/utils/projectDisplay";
 import { saveBlobAsFile } from "@/utils/download";
-import { trialDefectBoxLabel, trialDefectDescriptionFromType, trialDefectDisplayFromType } from "@/utils/trialDefectDisplay";
+import { pairVisibleThermalPhotos, photoVariantFromFilename } from "@/utils/photoPairing";
+import { formatDefectNumber, trialDefectDescriptionFromType } from "@/utils/trialDefectDisplay";
 
 function confirmReportExport() {
   return window.confirm("请妥善保管导出文件。确认继续导出？");
@@ -40,7 +39,6 @@ export function ReportDetailPage() {
   const { id = "" } = useParams();
   const location = useLocation();
   const user = useAuthStore((state) => state.user);
-  const canShowTile = user?.role === "admin";
   const requestedReviewTaskId = new URLSearchParams(location.search).get("reviewTaskId") ?? "";
   const reviewTaskId = user?.role === "reviewer" || user?.role === "admin"
     ? requestedReviewTaskId
@@ -48,7 +46,7 @@ export function ReportDetailPage() {
   const isReviewPreview = Boolean(reviewTaskId);
   const reportQuery = useQuery({
     ...reportQueryOptions(id, false, user),
-    enabled: Boolean(id && user?.id && !isReviewPreview)
+    enabled: Boolean(id && !isReviewPreview)
   });
   const reviewPreviewQuery = useQuery({
     ...reviewDetectionPreviewQueryOptions(reviewTaskId),
@@ -109,7 +107,7 @@ export function ReportDetailPage() {
   return (
     <TrialResultDetail
       report={report}
-      canShowTile={canShowTile}
+      canExport={Boolean(user)}
       reviewTaskId={reviewTaskId || undefined}
     />
   );
@@ -117,11 +115,11 @@ export function ReportDetailPage() {
 
 function TrialResultDetail({
   report,
-  canShowTile,
+  canExport,
   reviewTaskId
 }: {
   report: ReportDetail;
-  canShowTile: boolean;
+  canExport: boolean;
   reviewTaskId?: string;
 }) {
   const navigate = useNavigate();
@@ -130,9 +128,9 @@ function TrialResultDetail({
   const [previewScale, setPreviewScale] = useState(1);
   const [previewOffset, setPreviewOffset] = useState({ x: 0, y: 0 });
   const previewViewportRef = useRef<HTMLDivElement | null>(null);
+  const formalTableHeaderRef = useRef<HTMLDivElement | null>(null);
   const previewDrag = useRef<{ pointerId: number; x: number; y: number; originX: number; originY: number } | null>(null);
   const previewDragMoved = useRef(false);
-  const [tilePreview, setTilePreview] = useState<TilePreviewSource | null>(null);
   const isTrialResult = report.source_type === "trial";
   const exportFormat = isTrialResult ? "PDF" : "DOCX";
   const exportMutation = useMutation({
@@ -198,42 +196,31 @@ function TrialResultDetail({
   }
 
   return (
-    <div className={`trial-result-detail-page ${isTrialResult ? "" : "formal-result-detail-page"}`}>
-      <div className="trial-result-toolbar">
-        <div className="trial-result-title-block">
-          <div className="trial-result-name-row management-page-title">
-            <FileCheck2 aria-hidden="true" className="management-page-title-icon" />
-            <h1>{report.title || report.project.project_no || report.report_no}</h1>
-            <time className="trial-result-generated-time" dateTime={report.generated_at}>
-              生成时间：{formatDateTime(report.generated_at)}
-            </time>
-          </div>
-        </div>
-        <div className="flex flex-wrap gap-3">
-          {reviewTaskId ? (
-            <>
-              <button
-                aria-busy={completeReviewMutation.isPending}
-                className="button primary review-preview-complete-button"
-                disabled={completeReviewMutation.isPending}
-                type="button"
-                onClick={() => {
-                  if (window.confirm("确认当前预览结果无误并完成审核？完成后将推送正式结果并返回审核工作台。")) {
-                    completeReviewMutation.mutate();
-                  }
-                }}
-              >
-                <CheckCircle2 aria-hidden="true" />
+    <div className={`trial-result-detail-page formal-result-detail-page${isTrialResult ? " quick-result-detail-page" : ""}`}>
+      <WorkspaceTitleBar
+        backLabel={reviewTaskId ? "返回修改" : isTrialResult ? "返回快速体验" : "返回专业检测"}
+        backTo={reviewTaskId ? `/review/detections/${reviewTaskId}` : isTrialResult ? "/trials" : "/detections"}
+        className="trial-result-toolbar result-title-bar"
+        meta={<time dateTime={report.generated_at}>{formatDateTime(report.generated_at)}</time>}
+        title={report.project.name || report.title || report.project.project_no || report.report_no}
+        actions={reviewTaskId ? (
+            <button
+              aria-busy={completeReviewMutation.isPending}
+              className="button primary review-preview-complete-button"
+              disabled={completeReviewMutation.isPending}
+              type="button"
+              onClick={() => {
+                if (window.confirm("确认当前预览结果无误并完成审核？完成后将推送正式结果并返回审核工作台。")) {
+                  completeReviewMutation.mutate();
+                }
+              }}
+            >
+              <CheckCircle2 aria-hidden="true" />
+              <span className="workspace-title-bar-action-label">
                 {completeReviewMutation.isPending ? "正在完成审核…" : "完成审核"}
-              </button>
-              <RouterLink
-                className="button secondary report-back-button"
-                to={`/review/detections/${reviewTaskId}`}
-              >
-                <ArrowLeft aria-hidden="true" />返回修改
-              </RouterLink>
-            </>
-          ) : (
+              </span>
+            </button>
+          ) : canExport ? (
             <button
               aria-busy={exportMutation.isPending}
               className="button secondary report-back-button report-export-button"
@@ -244,11 +231,12 @@ function TrialResultDetail({
               }}
             >
               <Download aria-hidden="true" />
-              {exportMutation.isPending ? "正在导出" : `导出 ${exportFormat}`}
+              <span className="workspace-title-bar-action-label">
+                {exportMutation.isPending ? "正在导出" : `导出 ${exportFormat}`}
+              </span>
             </button>
-          )}
-        </div>
-      </div>
+          ) : undefined}
+      />
       {exportMutation.isError ? (
         <p className="project-list-error">{exportFormat} 导出失败：{getErrorMessage(exportMutation.error)}<button className="inline-retry-button" type="button" onClick={() => exportMutation.mutate()}>重试</button></p>
       ) : null}
@@ -260,73 +248,85 @@ function TrialResultDetail({
           <aside className="trial-report-panel">
             <div className="trial-report-result is-headless">
               {resultRows.length ? (
-                <div className="trial-report-table-wrap">
-                  <table
-                    className={`trial-report-table ${canShowTile ? "trial-report-table--with-tile" : "trial-report-table--without-tile"}${isTrialResult ? "" : " formal-report-table--with-metadata formal-report-table--paired-photos"}`}
-                  >
-                    {isTrialResult ? (
+                <div className={`trial-report-table-wrap${isTrialResult ? " formal-report-table-body-wrap" : " formal-report-table-layout"}`}>
+                  {isTrialResult ? (
+                    <table className="trial-report-table trial-report-table--without-tile">
                       <colgroup>
                         <col className="trial-sequence-col" />
                         <col className="trial-photo-col" />
                         <col className="trial-description-col" />
-                        {canShowTile ? <col className="trial-tile-col" /> : null}
                       </colgroup>
-                    ) : (
-                      <colgroup>
-                        <col className="trial-sequence-col" />
-                        <col className="formal-visible-photo-col" />
-                        <col className="formal-thermal-photo-col" />
-                        <col className="trial-description-col" />
-                        <col className="formal-report-metadata-col" />
-                        {canShowTile ? <col className="trial-tile-col" /> : null}
-                      </colgroup>
-                    )}
-                    <thead>
-                      <tr>
-                        <th className="trial-sequence-column">序号</th>
-                        {isTrialResult ? (
+                      <thead>
+                        <tr>
+                          <th className="trial-sequence-column">序号</th>
                           <th className="trial-photo-column">含标注的照片</th>
-                        ) : (
-                          <>
-                            <th className="trial-photo-column formal-visible-photo-column">可见光图像</th>
-                            <th className="trial-photo-column formal-thermal-photo-column">热红外图像</th>
-                          </>
-                        )}
-                        <th className="trial-report-description">检测说明</th>
-                        {!isTrialResult ? <th className="formal-report-metadata-column">立面朝向<br />拍摄高度</th> : null}
-                        {canShowTile ? <th className="trial-tile-column">tile</th> : null}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {isTrialResult
-                        ? resultRows.map((row, index) => (
-                            <TrialResultRow
-                              key={row.key}
-                              row={row}
-                              index={index}
-                              canShowTile={canShowTile}
-                              onPreview={(preview) => {
-                                resetPreviewView();
-                                setAnnotatedPreview(preview);
-                              }}
-                              onTilePreview={setTilePreview}
-                            />
-                          ))
-                        : formalResultRows.map((row, index) => (
-                            <FormalResultRow
-                              key={row.key}
-                              row={row}
-                              index={index}
-                              canShowTile={canShowTile}
-                              onPreview={(preview) => {
-                                resetPreviewView();
-                                setAnnotatedPreview(preview);
-                              }}
-                              onTilePreview={setTilePreview}
-                            />
-                          ))}
-                    </tbody>
-                  </table>
+                          <th className="trial-report-description">检测说明</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {resultRows.map((row, index) => (
+                          <TrialResultRow
+                            key={row.key}
+                            row={row}
+                            index={index}
+                            onPreview={(preview) => {
+                              resetPreviewView();
+                              setAnnotatedPreview(preview);
+                            }}
+                          />
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <>
+                      <div ref={formalTableHeaderRef} className="formal-report-table-header-wrap">
+                        <table
+                          aria-label="检测结果表头"
+                          className="trial-report-table trial-report-table--without-tile formal-report-table--with-metadata formal-report-table--paired-photos"
+                        >
+                          <FormalResultColumns />
+                          <thead>
+                            <tr>
+                              <th className="trial-sequence-column">序号</th>
+                              <th className="trial-photo-column formal-visible-photo-column">可见光图像</th>
+                              <th className="trial-photo-column formal-thermal-photo-column">热红外图像</th>
+                              <th className="trial-report-description">检测说明</th>
+                              <th className="formal-report-area-column">缺陷面积（m²）</th>
+                              <th className="formal-report-metadata-column">立面朝向<br />拍摄高度（m）</th>
+                            </tr>
+                          </thead>
+                        </table>
+                      </div>
+                      <div
+                        className="formal-report-table-body-wrap"
+                        onScroll={(event) => {
+                          if (formalTableHeaderRef.current) {
+                            formalTableHeaderRef.current.scrollLeft = event.currentTarget.scrollLeft;
+                          }
+                        }}
+                      >
+                        <table
+                          aria-label="检测结果列表"
+                          className="trial-report-table trial-report-table--without-tile formal-report-table--with-metadata formal-report-table--paired-photos"
+                        >
+                          <FormalResultColumns />
+                          <tbody>
+                            {formalResultRows.map((row, index) => (
+                              <FormalResultRow
+                                key={row.key}
+                                row={row}
+                                index={index}
+                                onPreview={(preview) => {
+                                  resetPreviewView();
+                                  setAnnotatedPreview(preview);
+                                }}
+                              />
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </>
+                  )}
                 </div>
               ) : (
                 <div className="trial-report-empty">
@@ -411,11 +411,12 @@ function TrialResultDetail({
               >
                 <img draggable={false} alt={`${annotatedPreview.filename} 检测标注预览`} src={annotatedPreview.imageUrl} />
                 {annotatedPreview.defects.map((defect, defectIndex) => (
-                  <TrialReportDefectBox
+                  <ReportDefectBox
                     key={defect.id || `${defect.defect_type}-${defectIndex}`}
                     defect={defect}
                     imageHeight={annotatedPreview.imageHeight}
                     imageWidth={annotatedPreview.imageWidth}
+                    fallbackIndex={defectIndex}
                   />
                 ))}
               </div>
@@ -423,9 +424,6 @@ function TrialResultDetail({
             <figcaption>{annotatedPreview.filename}</figcaption>
           </figure>
         </div>
-      ) : null}
-      {canShowTile && tilePreview ? (
-        <TilePreviewDialog source={tilePreview} onClose={() => setTilePreview(null)} />
       ) : null}
     </div>
   );
@@ -445,13 +443,9 @@ interface TrialResultPhotoRow {
   imageUrl: string;
   imageWidth?: number | string | null;
   imageHeight?: number | string | null;
-  tileWidth?: number | string | null;
-  tileHeight?: number | string | null;
-  tileOverlapRatio?: number | string | null;
   relativeAltitude?: number | string | null;
   facadeOrientation?: string | null;
   isThermal: boolean;
-  detections?: ModelOutputPhoto["detections"];
   defects: ReportDefectSnapshot[];
 }
 
@@ -461,18 +455,27 @@ interface FormalResultPhotoPair {
   thermalPhoto: TrialResultPhotoRow | null;
 }
 
+function FormalResultColumns() {
+  return (
+    <colgroup>
+      <col className="trial-sequence-col" />
+      <col className="formal-visible-photo-col" />
+      <col className="formal-thermal-photo-col" />
+      <col className="trial-description-col" />
+      <col className="formal-report-area-col" />
+      <col className="formal-report-metadata-col" />
+    </colgroup>
+  );
+}
+
 function TrialResultRow({
   row,
   index,
-  canShowTile,
-  onPreview,
-  onTilePreview
+  onPreview
 }: {
   row: TrialResultPhotoRow;
   index: number;
-  canShowTile: boolean;
   onPreview: (preview: TrialReportAnnotatedPreview) => void;
-  onTilePreview: (source: TilePreviewSource) => void;
 }) {
   const summary = trialResultDefectSummary(row.defects);
 
@@ -485,11 +488,6 @@ function TrialResultRow({
       </td>
       <ResultPhotoCell row={row} onPreview={onPreview} />
       <ResultDescriptionCell summary={summary} />
-      {canShowTile ? (
-        <td className="trial-tile-column">
-          <ResultTileButton row={row} onTilePreview={onTilePreview} />
-        </td>
-      ) : null}
     </tr>
   );
 }
@@ -497,21 +495,18 @@ function TrialResultRow({
 function FormalResultRow({
   row,
   index,
-  canShowTile,
-  onPreview,
-  onTilePreview
+  onPreview
 }: {
   row: FormalResultPhotoPair;
   index: number;
-  canShowTile: boolean;
   onPreview: (preview: TrialReportAnnotatedPreview) => void;
-  onTilePreview: (source: TilePreviewSource) => void;
 }) {
   const primaryPhoto = row.visiblePhoto ?? row.thermalPhoto;
-  const summary = trialResultDefectSummary([
+  const defects = [
     ...(row.visiblePhoto?.defects ?? []),
     ...(row.thermalPhoto?.defects ?? [])
-  ]);
+  ];
+  const summary = trialResultDefectSummary(defects);
 
   return (
     <tr>
@@ -523,22 +518,11 @@ function FormalResultRow({
       <ResultPhotoCell row={row.visiblePhoto} onPreview={onPreview} />
       <ResultPhotoCell row={row.thermalPhoto} onPreview={onPreview} />
       <ResultDescriptionCell summary={summary} />
+      <ResultAreaCell defects={defects} />
       <td className="formal-report-metadata-column">
         <strong>{primaryPhoto?.facadeOrientation || "未知立面"}</strong>
         <span>{formatRelativeAltitude(primaryPhoto?.relativeAltitude)}</span>
       </td>
-      {canShowTile ? (
-        <td className="trial-tile-column formal-paired-tile-column">
-          <div className="formal-paired-tile-actions">
-            {row.visiblePhoto ? (
-              <ResultTileButton label="可见光" row={row.visiblePhoto} onTilePreview={onTilePreview} />
-            ) : null}
-            {row.thermalPhoto ? (
-              <ResultTileButton label="热红外" row={row.thermalPhoto} onTilePreview={onTilePreview} />
-            ) : null}
-          </div>
-        </td>
-      ) : null}
     </tr>
   );
 }
@@ -584,11 +568,12 @@ function ResultPhotoCell({
         >
           {photo.imageUrl ? <img alt={`${photo.filename} 检测标注`} src={photo.imageUrl} /> : <FileImage aria-hidden="true" />}
           {photo.defects.map((defect, defectIndex) => (
-            <TrialReportDefectBox
+            <ReportDefectBox
               key={defect.id || `${defect.defect_type}-${defectIndex}`}
               defect={defect}
               imageHeight={photo.imageHeight}
               imageWidth={photo.imageWidth}
+              fallbackIndex={defectIndex}
             />
           ))}
           {canPreview ? (
@@ -638,108 +623,67 @@ function ResultDescriptionCell({
   );
 }
 
-function ResultTileButton({
-  row,
-  label,
-  onTilePreview
-}: {
-  row: TrialResultPhotoRow;
-  label?: string;
-  onTilePreview: (source: TilePreviewSource) => void;
-}) {
-  return (
-    <button
-      className="trial-tile-view-button"
-      disabled={!row.imageUrl}
-      type="button"
-      onClick={() => onTilePreview({
-        filename: row.filename,
-        imageUrl: row.imageUrl,
-        imageWidth: row.imageWidth,
-        imageHeight: row.imageHeight,
-        tileWidth: row.tileWidth,
-        tileHeight: row.tileHeight,
-        tileOverlapRatio: row.tileOverlapRatio,
-        detections: row.detections
-      })}
-    >
-      {label ? `${label} tile` : "查看tile"}
-    </button>
-  );
+function formatDefectAreaParts(defect: ReportDefectSnapshot) {
+  if (defect.area === null || defect.area === undefined || defect.area === "") {
+    return { available: false, value: "", estimated: false };
+  }
+  const area = Number(defect.area);
+  if (!Number.isFinite(area) || area < 0) return { available: false, value: "", estimated: false };
+  const digits = area >= 1 ? 2 : area >= 0.1 ? 3 : 4;
+  return {
+    available: true,
+    value: area.toFixed(digits),
+    estimated: Boolean(defect.area_estimated)
+  };
 }
 
-function TrialReportDefectBox({
-  defect,
-  imageWidth,
-  imageHeight
-}: {
-  defect: ReportDefectSnapshot;
-  imageWidth?: number | string | null;
-  imageHeight?: number | string | null;
-}) {
-  const defectDisplay = trialDefectDisplayFromType(defect.defect_type);
-  const boxStyle = trialReportDefectBoxStyle(defect, imageWidth, imageHeight);
-  if (!boxStyle) return null;
+const MAX_VISIBLE_AREA_ITEMS = 10;
+
+function ResultAreaCell({ defects }: { defects: ReportDefectSnapshot[] }) {
+  const formattedAreaItems = defects.map((defect, index) => {
+    const defectNumber = defect.defect_no || formatDefectNumber(defect.defect_type, index + 1);
+    const area = formatDefectAreaParts(defect);
+    return {
+      key: `${defect.id || defectNumber}-${index}`,
+      defectNumber,
+      available: area.available,
+      areaValue: area.value,
+      estimated: area.estimated,
+      text: area.available
+        ? `${defectNumber}${area.estimated ? " ≈" : ""} ${area.value}`
+        : "参数不足"
+    };
+  });
+  const missingAreaItem = formattedAreaItems.find((item) => !item.available);
+  const areaItems = [
+    ...formattedAreaItems.filter((item) => item.available),
+    ...(missingAreaItem ? [missingAreaItem] : [])
+  ];
+  const areaSummary = areaItems.map((item) => item.text).join("、");
+  const hasOverflow = areaItems.length > MAX_VISIBLE_AREA_ITEMS;
+  const visibleAreaItems = areaItems.slice(0, MAX_VISIBLE_AREA_ITEMS);
 
   return (
-    <span
-      className={`trial-defect-box ${defectDisplay.boxClassName}`}
-      style={boxStyle}
-    >
-      <span className="trial-defect-label">
-        {trialDefectBoxLabel(defectDisplay)}
-      </span>
-    </span>
+    <td className="formal-report-area-column">
+      {areaItems.length ? (
+        <div className="formal-report-area-list" title={areaSummary} aria-label={areaSummary}>
+          {visibleAreaItems.map((item) => (
+            <div key={item.key} className="formal-report-area-item">
+              {item.available ? (
+                <>
+                  <span className="formal-report-area-muted">
+                    {item.defectNumber}{item.estimated ? " ≈" : ""}
+                  </span>
+                  <span className="formal-report-area-value"> {item.areaValue}</span>
+                </>
+              ) : "参数不足"}
+            </div>
+          ))}
+          {hasOverflow ? <div className="formal-report-area-ellipsis" aria-hidden="true">......</div> : null}
+        </div>
+      ) : "—"}
+    </td>
   );
-}
-
-function trialReportDefectBoxStyle(
-  defect: ReportDefectSnapshot,
-  fallbackImageWidth?: number | string | null,
-  fallbackImageHeight?: number | string | null
-): CSSProperties | undefined {
-  const bbox = defect.bbox_json;
-  const x = finiteNumber(bbox?.x);
-  const y = finiteNumber(bbox?.y);
-  const width = finiteNumber(bbox?.width);
-  const height = finiteNumber(bbox?.height);
-  const imageWidth = finiteNumber(defect.raw_result_json?.finding?.image_width)
-    ?? finiteNumber(fallbackImageWidth);
-  const imageHeight = finiteNumber(defect.raw_result_json?.finding?.image_height)
-    ?? finiteNumber(fallbackImageHeight);
-
-  if (x === null || y === null || width === null || height === null || width <= 0 || height <= 0) {
-    return undefined;
-  }
-
-  if (imageWidth && imageHeight) {
-    return {
-      left: `${(x / imageWidth) * 100}%`,
-      top: `${(y / imageHeight) * 100}%`,
-      width: `${(width / imageWidth) * 100}%`,
-      height: `${(height / imageHeight) * 100}%`,
-      right: "auto",
-      bottom: "auto"
-    };
-  }
-
-  if (x <= 1 && y <= 1 && width <= 1 && height <= 1) {
-    return {
-      left: `${x * 100}%`,
-      top: `${y * 100}%`,
-      width: `${width * 100}%`,
-      height: `${height * 100}%`,
-      right: "auto",
-      bottom: "auto"
-    };
-  }
-
-  return undefined;
-}
-
-function finiteNumber(value: number | string | null | undefined) {
-  const numeric = Number(value);
-  return Number.isFinite(numeric) ? numeric : null;
 }
 
 function buildTrialResultRows(report: ReportDetail): TrialResultPhotoRow[] {
@@ -766,13 +710,9 @@ function buildTrialResultRows(report: ReportDetail): TrialResultPhotoRow[] {
         imageUrl: trialResultRowImageUrl(rowDefects, photo),
         imageWidth: modelOutput?.image_width ?? photo.image_width,
         imageHeight: modelOutput?.image_height ?? photo.image_height,
-        tileWidth: modelOutput?.tile_width,
-        tileHeight: modelOutput?.tile_height,
-        tileOverlapRatio: modelOutput?.tile_overlap_ratio,
         relativeAltitude: photo.relative_altitude,
         facadeOrientation: photo.facade_orientation,
         isThermal: isThermalReportPhoto(photo),
-        detections: modelOutput?.detections,
         defects: rowDefects
       };
     });
@@ -785,13 +725,9 @@ function buildTrialResultRows(report: ReportDetail): TrialResultPhotoRow[] {
       imageUrl: trialResultRowImageUrl(rowDefects),
       imageWidth: rowDefects[0]?.raw_result_json?.finding?.image_width,
       imageHeight: rowDefects[0]?.raw_result_json?.finding?.image_height,
-      tileWidth: undefined,
-      tileHeight: undefined,
-      tileOverlapRatio: undefined,
       relativeAltitude: undefined,
       facadeOrientation: undefined,
       isThermal: photoVariantFromFilename(rowDefects[0]?.photo_filename) === "thermal",
-      detections: undefined,
       defects: rowDefects
     });
   }
@@ -800,48 +736,15 @@ function buildTrialResultRows(report: ReportDetail): TrialResultPhotoRow[] {
 }
 
 function buildFormalResultRows(rows: TrialResultPhotoRow[]): FormalResultPhotoPair[] {
-  const consumedIndexes = new Set<number>();
-  const pairs: FormalResultPhotoPair[] = [];
-
-  rows.forEach((row, index) => {
-    if (consumedIndexes.has(index)) return;
-    consumedIndexes.add(index);
-
-    const namedVariant = photoVariantFromFilename(row.filename);
-    const pairKey = formalPhotoPairKey(row.filename);
-    let matchedIndex = -1;
-    if (namedVariant && pairKey) {
-      matchedIndex = rows.findIndex((candidate, candidateIndex) => (
-        candidateIndex !== index
-        && !consumedIndexes.has(candidateIndex)
-        && formalPhotoPairKey(candidate.filename) === pairKey
-        && photoVariantFromFilename(candidate.filename) !== namedVariant
-      ));
-    }
-
-    const matchedRow = matchedIndex >= 0 ? rows[matchedIndex] : null;
-    if (matchedIndex >= 0) consumedIndexes.add(matchedIndex);
-    const rowVariant = namedVariant ?? (row.isThermal ? "thermal" : "visible");
-
-    pairs.push({
-      key: matchedRow ? `pair:${pairKey}:${row.key}` : `unmatched:${row.key}`,
-      visiblePhoto: rowVariant === "visible" ? row : matchedRow,
-      thermalPhoto: rowVariant === "thermal" ? row : matchedRow
-    });
-  });
-
-  return pairs;
-}
-
-function formalPhotoPairKey(filename: string | null | undefined) {
-  const match = filename?.trim().match(/^(.*)_([vt])(?:\.[^.]+)$/i);
-  return match ? match[1].toLocaleLowerCase() : null;
-}
-
-function photoVariantFromFilename(filename: string | null | undefined): "visible" | "thermal" | null {
-  const match = filename?.trim().match(/_([vt])(?:\.[^.]+)$/i);
-  if (!match) return null;
-  return match[1].toLocaleLowerCase() === "t" ? "thermal" : "visible";
+  return pairVisibleThermalPhotos(rows, {
+    filename: (row) => row.filename,
+    isThermal: (row) => row.isThermal,
+    itemKey: (row) => row.key
+  }).map((pair) => ({
+    key: pair.key,
+    visiblePhoto: pair.visible,
+    thermalPhoto: pair.thermal
+  }));
 }
 
 function isThermalReportPhoto(photo: ReportDetail["photos"][number]) {
@@ -855,7 +758,7 @@ function isThermalReportPhoto(photo: ReportDetail["photos"][number]) {
 function formatRelativeAltitude(value: number | string | null | undefined) {
   if (value === null || value === undefined || value === "") return "--";
   const altitude = Number(value);
-  return Number.isFinite(altitude) ? `${altitude.toFixed(1)} m` : "--";
+  return Number.isFinite(altitude) ? altitude.toFixed(1) : "--";
 }
 
 function findTrialModelOutput(report: ReportDetail, photoId?: string, filename?: string | null) {

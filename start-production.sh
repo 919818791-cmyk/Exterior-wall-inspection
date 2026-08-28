@@ -311,7 +311,7 @@ server {
 
     root $FRONTEND_DIR/dist;
     index index.html;
-    client_max_body_size 105M;
+    client_max_body_size 1G;
     resolver $NGINX_DNS_RESOLVER valid=300s ipv6=off;
     resolver_timeout 5s;
 

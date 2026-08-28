@@ -10,6 +10,7 @@ import {
   Download,
   FileImage,
   FileUp,
+  Grid2x2,
   Save,
   Trash2
 } from "lucide-react";
@@ -26,6 +27,7 @@ import {
   reviewDetectionAnnotationsQueryOptions,
   saveReviewDetectionAnnotations
 } from "@/api/review";
+import { TilePreviewDialog, type TilePreviewSource } from "@/components/TilePreviewDialog";
 import type {
   AnnotationBBox,
   AnnotationPhotoEdit,
@@ -39,6 +41,7 @@ import {
   parseReviewAnnotationJson,
   type AnnotationImportMatch
 } from "@/utils/reviewAnnotationImport";
+import { formatDefectNumber } from "@/utils/trialDefectDisplay";
 
 const DEFECT_OPTIONS = [
   { value: "crack", label: "裂缝", color: "#ef4444" },
@@ -48,7 +51,6 @@ const DEFECT_OPTIONS = [
   { value: "hollow", label: "空鼓", color: "#7c3aed" }
 ] as const;
 
-const DEFECT_LABELS = Object.fromEntries(DEFECT_OPTIONS.map((item) => [item.value, item.label]));
 const DEFECT_COLORS = Object.fromEntries(DEFECT_OPTIONS.map((item) => [item.value, item.color]));
 const MIN_CANVAS_ZOOM = 1;
 const MAX_CANVAS_ZOOM = 4;
@@ -61,6 +63,10 @@ interface AnnotationPhotoRowData {
   imageUrl: string;
   imageWidth: number | null;
   imageHeight: number | null;
+  tileWidth?: number | string | null;
+  tileHeight?: number | string | null;
+  tileOverlapRatio?: number | string | null;
+  detections?: TilePreviewSource["detections"];
   defects: ReportDefectSnapshot[];
 }
 
@@ -100,10 +106,6 @@ function cleanAnnotations(annotations: ManagedAnnotation[]) {
 
 function annotationColor(defectType: string) {
   return DEFECT_COLORS[defectType] ?? "#64748b";
-}
-
-function annotationLabel(defectType: string) {
-  return DEFECT_LABELS[defectType] ?? defectType;
 }
 
 function clampCanvasPosition(position: { x: number; y: number }, zoom: number, width: number, height: number) {
@@ -173,7 +175,32 @@ export function ReviewAnnotationWorkbench({
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const [importNotice, setImportNotice] = useState<AnnotationImportNotice | null>(null);
   const editorSaveHandlersRef = useRef(new Map<string, AnnotationEditorSaveHandler>());
+  const defectNumberRegistryRef = useRef(new Set<string>());
   const [editorSaveStatuses, setEditorSaveStatuses] = useState<Record<string, AnnotationEditorSaveStatus>>({});
+
+  useEffect(() => {
+    const used = new Set<string>();
+    detailQuery.data?.result.defects.forEach((defect) => {
+      if (defect.defect_no) used.add(defect.defect_no);
+    });
+    detailQuery.data?.edits.forEach((edit) => {
+      edit.annotations.forEach((annotation) => {
+        if (annotation.defect_no) used.add(annotation.defect_no);
+      });
+    });
+    defectNumberRegistryRef.current = used;
+  }, [detailQuery.data]);
+
+  const allocateDefectNumber = useCallback((defectType: string) => {
+    let sequence = 1;
+    let candidate = formatDefectNumber(defectType, sequence);
+    while (defectNumberRegistryRef.current.has(candidate)) {
+      sequence += 1;
+      candidate = formatDefectNumber(defectType, sequence);
+    }
+    defectNumberRegistryRef.current.add(candidate);
+    return candidate;
+  }, []);
 
   useEffect(() => {
     setSelectedPhotoKey((current) => {
@@ -403,6 +430,7 @@ export function ReviewAnnotationWorkbench({
         annotations: annotations.map((annotation) => ({
           id: annotation.id,
           source_annotation_id: annotation.source_annotation_id,
+          defect_no: annotation.defect_no,
           defect_type: annotation.defect_type,
           bbox: annotation.bbox,
           confidence: annotation.confidence
@@ -572,6 +600,7 @@ export function ReviewAnnotationWorkbench({
                     readOnly={readOnly}
                     reviewTaskId={reviewTaskId}
                     row={row}
+                    onAllocateDefectNumber={allocateDefectNumber}
                     onRegisterSaveHandler={registerEditorSaveHandler}
                     onSaveStatusChange={updateEditorSaveStatus}
                     onSelectPhoto={selectPhoto}
@@ -599,6 +628,7 @@ function AnnotationPhotoEditor({
   readOnly,
   reviewTaskId,
   row,
+  onAllocateDefectNumber,
   onRegisterSaveHandler,
   onSaveStatusChange,
   onSelectPhoto
@@ -609,6 +639,7 @@ function AnnotationPhotoEditor({
   readOnly: boolean;
   reviewTaskId: string;
   row: AnnotationPhotoRowData;
+  onAllocateDefectNumber: (defectType: string) => string;
   onRegisterSaveHandler: (photoKey: string, handler: AnnotationEditorSaveHandler | null) => void;
   onSaveStatusChange: (photoKey: string, status: AnnotationEditorSaveStatus) => void;
   onSelectPhoto: (index: number) => void;
@@ -621,10 +652,14 @@ function AnnotationPhotoEditor({
     () => annotationsFromDefects(row.defects, imageWidth, imageHeight),
     [imageHeight, imageWidth, row.defects]
   );
-  const savedAnnotations = edit?.annotations ?? originalAnnotations;
+  const savedAnnotations = useMemo(
+    () => mergeDefectNumbers(edit?.annotations ?? originalAnnotations, row.defects),
+    [edit?.annotations, originalAnnotations, row.defects]
+  );
   const [annotations, setAnnotations] = useState<ManagedAnnotation[]>(savedAnnotations);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
+  const [tilePreviewOpen, setTilePreviewOpen] = useState(false);
   const [touched, setTouched] = useState(false);
 
   useEffect(() => {
@@ -646,6 +681,16 @@ function AnnotationPhotoEditor({
   const selectedIndex = selected
     ? annotations.findIndex((annotation) => annotation.id === selected.id)
     : -1;
+  const tilePreviewSource = useMemo<TilePreviewSource>(() => ({
+    filename: row.filename,
+    imageUrl: row.imageUrl,
+    imageWidth,
+    imageHeight,
+    tileWidth: row.tileWidth,
+    tileHeight: row.tileHeight,
+    tileOverlapRatio: row.tileOverlapRatio,
+    detections: row.detections
+  }), [imageHeight, imageWidth, row.detections, row.filename, row.imageUrl, row.tileHeight, row.tileOverlapRatio, row.tileWidth]);
   const dirty = JSON.stringify(cleanAnnotations(annotations)) !== JSON.stringify(cleanAnnotations(savedAnnotations));
   const defectOptions = DEFECT_OPTIONS.filter((option) => ["crack", "spalling", "hollow"].includes(option.value));
 
@@ -683,7 +728,14 @@ function AnnotationPhotoEditor({
 
   function updateAnnotation(annotationId: string, patch: Partial<ManagedAnnotation>) {
     if (readOnly) return;
-    setAnnotations((current) => current.map((item) => item.id === annotationId ? { ...item, ...patch } : item));
+    setAnnotations((current) => current.map((item, index) => {
+      if (item.id !== annotationId) return item;
+      const next = { ...item, ...patch };
+      if (patch.defect_type && patch.defect_type !== item.defect_type) {
+        next.defect_no = onAllocateDefectNumber(patch.defect_type);
+      }
+      return next;
+    }));
     setSelectedId(annotationId);
     setTouched(true);
   }
@@ -693,6 +745,7 @@ function AnnotationPhotoEditor({
     const annotation: ManagedAnnotation = {
       id: createClientId("annotation"),
       source_annotation_id: null,
+      defect_no: onAllocateDefectNumber("crack"),
       defect_type: "crack",
       confidence: null,
       bbox: roundedBBox(bbox)
@@ -736,6 +789,14 @@ function AnnotationPhotoEditor({
             <CopyPlus aria-hidden="true" />
           </AnnotationIconButton>
           <AnnotationIconButton
+            disabled={!row.imageUrl}
+            label="查看TILE"
+            tone="tile"
+            onPress={() => setTilePreviewOpen(true)}
+          >
+            <Grid2x2 aria-hidden="true" />
+          </AnnotationIconButton>
+          <AnnotationIconButton
             disabled={!selected || readOnly}
             label="删除标注"
             tone="delete"
@@ -751,7 +812,7 @@ function AnnotationPhotoEditor({
                 当前选中的标注框：
                 <strong className="text-slate-800">
                   {selected && selectedIndex >= 0
-                    ? `#${selectedIndex + 1} ${annotationLabel(selected.defect_type)}`
+                    ? selected.defect_no || formatDefectNumber(selected.defect_type, selectedIndex + 1)
                     : "未选择"}
                 </strong>
               </>
@@ -808,9 +869,12 @@ function AnnotationPhotoEditor({
               <ChevronRight aria-hidden="true" />
             </button>
           </div>
-        </div>
-      </AnnotationColumn>
-    </div>
+          </div>
+        </AnnotationColumn>
+        {tilePreviewOpen ? (
+          <TilePreviewDialog source={tilePreviewSource} onClose={() => setTilePreviewOpen(false)} />
+        ) : null}
+      </div>
   );
 }
 
@@ -827,7 +891,7 @@ function AnnotationIconButton({
   label: string;
   onPress: () => void;
   pressed?: boolean;
-  tone: "add" | "delete";
+  tone: "add" | "delete" | "tile";
 }) {
   return (
     <Button
@@ -1082,7 +1146,7 @@ function AnnotationCanvas({
             })}
             {annotations.map((annotation, index) => {
               const rect = stageRect(annotation.bbox);
-              const label = `${index + 1} ${annotationLabel(annotation.defect_type)}`;
+              const label = annotation.defect_no || formatDefectNumber(annotation.defect_type, index + 1);
               const labelWidth = Math.max(62, label.length * 12);
               const y = Math.max(offsetY, rect.y - 23);
               return (
@@ -1135,14 +1199,35 @@ function annotationsFromDefects(defects: ReportDefectSnapshot[], imageWidth: num
       height *= imageHeight;
     }
     const confidence = finiteNumber(defect.confidence);
+    const defectType = defect.defect_type || "crack";
     return [{
       id: `source:${defect.id || index}`,
       source_annotation_id: defect.id ?? null,
-      defect_type: defect.defect_type || "crack",
+      defect_no: defect.defect_no || formatDefectNumber(defectType, index + 1),
+      defect_type: defectType,
       confidence: confidence === null ? null : Math.min(1, Math.max(0, confidence)),
       bbox: roundedBBox({ x, y, width, height })
     }];
   });
+}
+
+function mergeDefectNumbers(
+  annotations: ManagedAnnotation[],
+  defects: ReportDefectSnapshot[]
+): ManagedAnnotation[] {
+  const defectNoById = new Map<string, string>();
+  defects.forEach((defect) => {
+    if (!defect.defect_no || !defect.id) return;
+    defectNoById.set(String(defect.id), defect.defect_no);
+    defectNoById.set(`source:${String(defect.id)}`, defect.defect_no);
+  });
+  return annotations.map((annotation, index) => ({
+    ...annotation,
+    defect_no: defectNoById.get(String(annotation.source_annotation_id || ""))
+      || defectNoById.get(String(annotation.id))
+      || annotation.defect_no
+      || formatDefectNumber(annotation.defect_type, index + 1)
+  }));
 }
 
 function buildAnnotationPhotoRows(report: ReportDetail): AnnotationPhotoRowData[] {
@@ -1173,6 +1258,10 @@ function buildAnnotationPhotoRows(report: ReportDetail): AnnotationPhotoRowData[
         || "",
       imageWidth: finiteNumber(photo.image_width ?? modelOutput?.image_width ?? firstFinding?.image_width),
       imageHeight: finiteNumber(photo.image_height ?? modelOutput?.image_height ?? firstFinding?.image_height),
+      tileWidth: modelOutput?.tile_width,
+      tileHeight: modelOutput?.tile_height,
+      tileOverlapRatio: modelOutput?.tile_overlap_ratio,
+      detections: modelOutput?.detections,
       defects
     };
   });
@@ -1180,12 +1269,19 @@ function buildAnnotationPhotoRows(report: ReportDetail): AnnotationPhotoRowData[
   for (const [key, defects] of defectsByKey) {
     if (consumed.has(key) || !defects.length) continue;
     const finding = defects[0]?.raw_result_json?.finding;
+    const modelOutput = report.raw_model_outputs.find((output) => (
+      defects[0]?.photo_filename && output.filename === defects[0].photo_filename
+    ));
     rows.push({
       key,
       filename: defects[0]?.photo_filename || "检测结果照片",
       imageUrl: defectImageUrl(defects),
       imageWidth: finiteNumber(finding?.image_width),
       imageHeight: finiteNumber(finding?.image_height),
+      tileWidth: modelOutput?.tile_width,
+      tileHeight: modelOutput?.tile_height,
+      tileOverlapRatio: modelOutput?.tile_overlap_ratio,
+      detections: modelOutput?.detections,
       defects
     });
   }

@@ -12,7 +12,6 @@ const DataManagementPage = lazy(() => import("@/pages/DataManagementPage").then(
 const PrivacyPolicyPage = lazy(() => import("@/pages/LegalDocumentPage").then((module) => ({ default: module.PrivacyPolicyPage })));
 const TermsPage = lazy(() => import("@/pages/LegalDocumentPage").then((module) => ({ default: module.TermsPage })));
 const NewProjectPage = lazy(() => import("@/pages/NewProjectPage").then((module) => ({ default: module.NewProjectPage })));
-const ProjectDetailPage = lazy(() => import("@/pages/ProjectDetailPage").then((module) => ({ default: module.ProjectDetailPage })));
 const ProjectListPage = lazy(() => import("@/pages/ProjectListPage").then((module) => ({ default: module.ProjectListPage })));
 const ReportDetailPage = lazy(() => import("@/pages/ReportDetailPage").then((module) => ({ default: module.ReportDetailPage })));
 const ReportListPage = lazy(() => import("@/pages/ReportListPage").then((module) => ({ default: module.ReportListPage })));
@@ -55,15 +54,15 @@ export const router = createBrowserRouter([
       { path: "reports", element: <Navigate replace to="/trials" /> },
       { path: "projects", element: <Navigate replace to="/detections" /> },
       { path: "detections", element: deferred(<ProjectListPage />) },
-      { path: "detections/:id/model", element: deferred(<BuildingModelPage />) },
+      { path: "trials/:id", element: deferred(<ReportDetailPage />) },
+      { path: "detections/results/:id", element: deferred(<ReportDetailPage />) },
+      { path: "detections/:id/model", element: deferred(<BuildingModelPage mode="professional" />) },
       {
         element: <RequireAuth />,
         children: [
           { path: "trials/new", element: deferred(<TrialExperiencePage />) },
-          { path: "trials/:id", element: deferred(<ReportDetailPage />) },
-          { path: "detections/results/:id", element: deferred(<ReportDetailPage />) },
           { path: "detections/new", element: deferred(<NewProjectPage />) },
-          { path: "detections/:id", element: deferred(<ProjectDetailPage />) },
+          { path: "detections/:id", element: deferred(<NewProjectPage />) },
           { path: "trial", element: <Navigate replace to="/trials/new" /> },
           { path: "reports/:id", element: deferred(<ReportDetailPage />) },
           { path: "projects/new", element: <Navigate replace to="/detections/new" /> },
@@ -82,6 +81,7 @@ export const router = createBrowserRouter([
               { path: "annotation-management/*", element: <Navigate replace to="/review" /> },
               { path: "review", element: deferred(<ReviewProjectListPage />) },
               { path: "review/detections/:id", element: deferred(<ReviewProjectDetailPage />) },
+              { path: "review/detections/:id/model", element: deferred(<BuildingModelPage mode="review" />) },
               { path: "review/projects/:id", element: <LegacyReviewDetectionRedirect /> }
             ]
           }

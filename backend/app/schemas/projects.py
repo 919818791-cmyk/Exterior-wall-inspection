@@ -6,7 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.enums.status import DetectionTaskStatus, ProjectStatus
+from app.enums.status import DetectionTaskStatus, DroneType, FacadeType, ProjectStatus
 
 
 class ApiSchema(BaseModel):
@@ -14,7 +14,10 @@ class ApiSchema(BaseModel):
 
 
 class ProjectCreateRequest(ApiSchema):
-    name: str | None = Field(default=None, max_length=128)
+    name: str = Field(min_length=1, max_length=128)
+    drone_type: DroneType | None = None
+    facade_type: FacadeType = FacadeType.TILE
+    description: str | None = Field(default=None, max_length=500)
     client_name: str | None = Field(default=None, max_length=128)
     province: str | None = Field(default=None, max_length=64)
     city: str | None = Field(default=None, max_length=64)
@@ -30,6 +33,9 @@ class ProjectDraftCreateRequest(ProjectCreateRequest):
 
 class ProjectUpdateRequest(ApiSchema):
     name: str | None = Field(default=None, max_length=128)
+    drone_type: DroneType | None = None
+    facade_type: FacadeType = FacadeType.TILE
+    description: str | None = Field(default=None, max_length=500)
     client_name: str | None = Field(default=None, max_length=128)
     province: str | None = Field(default=None, max_length=64)
     city: str | None = Field(default=None, max_length=64)
@@ -44,6 +50,9 @@ class ProjectListItem(ApiSchema):
     created_by: UUID
     project_no: str
     name: str
+    drone_type: DroneType | None
+    facade_type: FacadeType
+    description: str | None
     client_name: str | None
     province: str | None
     city: str | None
@@ -52,6 +61,7 @@ class ProjectListItem(ApiSchema):
     longitude: Decimal | None
     latitude: Decimal | None
     status: ProjectStatus
+    is_example: bool = False
     current_report_id: UUID | None
     photo_count: int
     valid_photo_count: int
@@ -63,6 +73,8 @@ class ProjectListItem(ApiSchema):
     completed_at: datetime | None
     created_at: datetime
     updated_at: datetime
+    setup_completed_at: datetime | None
+    setup_step: int = Field(ge=2, le=3)
 
 
 class ProjectDetailRead(ProjectListItem):
@@ -70,6 +82,24 @@ class ProjectDetailRead(ProjectListItem):
     current_report_id: UUID | None
     current_task_status: DetectionTaskStatus | None = None
     completed_at: datetime | None
+
+
+class ProjectFinalizeRequest(ApiSchema):
+    name: str = Field(min_length=1, max_length=128)
+    drone_type: DroneType | None = None
+    facade_type: FacadeType
+    description: str | None = Field(default=None, max_length=500)
+
+
+class BuildingModelRead(ApiSchema):
+    id: UUID
+    project_id: UUID
+    original_filename: str
+    file_size: int
+    mime_type: str | None
+    url: str
+    uploaded_by: UUID | None
+    uploaded_at: datetime
 
 
 class DeleteResponse(ApiSchema):

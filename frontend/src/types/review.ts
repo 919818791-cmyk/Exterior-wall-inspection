@@ -72,6 +72,14 @@ export interface ReviewPhoto {
   original_filename: string;
   image_width: number | null;
   image_height: number | null;
+  longitude: number | null;
+  latitude: number | null;
+  absolute_altitude: number | null;
+  relative_altitude: number | null;
+  gimbal_yaw_degree: number | null;
+  gimbal_pitch_degree: number | null;
+  gimbal_roll_degree: number | null;
+  calibrated_focal_length: number | null;
   photo_type: PhotoType;
   status: PhotoStatus;
   preview_url: string | null;

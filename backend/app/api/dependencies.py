@@ -176,6 +176,16 @@ def get_current_user(session: AuthenticatedSession = Depends(get_current_session
     return session.user
 
 
+def get_optional_current_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+    db: Session = Depends(get_db),
+) -> AuthenticatedUser | None:
+    """Return no viewer for anonymous requests while still rejecting invalid tokens."""
+    if credentials is None:
+        return None
+    return get_current_session(credentials=credentials, db=db).user
+
+
 def require_roles(*roles: UserRole | str) -> Callable[[AuthenticatedUser], AuthenticatedUser]:
     allowed_roles = {role.value if isinstance(role, UserRole) else role for role in roles}
 
@@ -187,12 +197,22 @@ def require_roles(*roles: UserRole | str) -> Callable[[AuthenticatedUser], Authe
     return dependency
 
 
-def ensure_project_access(project: Project, current_user: AuthenticatedUser) -> None:
-    if current_user.role == UserRole.CUSTOMER.value and project.created_by != current_user.id:
+def ensure_project_access(project: Project, current_user: AuthenticatedUser | None) -> None:
+    if current_user is None:
+        if not getattr(project, "is_example", False):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
+        return
+    if (
+        current_user.role == UserRole.CUSTOMER.value
+        and project.created_by != current_user.id
+        and not getattr(project, "is_example", False)
+    ):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
 
 
 def ensure_project_write_access(project: Project, current_user: AuthenticatedUser) -> None:
     """Allow project-source mutations only to the owner or an administrator."""
+    if getattr(project, "is_example", False):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="示例项目为只读项目。")
     if current_user.role != UserRole.ADMIN.value and project.created_by != current_user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")

@@ -21,6 +21,7 @@ class ReportListItem(ApiSchema):
     report_no: str
     title: str
     status: InspectionReportStatus
+    is_example: bool = False
     project_name: str
     client_name: str | None
     address: str | None
@@ -42,6 +43,7 @@ class ReportDetailRead(ApiSchema):
     report_no: str
     title: str
     status: InspectionReportStatus
+    is_example: bool = False
     report_data_json: dict | None
     project: dict
     detection_config: dict | None

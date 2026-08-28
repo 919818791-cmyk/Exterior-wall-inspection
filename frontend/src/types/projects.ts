@@ -6,6 +6,22 @@ export type ProjectStatus =
   | "reviewed"
   | "completed";
 
+export type DroneType =
+  | "dji_mavic_3_enterprise"
+  | "dji_mavic_3_thermal"
+  | "dji_matrice_4e"
+  | "dji_matrice_4t"
+  | "dji_matrice_30"
+  | "dji_matrice_30t"
+  | "dji_matrice_300_rtk"
+  | "dji_matrice_350_rtk"
+  | "dji_matrice_400"
+  | "dji_phantom_4_rtk"
+  | "autel_evo_max_4t"
+  | "other_professional";
+
+export type FacadeType = "tile" | "coating" | "stone";
+
 export type DefectType = "crack" | "spalling" | "moisture" | "hollow";
 export type PhotoType = "visible" | "thermal" | "dji" | "other";
 export type UploadMode = "dji" | "visible" | "thermal" | "mixed";
@@ -14,7 +30,10 @@ export type PhotoPrecheckStatus = "pending" | "running" | "passed" | "rejected" 
 export type DetectionTaskStatus = "pending" | "running" | "success" | "failed" | "canceled";
 
 export interface ProjectCreatePayload {
-  name?: string | null;
+  name: string;
+  drone_type?: DroneType | null;
+  facade_type?: FacadeType;
+  description?: string | null;
   client_name?: string | null;
   province?: string | null;
   city?: string | null;
@@ -35,6 +54,9 @@ export interface ProjectListItem {
   created_by: string;
   project_no: string;
   name: string;
+  drone_type: DroneType | null;
+  facade_type: FacadeType;
+  description: string | null;
   client_name: string | null;
   province: string | null;
   city: string | null;
@@ -43,6 +65,7 @@ export interface ProjectListItem {
   longitude: string | null;
   latitude: string | null;
   status: ProjectStatus;
+  is_example: boolean;
   current_report_id: string | null;
   photo_count: number;
   valid_photo_count: number;
@@ -54,12 +77,25 @@ export interface ProjectListItem {
   completed_at: string | null;
   created_at: string;
   updated_at: string;
+  setup_completed_at: string | null;
+  setup_step: 2 | 3;
 }
 
 export interface ProjectDetail extends ProjectListItem {
   current_task_id: string | null;
   current_task_status: DetectionTaskStatus | null;
   completed_at: string | null;
+}
+
+export interface BuildingModel {
+  id: string;
+  project_id: string;
+  original_filename: string;
+  file_size: number;
+  mime_type: string | null;
+  url: string;
+  uploaded_by: string | null;
+  uploaded_at: string;
 }
 
 export interface UploadBatchPayload {
@@ -93,8 +129,22 @@ export interface Photo {
   thumbnail_object_key: string | null;
   image_width: number | null;
   image_height: number | null;
+  camera_make: string | null;
+  camera_model: string | null;
+  camera_product_name: string | null;
+  drone_model: string | null;
+  camera_image_source: string | null;
+  longitude: number | null;
+  latitude: number | null;
+  absolute_altitude: number | null;
   relative_altitude: number | null;
   gimbal_yaw_degree: number | null;
+  gimbal_pitch_degree: number | null;
+  gimbal_roll_degree: number | null;
+  calibrated_focal_length: number | null;
+  focal_length_mm: number | null;
+  focal_length_35mm: number | null;
+  lrf_target_distance: number | null;
   facade_orientation: string | null;
   photo_type: PhotoType;
   status: PhotoStatus;
@@ -149,5 +199,11 @@ export interface DetectionTask {
 
 export interface StartDetectionPayload {
   model_types: Array<"crack" | "spalling" | "hollow">;
-  facade_type?: "tile" | "coating" | "stone";
+}
+
+export interface ProjectFinalizePayload {
+  name: string;
+  drone_type?: DroneType | null;
+  facade_type: FacadeType;
+  description?: string | null;
 }

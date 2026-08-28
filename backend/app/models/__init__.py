@@ -1,6 +1,7 @@
 from app.models.tables import (
     AiDetectionResult,
     AnnotationPhotoEdit,
+    BuildingModel,
     CollectionTimeRecommendation,
     DetectionConfig,
     DetectionTask,
@@ -21,6 +22,7 @@ from app.models.tables import (
 __all__ = [
     "AiDetectionResult",
     "AnnotationPhotoEdit",
+    "BuildingModel",
     "CollectionTimeRecommendation",
     "DetectionConfig",
     "DetectionTask",

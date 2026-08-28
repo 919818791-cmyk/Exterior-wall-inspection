@@ -11,16 +11,6 @@ import { useEffect, useState } from "react";
 import type { StartDetectionPayload } from "@/types/projects";
 
 type DetectionModelType = StartDetectionPayload["model_types"][number];
-type FacadeType = NonNullable<StartDetectionPayload["facade_type"]>;
-
-const FACADE_TYPE_OPTIONS: Array<{
-  value: FacadeType;
-  label: string;
-}> = [
-  { value: "tile", label: "面砖" },
-  { value: "coating", label: "涂料" },
-  { value: "stone", label: "石材" }
-];
 
 const DETECTION_TYPE_OPTIONS: Array<{
   value: DetectionModelType;
@@ -58,14 +48,12 @@ export function StartDetectionModal({
   onOpenChange: (isOpen: boolean) => void;
   onSubmit: (payload: StartDetectionPayload) => void;
 }) {
-  const [facadeType, setFacadeType] = useState<FacadeType>("tile");
   const [modelTypes, setModelTypes] = useState<DetectionModelType[]>(["crack"]);
   const [localError, setLocalError] = useState("");
   const visiblePhotoCount = qualifiedPhotoCount - thermalPhotoCount;
 
   useEffect(() => {
     if (!isOpen) return;
-    setFacadeType("tile");
     setModelTypes(
       thermalPhotoCount > 0
         ? visiblePhotoCount > 0
@@ -105,8 +93,7 @@ export function StartDetectionModal({
     }
     onOpenChange(false);
     onSubmit({
-      model_types: modelTypes,
-      ...(isProfessional ? { facade_type: facadeType } : {})
+      model_types: modelTypes
     });
   };
 
@@ -181,37 +168,6 @@ export function StartDetectionModal({
                 </div>
               )}
 
-              {isProfessional ? (
-                <fieldset className="start-detection-types start-detection-facade-types">
-                  <legend>外墙类型</legend>
-                  <div className="start-detection-option-grid">
-                    {FACADE_TYPE_OPTIONS.map((option) => (
-                      <label
-                        className={`start-detection-option start-detection-facade-option ${
-                          facadeType === option.value ? "is-selected" : ""
-                        }`}
-                        key={option.value}
-                      >
-                        <span className="start-detection-option-heading">
-                          <input
-                            checked={facadeType === option.value}
-                            disabled={isPending}
-                            name="facade-type"
-                            type="radio"
-                            value={option.value}
-                            onChange={() => {
-                              setFacadeType(option.value);
-                              setLocalError("");
-                            }}
-                          />
-                          <strong>{option.label}</strong>
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                </fieldset>
-              ) : null}
-
               <fieldset className="start-detection-types">
                 <legend>检测类型</legend>
                 <div className="start-detection-option-grid">
@@ -262,7 +218,7 @@ export function StartDetectionModal({
                 type="button"
                 onClick={submit}
               >
-                {isPending ? "正在检测，请稍候…" : "确认并开始检测"}
+                确认并开始检测
               </button>
             </ModalFooter>
           </>

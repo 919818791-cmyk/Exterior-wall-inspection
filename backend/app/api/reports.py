@@ -27,6 +27,7 @@ from app.api.dependencies import (
     ensure_project_access,
     ensure_project_write_access,
     get_current_user,
+    get_optional_current_user,
 )
 from app.core.config import get_settings
 from app.db.session import get_db
@@ -54,6 +55,7 @@ from app.schemas.phase7 import (
 )
 from app.schemas.projects import DeleteResponse
 from app.services.docx_report import DocxReportExportError, build_report_docx
+from app.services.defect_numbering import number_defects
 from app.services.inference_scheduling import (
     InferenceUsageReservation,
     reserve_inference_usage,
@@ -285,8 +287,11 @@ def _report_access_filter(include_generated: bool) -> object:
     )
 
 
-def _can_manage_reports(current_user: AuthenticatedUser) -> bool:
-    return current_user.role in {UserRole.REVIEWER.value, UserRole.ADMIN.value}
+def _can_manage_reports(current_user: AuthenticatedUser | None) -> bool:
+    return current_user is not None and current_user.role in {
+        UserRole.REVIEWER.value,
+        UserRole.ADMIN.value,
+    }
 
 
 def _project_reviewed_result_visible(project: Project) -> bool:
@@ -296,17 +301,32 @@ def _project_reviewed_result_visible(project: Project) -> bool:
     }
 
 
-def _trial_access_criteria(current_user: AuthenticatedUser) -> list[object]:
+def _trial_access_criteria(current_user: AuthenticatedUser | None) -> list[object]:
+    if current_user is None:
+        return [TrialDetectionResult.is_example.is_(True)]
     if current_user.role == UserRole.ADMIN.value:
         return []
-    return [TrialDetectionResult.generated_by == current_user.id]
+    return [
+        or_(
+            TrialDetectionResult.generated_by == current_user.id,
+            TrialDetectionResult.is_example.is_(True),
+        )
+    ]
+
+
+def _formal_report_access_criteria(current_user: AuthenticatedUser | None) -> list[object]:
+    if current_user is None:
+        return [Project.is_example.is_(True)]
+    if current_user.role == UserRole.CUSTOMER.value:
+        return [or_(Project.created_by == current_user.id, Project.is_example.is_(True))]
+    return []
 
 
 def _get_report_or_404(
     db: Session,
     report_id: UUID,
     *,
-    current_user: AuthenticatedUser,
+    current_user: AuthenticatedUser | None,
     include_generated: bool = False,
 ) -> tuple[InspectionReport, Project]:
     can_manage = _can_manage_reports(current_user)
@@ -317,7 +337,7 @@ def _get_report_or_404(
             InspectionReport.id == report_id,
             Project.deleted_at.is_(None),
             _report_access_filter(include_generated and can_manage),
-            *([Project.created_by == current_user.id] if current_user.role == UserRole.CUSTOMER.value else []),
+            *_formal_report_access_criteria(current_user),
         )
     ).first()
     if row is None:
@@ -330,7 +350,7 @@ def _get_trial_result_or_404(
     db: Session,
     result_id: UUID,
     *,
-    current_user: AuthenticatedUser,
+    current_user: AuthenticatedUser | None,
     include_deleted: bool = False,
 ) -> TrialDetectionResult:
     criteria: list[object] = [
@@ -345,6 +365,14 @@ def _get_trial_result_or_404(
     if result is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Detection result not found.")
     return result
+
+
+def _ensure_trial_result_writable(result: TrialDetectionResult) -> None:
+    if getattr(result, "is_example", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="示例项目为只读项目。",
+        )
 
 
 def _api_base_url(request: Request) -> str:
@@ -381,6 +409,9 @@ def _first_photo_url(data: dict[str, Any], request: Request | None = None) -> st
 
 def _data_with_photo_urls(data: dict[str, Any], request: Request | None = None) -> dict[str, Any]:
     enriched = deepcopy(data)
+    enriched["defects"] = number_defects(
+        defect for defect in enriched.get("defects") or [] if isinstance(defect, dict)
+    )
     photo_urls: dict[str, dict[str, str | None]] = {}
 
     for photo in enriched.get("photos") or []:
@@ -409,6 +440,9 @@ def _data_with_photo_urls(data: dict[str, Any], request: Request | None = None) 
 
 def _trial_data_with_photo_urls(data: dict[str, Any], request: Request | None = None) -> dict[str, Any]:
     enriched = deepcopy(data)
+    enriched["defects"] = number_defects(
+        defect for defect in enriched.get("defects") or [] if isinstance(defect, dict)
+    )
     photo_urls: dict[str, dict[str, str | None]] = {}
 
     for photo in enriched.get("photos") or []:
@@ -506,7 +540,7 @@ def _trial_archive_data(
             "finished_at": generated_at.isoformat(),
         },
         "photos": photos,
-        "defects": defects,
+        "defects": number_defects(defects),
         "raw_model_outputs": raw_model_outputs,
     }
 
@@ -535,6 +569,7 @@ def _list_item(
         report_no=report.report_no,
         title=report.title,
         status=report.status,
+        is_example=bool(getattr(project, "is_example", False)),
         project_name=project_snapshot.get("name") or project.name,
         client_name=project_snapshot.get("client_name") or project.client_name,
         address=project_snapshot.get("address") or project.address,
@@ -565,6 +600,7 @@ def _trial_list_item(
         report_no=result.result_no,
         title=result.title,
         status=result.status,
+        is_example=bool(getattr(result, "is_example", False)),
         project_name=project_snapshot.get("name") or TRIAL_RESULT_SOURCE_NAME,
         client_name=project_snapshot.get("client_name"),
         address=TRIAL_RESULT_ARCHIVE_ADDRESS,
@@ -589,6 +625,7 @@ def _detail_item(db: Session, report: InspectionReport, project: Project, reques
         report_no=report.report_no,
         title=report.title,
         status=report.status,
+        is_example=bool(getattr(project, "is_example", False)),
         report_data_json=report.report_data_json,
         project=data.get("project") or {},
         detection_config=data.get("detection_config"),
@@ -617,6 +654,7 @@ def _trial_detail_item(result: TrialDetectionResult, request: Request | None = N
         report_no=result.result_no,
         title=result.title,
         status=result.status,
+        is_example=bool(getattr(result, "is_example", False)),
         report_data_json=result.report_data_json,
         project=data.get("project") or {},
         detection_config=data.get("detection_config"),
@@ -640,7 +678,7 @@ def list_reports(
     request: Request = None,
     include_generated: bool = Query(default=False),
     db: Session = Depends(get_db),
-    current_user: AuthenticatedUser = Depends(get_current_user),
+    current_user: AuthenticatedUser | None = Depends(get_optional_current_user),
 ) -> list[ReportListItem]:
     # This endpoint powers the “免费试用/试用记录” surface. Formal project
     # results remain available from their project and review detail routes and
@@ -651,7 +689,11 @@ def list_reports(
             TrialDetectionResult.deleted_at.is_(None),
             *_trial_access_criteria(current_user),
         )
-        .order_by(TrialDetectionResult.generated_at.desc(), TrialDetectionResult.created_at.desc())
+        .order_by(
+            TrialDetectionResult.is_example.desc(),
+            TrialDetectionResult.generated_at.desc(),
+            TrialDetectionResult.created_at.desc(),
+        )
     )
     return [_trial_list_item(result, request) for result in trial_results]
 
@@ -664,7 +706,7 @@ def get_project_reviewed_result(
     request: Request,
     project_id: UUID,
     db: Session = Depends(get_db),
-    current_user: AuthenticatedUser = Depends(get_current_user),
+    current_user: AuthenticatedUser | None = Depends(get_optional_current_user),
 ) -> ReportDetailRead:
     """Return the project's single result after review is complete.
 
@@ -1519,11 +1561,12 @@ async def generate_trial_result(
                     headers={"Retry-After": "3"},
                 )
     if trial_request.archived_report_id is not None:
-        _get_trial_result_or_404(
+        archived_result = _get_trial_result_or_404(
             db,
             trial_request.archived_report_id,
             current_user=current_user,
         )
+        _ensure_trial_result_writable(archived_result)
     photos = _quick_detection_photos_for_user(db, current_user, trial_request.photo_ids)
     _validate_trial_photo_model_compatibility(photos, trial_request.models)
     file_entries = _trial_file_entries_for_quick_photos(photos)
@@ -1582,12 +1625,14 @@ async def generate_trial_result(
         )
         archive_request = TrialReportRequest.model_validate(result.model_dump())
         if trial_request.archived_report_id is not None:
+            archive_target = _get_trial_result_or_404(
+                db,
+                trial_request.archived_report_id,
+                current_user=current_user,
+            )
+            _ensure_trial_result_writable(archive_target)
             archived_result = _append_trial_detection_result(
-                result=_get_trial_result_or_404(
-                    db,
-                    trial_request.archived_report_id,
-                    current_user=current_user,
-                ),
+                result=archive_target,
                 trial_request=archive_request,
                 stored_photos_source=photos,
             )
@@ -1690,7 +1735,7 @@ def get_report(
     report_id: UUID,
     include_generated: bool = Query(default=False),
     db: Session = Depends(get_db),
-    current_user: AuthenticatedUser = Depends(get_current_user),
+    current_user: AuthenticatedUser | None = Depends(get_optional_current_user),
 ) -> ReportDetailRead:
     try:
         report, project = _get_report_or_404(
@@ -1715,6 +1760,7 @@ def update_trial_report_title(
     current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> ReportDetailRead:
     result = _get_trial_result_or_404(db, report_id, current_user=current_user)
+    _ensure_trial_result_writable(result)
     title = payload.title.strip()
     if not title:
         raise HTTPException(
@@ -1744,6 +1790,7 @@ def delete_report(
         if exc.status_code != status.HTTP_404_NOT_FOUND:
             raise
         trial_result = _get_trial_result_or_404(db, report_id, current_user=current_user)
+        _ensure_trial_result_writable(trial_result)
         trial_result.deleted_at = datetime.now(UTC)
         db.commit()
         return DeleteResponse()
@@ -1788,6 +1835,7 @@ def restore_trial_report(
         current_user=current_user,
         include_deleted=True,
     )
+    _ensure_trial_result_writable(result)
     if result.deleted_at is None:
         return _trial_detail_item(result, request)
     result.deleted_at = None

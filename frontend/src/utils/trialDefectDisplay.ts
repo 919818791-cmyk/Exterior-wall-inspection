@@ -84,3 +84,8 @@ export function trialDefectDescriptionFromType(defectType: string | null | undef
 export function trialDefectBoxLabel(display: TrialDefectDisplay) {
   return display.label;
 }
+
+export function formatDefectNumber(defectType: string | null | undefined, sequence: number) {
+  const display = trialDefectDisplayFromType(defectType);
+  return `${display.label}-${String(Math.max(1, Math.trunc(sequence))).padStart(3, "0")}`;
+}

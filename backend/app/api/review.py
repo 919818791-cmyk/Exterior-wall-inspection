@@ -51,6 +51,8 @@ from app.schemas.phase6 import (
 )
 from app.schemas.projects import DeleteResponse
 from app.schemas.phase7 import ReportDetailRead
+from app.services.defect_area import approximate_bbox_area_m2
+from app.services.defect_numbering import number_defects
 from app.services.object_storage import presigned_get_url
 from app.services.report_data import build_report_data
 
@@ -233,6 +235,22 @@ def _photo_to_read(photo: Photo) -> ReviewPhotoRead:
         original_filename=photo.original_filename,
         image_width=photo.image_width,
         image_height=photo.image_height,
+        camera_make=photo.camera_make,
+        camera_model=photo.camera_model,
+        camera_product_name=photo.camera_product_name,
+        drone_model=photo.drone_model,
+        camera_image_source=photo.camera_image_source,
+        longitude=photo.longitude,
+        latitude=photo.latitude,
+        absolute_altitude=photo.absolute_altitude,
+        relative_altitude=photo.relative_altitude,
+        gimbal_yaw_degree=photo.gimbal_yaw_degree,
+        gimbal_pitch_degree=photo.gimbal_pitch_degree,
+        gimbal_roll_degree=photo.gimbal_roll_degree,
+        calibrated_focal_length=photo.calibrated_focal_length,
+        focal_length_mm=photo.focal_length_mm,
+        focal_length_35mm=photo.focal_length_35mm,
+        lrf_target_distance=photo.lrf_target_distance,
         photo_type=photo.photo_type,
         status=photo.status,
         preview_url=preview_url,
@@ -483,6 +501,12 @@ def _review_preview_result(
                     "status": "preview",
                 }
             )
+            estimated_area = approximate_bbox_area_m2(
+                photo,
+                preview_defect["bbox_json"],
+            )
+            preview_defect["area"] = str(estimated_area) if estimated_area is not None else None
+            preview_defect["area_estimated"] = estimated_area is not None
             defects.append(preview_defect)
 
     by_defect_type: dict[str, int] = {}
@@ -502,7 +526,7 @@ def _review_preview_result(
             "by_status": by_status,
         }
     )
-    return result.model_copy(update={"defects": defects, "summary": summary})
+    return result.model_copy(update={"defects": number_defects(defects), "summary": summary})
 
 
 @router.get(

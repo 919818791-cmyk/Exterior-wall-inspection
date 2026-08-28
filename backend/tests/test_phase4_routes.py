@@ -312,4 +312,6 @@ def test_formal_drone_metadata_runs_building_precheck_and_records_model(monkeypa
     )
 
     assert uploaded.precheck_status == "passed"
-    assert batch.drone_type == "M3T"
+    assert batch.drone_type == "dji_mavic_3_thermal"
+    assert project.drone_type == "dji_mavic_3_thermal"
+    assert project.setup_completed_at is not None

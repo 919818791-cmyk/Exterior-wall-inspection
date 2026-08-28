@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections import Counter
 from copy import deepcopy
 from io import BytesIO
 from pathlib import Path
@@ -13,6 +12,8 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Emu, RGBColor
 from PIL import Image, ImageOps, UnidentifiedImageError
+
+from app.services.defect_numbering import number_defects
 
 
 DEFECT_LABELS = {
@@ -190,14 +191,12 @@ def _paired_photo_rows(data: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _defect_description(defects: list[dict[str, Any]]) -> str:
-    labels = [
-        DEFECT_LABELS.get(str(defect.get("defect_type") or ""), _text(defect.get("defect_type")))
-        for defect in defects
-    ]
-    counts = Counter(labels)
-    if not counts:
+    if not defects:
         return "未检出明显缺陷"
-    return "\n".join(f"疑似{label}: {count}处" for label, count in counts.items())
+    return "\n".join(
+        f"{defect.get('defect_no') or DEFECT_LABELS.get(str(defect.get('defect_type') or ''), _text(defect.get('defect_type')))}"
+        for defect in defects
+    )
 
 
 def _metadata_text(photo: dict[str, Any] | None) -> str:
@@ -413,7 +412,10 @@ def build_report_docx(
     if not FORMAL_TEMPLATE.is_file():
         raise DocxReportExportError("DOCX 导出模板不存在。")
 
-    data = report_data or {}
+    data = deepcopy(report_data or {})
+    data["defects"] = number_defects(
+        defect for defect in data.get("defects") or [] if isinstance(defect, dict)
+    )
     document = Document(FORMAL_TEMPLATE)
     _set_title(document, data, report_title, report_no)
     _populate_result_table(document, data, read_object)

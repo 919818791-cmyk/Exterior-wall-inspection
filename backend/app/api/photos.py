@@ -13,6 +13,7 @@ from app.api.dependencies import (
     ensure_project_access,
     ensure_project_write_access,
     get_current_user,
+    get_optional_current_user,
 )
 from app.api.projects import _ensure_project_editable, _get_project_or_404
 from app.db.session import get_db
@@ -28,6 +29,7 @@ from app.services.photo_metadata import (
     FormalPhotoMetadata,
     extract_formal_photo_metadata,
     facade_orientation_from_yaw,
+    infer_drone_type,
 )
 from app.services.photo_precheck import run_stored_photo_precheck
 from app.services.photo_thumbnails import build_thumbnail, store_thumbnail
@@ -73,8 +75,22 @@ def _photo_to_read(photo: Photo) -> PhotoRead:
         thumbnail_object_key=photo.thumbnail_object_key,
         image_width=photo.image_width,
         image_height=photo.image_height,
+        camera_make=photo.camera_make,
+        camera_model=photo.camera_model,
+        camera_product_name=photo.camera_product_name,
+        drone_model=photo.drone_model,
+        camera_image_source=photo.camera_image_source,
+        longitude=photo.longitude,
+        latitude=photo.latitude,
+        absolute_altitude=photo.absolute_altitude,
         relative_altitude=photo.relative_altitude,
         gimbal_yaw_degree=photo.gimbal_yaw_degree,
+        gimbal_pitch_degree=photo.gimbal_pitch_degree,
+        gimbal_roll_degree=photo.gimbal_roll_degree,
+        calibrated_focal_length=photo.calibrated_focal_length,
+        focal_length_mm=photo.focal_length_mm,
+        focal_length_35mm=photo.focal_length_35mm,
+        lrf_target_distance=photo.lrf_target_distance,
         facade_orientation=facade_orientation_from_yaw(
             float(photo.gimbal_yaw_degree) if photo.gimbal_yaw_degree is not None else None
         ),
@@ -218,8 +234,22 @@ def upload_photo(
         thumbnail_object_key=thumbnail.object_key if thumbnail is not None else None,
         image_width=thumbnail.source_width if thumbnail is not None else None,
         image_height=thumbnail.source_height if thumbnail is not None else None,
+        camera_make=metadata["camera_make"],
+        camera_model=metadata["camera_model"],
+        camera_product_name=metadata["camera_product_name"],
+        drone_model=metadata["drone_model"],
+        camera_image_source=metadata["xmp_drone_dji_image_source"],
+        longitude=metadata["longitude"],
+        latitude=metadata["latitude"],
+        absolute_altitude=metadata["absolute_altitude"],
         relative_altitude=metadata["relative_altitude"],
         gimbal_yaw_degree=metadata["gimbal_yaw_degree"],
+        gimbal_pitch_degree=metadata["gimbal_pitch_degree"],
+        gimbal_roll_degree=metadata["gimbal_roll_degree"],
+        calibrated_focal_length=metadata["calibrated_focal_length"],
+        focal_length_mm=metadata["focal_length_mm"],
+        focal_length_35mm=metadata["focal_length_35mm"],
+        lrf_target_distance=metadata["lrf_target_distance"],
         photo_type=(
             PhotoType.THERMAL.value
             if metadata["thermal_imaging_available"]
@@ -252,9 +282,16 @@ def upload_photo(
         occurred_at=photo.created_at,
     )
     batch.photo_count = _count_active_batch_photos(db, batch.id)
-    if metadata["camera_model"] and not batch.drone_type:
-        batch.drone_type = metadata["camera_model"]
-    project.updated_at = datetime.now(UTC)
+    detected_drone_type = infer_drone_type(metadata)
+    if detected_drone_type and not batch.drone_type:
+        batch.drone_type = detected_drone_type
+    if detected_drone_type and not project.drone_type:
+        project.drone_type = detected_drone_type
+    uploaded_at = datetime.now(UTC)
+    project.setup_completed_at = (
+        getattr(project, "setup_completed_at", None) or uploaded_at
+    )
+    project.updated_at = uploaded_at
     db.commit()
     db.refresh(photo)
     if metadata["professional_drone_photo"]:
@@ -266,7 +303,7 @@ def upload_photo(
 def list_project_photos(
     project_id: UUID,
     db: Session = Depends(get_db),
-    current_user: AuthenticatedUser = Depends(get_current_user),
+    current_user: AuthenticatedUser | None = Depends(get_optional_current_user),
 ) -> list[PhotoRead]:
     project = _get_project_or_404(db, project_id)
     ensure_project_access(project, current_user)

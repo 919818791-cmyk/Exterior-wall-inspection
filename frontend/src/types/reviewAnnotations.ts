@@ -10,6 +10,7 @@ export interface AnnotationBBox {
 export interface ManagedAnnotation {
   id: string;
   source_annotation_id: string | null;
+  defect_no?: string | null;
   defect_type: string;
   bbox: AnnotationBBox;
   confidence: number | null;

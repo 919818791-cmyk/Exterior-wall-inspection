@@ -20,8 +20,7 @@ function viewerQueryKey(viewer: ReportViewer) {
 export function reportsQueryOptions(viewer: ReportViewer) {
   return queryOptions({
     queryKey: ["reports", "list", viewerQueryKey(viewer)],
-    queryFn: () => apiRequest<ReportListItem[]>("/reports"),
-    enabled: Boolean(viewer?.id)
+    queryFn: () => apiRequest<ReportListItem[]>("/reports")
   });
 }
 
@@ -30,7 +29,7 @@ export function reportQueryOptions(reportId: string, includeGenerated = false, v
     queryKey: ["reports", "detail", reportId, { includeGenerated, viewer: viewerQueryKey(viewer) }],
     queryFn: () =>
       apiRequest<ReportDetail>(`/reports/${reportId}${generatedParam(includeGenerated)}`),
-    enabled: Boolean(reportId && viewer?.id)
+    enabled: Boolean(reportId)
   });
 }
 

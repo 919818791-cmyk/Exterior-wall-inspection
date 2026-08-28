@@ -126,6 +126,7 @@ def test_review_preview_uses_saved_annotation_edits() -> None:
 
     assert len(preview.defects) == 1
     assert preview.defects[0]["defect_type"] == "spalling"
+    assert preview.defects[0]["defect_no"] == "剥落-001"
     assert preview.defects[0]["bbox_json"]["width"] == 160
     assert preview.summary["by_defect_type"] == {"spalling": 1}
 

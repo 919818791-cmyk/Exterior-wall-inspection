@@ -17,6 +17,7 @@ export function PhotoUploadThumbnail({
   previewUrl,
   removeDisabled = false,
   removeLabel,
+  removePlacement = "overlay",
   statusClassName,
   unsupportedFormat = false,
   variant = "project"
@@ -33,6 +34,7 @@ export function PhotoUploadThumbnail({
   previewUrl?: string | null;
   removeDisabled?: boolean;
   removeLabel?: string;
+  removePlacement?: "overlay" | "footer";
   statusClassName?: string;
   unsupportedFormat?: boolean;
   variant?: "project" | "trial";
@@ -49,6 +51,22 @@ export function PhotoUploadThumbnail({
     : precheckStatus === "rejected"
       ? isNonDronePhoto ? "非无人机照片！" : "非建筑照片！"
       : "预检失败";
+  const removeButton = onRemove ? (
+    <button
+      aria-label={removeLabel ?? `删除 ${fileName}`}
+      className="new-project-photo-remove"
+      disabled={removeDisabled}
+      title={removeLabel ?? "删除"}
+      type="button"
+      onClick={onRemove}
+    >
+      {removePlacement === "footer" ? (
+        <svg aria-hidden="true" fill="none" viewBox="0 0 24 24">
+          <path d="M8 3h8l1 2h3v2H4V5h3l1-2Zm-1 6h10l-.72 12H7.72L7 9Z" fill="currentColor" />
+        </svg>
+      ) : <X aria-hidden="true" />}
+    </button>
+  ) : null;
 
   return (
     <figure
@@ -92,20 +110,14 @@ export function PhotoUploadThumbnail({
           </span>
         ) : null}
         {children}
-        {onRemove ? (
-          <button
-            aria-label={removeLabel ?? `删除 ${fileName}`}
-            className="new-project-photo-remove"
-            disabled={removeDisabled}
-            title={removeLabel ?? "删除"}
-            type="button"
-            onClick={onRemove}
-          >
-            <X aria-hidden="true" />
-          </button>
-        ) : null}
+        {removePlacement === "overlay" ? removeButton : null}
       </div>
-      <figcaption>{fileName}</figcaption>
+      {removePlacement === "footer" ? (
+        <div className="photo-upload-thumbnail-footer">
+          <figcaption title={fileName}>{fileName}</figcaption>
+          {removeButton}
+        </div>
+      ) : <figcaption title={fileName}>{fileName}</figcaption>}
       {footer}
     </figure>
   );

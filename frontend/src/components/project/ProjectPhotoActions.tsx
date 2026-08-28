@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { RefreshCcw, X, ZoomIn, ZoomOut } from "lucide-react";
+import { ImageOff, RefreshCcw, X, ZoomIn, ZoomOut } from "lucide-react";
 import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
@@ -22,6 +22,7 @@ import { ProjectPhotoUploader } from "@/components/project/ProjectPhotoUploader"
 import type { Photo, ProjectDetail } from "@/types/projects";
 import { createAsyncLimiter } from "@/utils/asyncLimiter";
 import { createClientId } from "@/utils/id";
+import { pairVisibleThermalPhotos, photoVariantFromFilename } from "@/utils/photoPairing";
 import {
   MAX_PROJECT_PHOTO_COUNT,
   MAX_PROJECT_PHOTO_SIZE_BYTES,
@@ -55,9 +56,11 @@ function getErrorMessage(error: unknown) {
 }
 
 export function ProjectPhotoActions({
+  inputId,
   isEditable,
   project
 }: {
+  inputId?: string;
   isEditable: boolean;
   project: ProjectDetail;
 }) {
@@ -101,14 +104,19 @@ export function ProjectPhotoActions({
     )),
     [projectPhotos, recentlyRemovedPhoto, deletingPhotoId]
   );
+  const photoPairs = useMemo(
+    () => pairVisibleThermalPhotos(visibleProjectPhotos, {
+      filename: (photo) => photo.original_filename,
+      isThermal: (photo) => (
+        photoVariantFromFilename(photo.original_filename) === "thermal"
+        || photo.photo_type === "thermal"
+      ),
+      itemKey: (photo) => photo.id
+    }),
+    [visibleProjectPhotos]
+  );
   const hasPhotos = Boolean(visibleProjectPhotos.length || pendingUploads.length);
-  const uploadedPendingCount = pendingUploads.filter((item) => item.status === "uploaded").length;
   const failedPendingCount = pendingUploads.filter((item) => item.status === "failed").length;
-  const activePendingCount = pendingUploads.filter((item) => item.status === "uploading").length;
-  const visiblePhotoCount = visibleProjectPhotos.length + pendingUploads.length;
-  const uploadPercent = pendingUploads.length
-    ? Math.round((uploadedPendingCount / pendingUploads.length) * 100)
-    : 0;
 
   const setTrackedPendingUploads = (
     updater: PendingUpload[] | ((current: PendingUpload[]) => PendingUpload[])
@@ -420,86 +428,108 @@ export function ProjectPhotoActions({
 
   return (
     <>
-      <header className="project-photo-workspace-heading">
-        <h2 id="project-photo-title">检测照片</h2>
-        <div className="new-project-photo-heading-status">
-          {activePendingCount ? (
-            <div className="new-project-upload-overview" role="status" aria-live="polite">
-              <span>正在上传，已完成 {uploadedPendingCount}/{pendingUploads.length}</span>
-              <span
-                aria-label={`照片上传进度 ${uploadPercent}%`}
-                aria-valuemax={100}
-                aria-valuemin={0}
-                aria-valuenow={uploadPercent}
-                className="new-project-upload-track"
-                role="progressbar"
-              >
-                <i style={{ width: `${uploadPercent}%` }} />
-              </span>
-            </div>
-          ) : failedPendingCount ? (
-            <button
-              className="new-project-upload-summary is-error detail-photo-upload-retry"
-              type="button"
-              onClick={retryFailedUploads}
-            >
-              <RefreshCcw aria-hidden="true" />{failedPendingCount} 张失败，重试
-            </button>
-          ) : visiblePhotoCount ? (
-            <span className="new-project-upload-summary is-complete photo-upload-complete-status">上传完成</span>
-          ) : null}
-        </div>
-      </header>
       <ProjectPhotoUploader
-        addDisabled={!isEditable || uploadMutation.isPending || visiblePhotoCount >= MAX_PROJECT_PHOTO_COUNT}
         containerRef={uploaderRef}
         disabled={!isEditable || uploadMutation.isPending}
-        emptyHint={<span className="professional-drone-upload-hint">（仅支持专业无人机拍摄的照片）</span>}
+        emptyContent={(
+          <div className="trial-report-empty">
+            <ImageOff aria-hidden="true" />
+            <h2>{photosQuery.isLoading ? "正在加载检测照片" : "暂无检测照片"}</h2>
+            <p>{photosQuery.isLoading ? "请稍候。" : "点击右上方“继续添加照片”上传专业无人机照片。"}</p>
+          </div>
+        )}
         hasPhotos={hasPhotos}
-        isLoading={photosQuery.isLoading}
+        inputId={inputId}
         onFilesSelected={applyFiles}
+        photoLayout="paired"
+        showAddButton={false}
       >
-        {visibleProjectPhotos.map((photo) => {
-          const previewUrl = photo.thumbnail_url ?? photo.preview_url;
-          return (
-            <PhotoUploadThumbnail
-              badges={photo.photo_type === "thermal" ? <span className="trial-thermal-available-tag">热成像</span> : null}
-              fileName={photo.original_filename}
-              key={photo.id}
-              precheckCategory={photo.precheck_category}
-              precheckReason={photo.precheck_reason}
-              precheckStatus={photo.precheck_status}
-              previewUrl={previewUrl}
-              removeDisabled={deleteMutation.isPending}
-              statusClassName="is-uploaded"
-              onPreview={previewUrl ? () => openPhotoPreview(photo.id) : undefined}
-              onRemove={isEditable ? () => removePhoto(photo.id) : undefined}
-            />
-          );
-        })}
-        {pendingUploads.map((item) => (
-          <PhotoUploadThumbnail
-            fileName={item.file.name}
-            footer={item.status === "failed" ? <span className="project-photo-upload-status">上传失败</span> : null}
-            key={item.id}
-            previewUrl={item.previewUrl}
-            statusClassName={`is-${item.status}`}
-          >
-            {item.status === "uploading" ? (
-                <span
-                  aria-label={`${item.file.name}正在上传`}
-                  className="new-project-photo-upload-indicator"
-                  role="status"
-                >
-                  <span aria-hidden="true" className="new-project-photo-upload-ring" />
-                  <small>上传中</small>
-                </span>
-            ) : null}
-          </PhotoUploadThumbnail>
-        ))}
+        {photoPairs.length ? (
+          <div className="trial-report-table-wrap project-photo-pair-table-wrap">
+            <table className="project-photo-pair-table">
+              <colgroup>
+                <col className="project-photo-pair-sequence-col" />
+                <col className="project-photo-pair-image-col" />
+                <col className="project-photo-pair-image-col" />
+                <col className="project-photo-pair-metadata-col" />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>序号</th>
+                  <th>可见光图像</th>
+                  <th>热红外图像</th>
+                  <th>立面朝向<br />拍摄高度（m）</th>
+                </tr>
+              </thead>
+              <tbody>
+                {photoPairs.map((pair, index) => {
+                  const primaryPhoto = pair.visible ?? pair.thermal;
+                  return (
+                    <tr key={pair.key}>
+                      <td className="project-photo-pair-sequence-cell">
+                        <span className="trial-report-index">{String(index + 1).padStart(2, "0")}</span>
+                      </td>
+                      <ProjectPhotoPairCell
+                        label="可见光图像"
+                        photo={pair.visible}
+                        removeDisabled={deleteMutation.isPending}
+                        onPreview={openPhotoPreview}
+                        onRemove={isEditable ? removePhoto : undefined}
+                      />
+                      <ProjectPhotoPairCell
+                        label="热红外图像"
+                        photo={pair.thermal}
+                        removeDisabled={deleteMutation.isPending}
+                        onPreview={openPhotoPreview}
+                        onRemove={isEditable ? removePhoto : undefined}
+                      />
+                      <td className="project-photo-pair-metadata-cell" data-label="立面 / 高度">
+                        <strong>{primaryPhoto?.facade_orientation || "未知立面"}</strong>
+                        <span>{formatRelativeAltitude(primaryPhoto?.relative_altitude)}</span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
+        {pendingUploads.length ? (
+          <div className="project-photo-grid project-photo-pending-grid" aria-label="正在处理的照片">
+            {pendingUploads.map((item) => (
+              <PhotoUploadThumbnail
+                fileName={item.file.name}
+                footer={item.status === "failed" ? <span className="project-photo-upload-status">上传失败</span> : null}
+                key={item.id}
+                previewUrl={item.previewUrl}
+                statusClassName={`is-${item.status}`}
+              >
+                {item.status === "uploading" ? (
+                    <span
+                      aria-label={`${item.file.name}正在上传`}
+                      className="new-project-photo-upload-indicator"
+                      role="status"
+                    >
+                      <span aria-hidden="true" className="new-project-photo-upload-ring" />
+                      <small>上传中</small>
+                    </span>
+                ) : null}
+              </PhotoUploadThumbnail>
+            ))}
+          </div>
+        ) : null}
       </ProjectPhotoUploader>
 
-      {activeError ? <p className="project-photo-error">{activeError}</p> : null}
+      {activeError ? (
+        <p className="project-photo-error">
+          {activeError}
+          {failedPendingCount ? (
+            <button className="detail-photo-upload-retry" type="button" onClick={retryFailedUploads}>
+              <RefreshCcw aria-hidden="true" />重试
+            </button>
+          ) : null}
+        </p>
+      ) : null}
       {recentlyRemovedPhoto ? (
         <p className="trial-undo-message" role="status">
           已移除“{recentlyRemovedPhoto.photo.original_filename}”
@@ -572,4 +602,53 @@ export function ProjectPhotoActions({
       ) : null}
     </>
   );
+}
+
+function ProjectPhotoPairCell({
+  label,
+  photo,
+  removeDisabled,
+  onPreview,
+  onRemove
+}: {
+  label: string;
+  photo: Photo | null;
+  removeDisabled: boolean;
+  onPreview: (photoId: string) => void;
+  onRemove?: (photoId: string) => void;
+}) {
+  if (!photo) {
+    return (
+      <td className="project-photo-pair-image-cell is-empty" data-label={label}>
+        <div className="project-photo-pair-placeholder">
+          <ImageOff aria-hidden="true" />
+          <strong>无匹配图像</strong>
+        </div>
+      </td>
+    );
+  }
+
+  const previewUrl = photo.thumbnail_url ?? photo.preview_url;
+  const isThermal = photoVariantFromFilename(photo.original_filename) === "thermal"
+    || photo.photo_type === "thermal";
+  return (
+    <td className="project-photo-pair-image-cell" data-label={label}>
+      <PhotoUploadThumbnail
+        badges={isThermal ? <span className="trial-thermal-available-tag">热成像</span> : null}
+        fileName={photo.original_filename}
+        precheckCategory={photo.precheck_category}
+        precheckReason={photo.precheck_reason}
+        precheckStatus={photo.precheck_status}
+        previewUrl={previewUrl}
+        removeDisabled={removeDisabled}
+        statusClassName="is-uploaded"
+        onPreview={previewUrl ? () => onPreview(photo.id) : undefined}
+        onRemove={onRemove ? () => onRemove(photo.id) : undefined}
+      />
+    </td>
+  );
+}
+
+function formatRelativeAltitude(value: number | null | undefined) {
+  return Number.isFinite(value) ? Number(value).toFixed(1) : "--";
 }
