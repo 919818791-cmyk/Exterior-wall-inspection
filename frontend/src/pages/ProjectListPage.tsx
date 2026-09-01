@@ -1,53 +1,150 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Eye, Plus, Search, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 import { deleteProject, projectsQueryOptions } from "@/api/projects";
+import { ListPagination } from "@/components/ListPagination";
+import { WorkbenchDefectSummary, WorkbenchResultTable } from "@/components/WorkbenchResultTable";
 import { useAuthStore } from "@/stores/useAuthStore";
-import type { ProjectStatus } from "@/types/projects";
-import { formatDateTime, formatLocation, PROJECT_STATUS_LABELS } from "@/utils/projectDisplay";
+import type { ProjectListItem } from "@/types/projects";
+import {
+  formatDateTime,
+  formatEstimatedRemainingTime,
+  getProfessionalDisplayState,
+  getProfessionalEstimatedCompletionAt
+} from "@/utils/projectDisplay";
 
-const statusClass: Record<ProjectStatus, string> = {
-  draft: "neutral", detecting: "detecting", pending_review: "detecting", reviewed: "ready", completed: "ready"
-};
+const PAGE_SIZE = 10;
 
 export function ProjectListPage() {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const user = useAuthStore((state) => state.user);
-  const projectsQuery = useQuery(projectsQueryOptions);
-  const [keyword, setKeyword] = useState("");
-  const [status, setStatus] = useState<"all" | ProjectStatus>("all");
-  const deleteMutation = useMutation({
+  const [currentPage, setCurrentPage] = useState(1);
+  const [projectNameSearch, setProjectNameSearch] = useState("");
+  const projectsQuery = useQuery(projectsQueryOptions(user));
+
+  const deleteProjectMutation = useMutation({
     mutationFn: deleteProject,
-    onSuccess: async () => queryClient.invalidateQueries({ queryKey: ["projects"] })
+    onSuccess: async (_, projectId) => {
+      queryClient.removeQueries({ queryKey: ["projects", projectId] });
+      await queryClient.invalidateQueries({ queryKey: ["projects"] });
+    }
   });
-  const visibleProjects = useMemo(() => (projectsQuery.data ?? [])
-    .filter((project) => status === "all" || project.status === status)
-    .filter((project) => `${project.name} ${project.project_no} ${formatLocation(project)}`.toLowerCase().includes(keyword.trim().toLowerCase()))
-    .sort((a, b) => b.updated_at.localeCompare(a.updated_at)), [keyword, projectsQuery.data, status]);
 
-  function removeProject(project: { id: string; name: string }) {
-    if (window.confirm(`确认删除项目“${project.name}”？此操作会软删除项目、建筑和立面。`)) deleteMutation.mutate(project.id);
-  }
+  const handleDeleteProject = (project: ProjectListItem) => {
+    if (!["draft", "reviewed", "completed"].includes(project.status)) return;
+    if (!window.confirm(`确认删除检测“${project.name}”？删除后将无法恢复。`)) return;
+    deleteProjectMutation.mutate(project.id);
+  };
 
-  return <div className="project-workspace">
-    <section className="project-hero">
-      <div><h1>项目工作台</h1><p>集中管理外墙巡检项目、建筑信息与立面采集任务。</p></div>
-      <div className="project-hero-action"><Link className="button primary new-project-button" to="/projects/new"><Plus aria-hidden="true" />新建项目</Link></div>
-    </section>
+  const canManageProject = (project: ProjectListItem) => (
+    !project.is_example && (user?.role === "admin" || project.created_by === user?.id)
+  );
 
-    <section className="project-toolbar" aria-label="项目筛选">
-      <label className="select-control"><span className="sr-only">按状态筛选</span><select value={status} onChange={(event) => setStatus(event.target.value as "all" | ProjectStatus)}><option value="all">全部状态</option><option value="draft">待检测</option><option value="detecting">AI检测中</option>{user?.role !== "customer" ? <><option value="pending_review">待审核</option><option value="reviewed">已审核</option></> : null}<option value="completed">已完成</option></select></label>
-      <label className="search-control"><span className="sr-only">搜索项目名称或建筑地址</span><Search aria-hidden="true" /><input placeholder="搜索项目名称、编号或建筑位置" value={keyword} onChange={(event) => setKeyword(event.target.value)} /></label>
-    </section>
-
-    {projectsQuery.isError || deleteMutation.isError ? <p className="project-list-error">{projectsQuery.isError ? "项目列表加载失败，请稍后重试。" : "删除项目失败，请稍后重试。"}</p> : null}
-    <section className="project-list-panel" aria-label="项目列表">
-      <div className="project-table-wrap">
-        {projectsQuery.isLoading ? <div className="project-empty"><strong>正在加载项目…</strong></div> : visibleProjects.length ? <table className="project-table"><thead><tr><th>项目名称</th><th>建筑位置</th><th>当前状态</th><th>更新时间</th><th>操作</th></tr></thead><tbody>{visibleProjects.map((project) => <tr key={project.id}><td data-label="项目名称"><strong>{project.name}</strong><small>{project.project_no}</small></td><td data-label="建筑位置">{formatLocation(project)}</td><td data-label="当前状态"><span className={`status-tag ${statusClass[project.status]}`}>{PROJECT_STATUS_LABELS[project.status]}</span></td><td data-label="更新时间">{formatDateTime(project.updated_at)}</td><td data-label="操作"><div className="table-actions"><Link className="table-action" to={`/projects/${project.id}`}><Eye aria-hidden="true" />查看详情</Link>{project.status === "draft" ? <button className="table-action danger-table-action" disabled={deleteMutation.isPending} type="button" onClick={() => removeProject(project)}><Trash2 aria-hidden="true" />删除</button> : null}</div></td></tr>)}</tbody></table> : <div className="project-empty"><strong>没有匹配的项目</strong><span>尝试调整筛选条件或搜索关键词</span></div>}
+  const visibleProjects = useMemo(() => {
+    return [...(projectsQuery.data ?? [])]
+      .sort((a, b) => Number(b.is_example) - Number(a.is_example) || b.updated_at.localeCompare(a.updated_at));
+  }, [projectsQuery.data]);
+  const matchingProjects = useMemo(() => {
+    const search = projectNameSearch.trim().toLocaleLowerCase();
+    if (!search) return visibleProjects;
+    return visibleProjects.filter((project) => project.name.toLocaleLowerCase().includes(search));
+  }, [projectNameSearch, visibleProjects]);
+  const workbenchProjects = useMemo(() => {
+    return matchingProjects.map((project) => ({
+      ...project,
+      generated_at: project.created_at,
+      title: project.name,
+      professionalState: getProfessionalDisplayState(project),
+      estimatedCompletionAt: getProfessionalEstimatedCompletionAt(project)
+    }));
+  }, [matchingProjects]);
+  const totalPages = Math.max(1, Math.ceil(workbenchProjects.length / PAGE_SIZE));
+  const visiblePage = Math.min(currentPage, totalPages);
+  const paginatedProjects = useMemo(() => {
+    const startIndex = (visiblePage - 1) * PAGE_SIZE;
+    return workbenchProjects.slice(startIndex, startIndex + PAGE_SIZE);
+  }, [visiblePage, workbenchProjects]);
+  return <div className="report-list-page project-management-page"><div className="project-workspace">
+    <div className="project-workbench-layout">
+      <div className="project-workbench-content-panel">
+        {projectsQuery.isError ? <p className="project-list-error">项目列表加载失败，请稍后重试。</p> : null}
+        {deleteProjectMutation.isError ? <p className="project-list-error" role="alert">操作失败，请稍后重试。</p> : null}
+        <section
+          className="project-list-panel workbench-result-list-panel"
+          aria-label="项目列表"
+        >
+          {visibleProjects.length ? <div className="project-name-search-toolbar">
+            <label className="project-name-search-field floating-line-field">
+              <input
+                aria-label="搜索检测项目"
+                autoComplete="off"
+                placeholder=" "
+                type="search"
+                value={projectNameSearch}
+                onChange={(event) => {
+                  setProjectNameSearch(event.target.value);
+                  setCurrentPage(1);
+                }}
+              />
+              <span>搜索检测项目</span>
+            </label>
+          </div> : null}
+          <div className="project-table-wrap project-workbench-table-wrap">
+          {projectsQuery.isLoading ? <div className="project-empty"><strong>正在加载项目…</strong></div> : visibleProjects.length && workbenchProjects.length ? <WorkbenchResultTable
+            canDelete={(project) => canManageProject(project) && ["draft", "reviewed", "completed"].includes(project.status)}
+            columnLabel="检测名称"
+            completionTimeLabel="完成时间"
+            getDeleteDisabledReason={(project) => project.is_example
+              ? "示例项目为所有账号共享，无法删除"
+              : canManageProject(project) ? "检测进行中，无法删除" : "仅项目所有者或管理员可以删除"}
+            getLeadingActionLabel={(project) => project.has_building_model ? "3D模型" : undefined}
+            getKey={(project) => project.id}
+            items={paginatedProjects}
+            onDelete={handleDeleteProject}
+            onLeadingAction={(project) => navigate(`/detections/${project.id}/model`, {
+              state: { projectTitle: project.title }
+            })}
+            onOpen={(project) => navigate(`/detections/${project.id}`)}
+            openOnRowClick
+            renderCompletionTime={(project) => {
+              if (project.professionalState.status === "draft") return "未开始检测";
+              if (project.professionalState.status === "completed") {
+                if (!project.completed_at) return "--";
+                return <time dateTime={project.completed_at ?? undefined}>
+                  {formatDateTime(project.completed_at)}
+                </time>;
+              }
+              return <time dateTime={project.estimatedCompletionAt ?? undefined}>
+                {formatEstimatedRemainingTime(project.estimatedCompletionAt)}
+              </time>;
+            }}
+            renderDetectionDescription={(project) => <WorkbenchDefectSummary
+              counts={project.by_defect_type}
+              placeholder={project.professionalState.status === "completed" ? undefined : "--"}
+              variant="compact"
+            />}
+            renderTitleAccessory={(project) => (
+              <time dateTime={project.created_at}>{formatDateTime(project.created_at)}</time>
+            )}
+            titleAccessoryLabel="创建时间"
+          /> : visibleProjects.length ? <div className="project-empty project-search-empty-state">
+            <strong>未找到匹配的检测项目</strong>
+            <span>请尝试其他项目名称。</span>
+          </div> : null}
+        </div>
+        <ListPagination
+          currentPage={visiblePage}
+          onPageChange={setCurrentPage}
+          pageSize={PAGE_SIZE}
+          totalItems={workbenchProjects.length}
+        />
+        </section>
+        <p className="list-page-switch-prompt">
+          提示：想要快速体验检测流程？可前往<Link to="/trials">快速体验页面</Link>。
+        </p>
       </div>
-      <div className="project-pagination"><span>共 <strong>{visibleProjects.length}</strong> 项</span><div><button aria-label="上一页" disabled type="button">‹</button><button aria-current="page" className="current-page" type="button">1</button><button aria-label="下一页" disabled type="button">›</button><span className="page-size">10 条/页</span></div></div>
-    </section>
-  </div>;
+    </div>
+  </div></div>;
 }

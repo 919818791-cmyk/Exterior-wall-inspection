@@ -1,5 +1,5 @@
 import { Spinner } from "@heroui/react";
-import { Navigate, Outlet, useLocation } from "react-router-dom";
+import { Navigate, Outlet, useLocation, useOutletContext } from "react-router-dom";
 
 import { useAuthStore } from "@/stores/useAuthStore";
 import type { UserRole } from "@/types/auth";
@@ -17,6 +17,7 @@ function LoadingScreen() {
 
 export function RequireAuth() {
   const location = useLocation();
+  const outletContext = useOutletContext<unknown>();
   const status = useAuthStore((state) => state.status);
 
   if (status === "loading") return <LoadingScreen />;
@@ -25,14 +26,15 @@ export function RequireAuth() {
     const search = new URLSearchParams({ login: "1", redirect }).toString();
     return <Navigate replace state={{ from: location }} to={`/?${search}`} />;
   }
-  return <Outlet />;
+  return <Outlet context={outletContext} />;
 }
 
 export function RequireRole({ fallbackTo = "/", roles }: { fallbackTo?: string; roles: UserRole[] }) {
+  const outletContext = useOutletContext<unknown>();
   const user = useAuthStore((state) => state.user);
   const status = useAuthStore((state) => state.status);
 
   if (status === "loading") return <LoadingScreen />;
   if (!user || !roles.includes(user.role)) return <Navigate replace to={fallbackTo} />;
-  return <Outlet />;
+  return <Outlet context={outletContext} />;
 }

@@ -1,5 +1,7 @@
 # Algorithm Model Container
 
+> **Paused as of 2026-07-14:** the local YOLO model solution is currently suspended. This container, its weights, and the instructions below are retained for historical reference and are not part of the current deployment or acceptance scope.
+
 This container is the production-side PyTorch / CUDA / Ultralytics runtime
 boundary. It intentionally does not hold backend worker credentials and should
 only be reachable from the Docker internal network.
@@ -18,7 +20,7 @@ models/wall_crack_yolo11x.pt
 models/missing.pt
 ```
 
-Or update `CRACK_MODEL_WEIGHTS_PATH` and `MISSING_MODEL_WEIGHTS_PATH` in `.env`.
+Or update `CRACK_MODEL_WEIGHTS_PATH` and `SPALLING_MODEL_WEIGHTS_PATH` in `.env`.
 
 For CPU-only validation, set:
 
@@ -33,7 +35,7 @@ The service exposes `/health`, `/ready`, `/metadata`, and `/predict`.
 | Type | Label |
 | --- | --- |
 | `crack` | 裂缝 |
-| `missing` | 面砖剥落 |
+| `spalling` | 剥落 |
 
 Inference uses tiled/sliding-window prediction by default so high-resolution
 photos keep enough detail for small facade defects. Each tile is predicted in

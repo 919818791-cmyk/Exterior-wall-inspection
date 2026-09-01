@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from threading import Lock
 from typing import Callable
 from uuid import UUID
 
@@ -16,16 +15,15 @@ from app.core.security import decode_access_token, hash_password
 from app.db.session import get_db
 from app.enums.status import UserRole, UserStatus
 from app.models.tables import Project, UserAccount
+from app.services.usage_control import SecurityStoreUnavailable, get_usage_store
 
 
 bearer_scheme = HTTPBearer(auto_error=False)
-_revoked_tokens: dict[str, int] = {}
-_revoked_tokens_lock = Lock()
-
 DEMO_USERS = (
     {
         "id": UUID("00000000-0000-0000-0000-000000000001"),
         "username": "customer",
+        "phone": "13800000001",
         "password": "Customer123!",
         "real_name": "演示客户",
         "role": UserRole.CUSTOMER.value,
@@ -34,6 +32,7 @@ DEMO_USERS = (
     {
         "id": UUID("00000000-0000-0000-0000-000000000002"),
         "username": "reviewer",
+        "phone": "13800000002",
         "password": "Reviewer123!",
         "real_name": "演示审核员",
         "role": UserRole.REVIEWER.value,
@@ -42,6 +41,7 @@ DEMO_USERS = (
     {
         "id": UUID("00000000-0000-0000-0000-000000000003"),
         "username": "admin",
+        "phone": "13800000003",
         "password": "Admin123!",
         "real_name": "平台管理员",
         "role": UserRole.ADMIN.value,
@@ -57,6 +57,7 @@ class AuthenticatedUser:
     real_name: str | None
     role: str
     organization: str | None
+    phone: str | None = None
 
     @classmethod
     def from_model(cls, user: UserAccount) -> "AuthenticatedUser":
@@ -66,6 +67,7 @@ class AuthenticatedUser:
             real_name=user.real_name,
             role=user.role,
             organization=user.organization,
+            phone=user.phone,
         )
 
 
@@ -87,6 +89,7 @@ def ensure_demo_users(db: Session) -> None:
             user = UserAccount(
                 id=account["id"],
                 username=account["username"],
+                phone=account["phone"],
                 password_hash=hash_password(account["password"]),
                 real_name=account["real_name"],
                 role=account["role"],
@@ -95,6 +98,9 @@ def ensure_demo_users(db: Session) -> None:
             )
             db.add(user)
             continue
+
+        if user.phone is None:
+            user.phone = account["phone"]
 
         # These identifiers belonged to pre-auth development placeholders. Upgrade them
         # to the documented demo identities while preserving existing project ownership.
@@ -117,17 +123,23 @@ def _unauthorized(detail: str = "登录状态已失效，请重新登录。") ->
 
 
 def _is_token_revoked(token_id: str) -> bool:
-    now = int(datetime.now(UTC).timestamp())
-    with _revoked_tokens_lock:
-        expired = [key for key, expiry in _revoked_tokens.items() if expiry <= now]
-        for key in expired:
-            _revoked_tokens.pop(key, None)
-        return token_id in _revoked_tokens
+    try:
+        return get_usage_store().token_is_revoked(token_id)
+    except SecurityStoreUnavailable as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="登录安全服务暂时不可用，请稍后重试。",
+        ) from exc
 
 
 def revoke_token(token_id: str, expires_at: int) -> None:
-    with _revoked_tokens_lock:
-        _revoked_tokens[token_id] = expires_at
+    try:
+        get_usage_store().revoke_token(token_id, expires_at)
+    except SecurityStoreUnavailable as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="登录安全服务暂时不可用，请稍后重试。",
+        ) from exc
 
 
 def get_current_session(
@@ -164,6 +176,16 @@ def get_current_user(session: AuthenticatedSession = Depends(get_current_session
     return session.user
 
 
+def get_optional_current_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+    db: Session = Depends(get_db),
+) -> AuthenticatedUser | None:
+    """Return no viewer for anonymous requests while still rejecting invalid tokens."""
+    if credentials is None:
+        return None
+    return get_current_session(credentials=credentials, db=db).user
+
+
 def require_roles(*roles: UserRole | str) -> Callable[[AuthenticatedUser], AuthenticatedUser]:
     allowed_roles = {role.value if isinstance(role, UserRole) else role for role in roles}
 
@@ -175,6 +197,22 @@ def require_roles(*roles: UserRole | str) -> Callable[[AuthenticatedUser], Authe
     return dependency
 
 
-def ensure_project_access(project: Project, current_user: AuthenticatedUser) -> None:
-    if current_user.role == UserRole.CUSTOMER.value and project.created_by != current_user.id:
+def ensure_project_access(project: Project, current_user: AuthenticatedUser | None) -> None:
+    if current_user is None:
+        if not getattr(project, "is_example", False):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
+        return
+    if (
+        current_user.role == UserRole.CUSTOMER.value
+        and project.created_by != current_user.id
+        and not getattr(project, "is_example", False)
+    ):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
+
+
+def ensure_project_write_access(project: Project, current_user: AuthenticatedUser) -> None:
+    """Allow project-source mutations only to the owner or an administrator."""
+    if getattr(project, "is_example", False):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="示例项目为只读项目。")
+    if current_user.role != UserRole.ADMIN.value and project.created_by != current_user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")

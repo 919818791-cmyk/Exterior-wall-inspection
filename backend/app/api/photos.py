@@ -8,20 +8,37 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, s
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.dependencies import AuthenticatedUser, ensure_project_access, get_current_user, require_roles
-from app.api.projects import (
-    _ensure_project_editable,
-    _get_building_or_404,
-    _get_facade_or_404,
-    _get_project_or_404,
+from app.api.dependencies import (
+    AuthenticatedUser,
+    ensure_project_access,
+    ensure_project_write_access,
+    get_current_user,
+    get_optional_current_user,
 )
+from app.api.projects import _ensure_project_editable, _get_project_or_404
 from app.db.session import get_db
-from app.enums.status import PhotoStatus, PhotoType, UserRole
-from app.models.tables import Photo, Project, UploadBatch
-from app.schemas.phase4 import PhotoRead, UploadBatchCreateRequest, UploadBatchRead
+from app.enums.status import PhotoPrecheckStatus, PhotoStatus, PhotoType
+from app.models.tables import Photo, UploadBatch
+from app.schemas.phase4 import (
+    PhotoRead,
+    UploadBatchCreateRequest,
+    UploadBatchRead,
+)
 from app.services.object_storage import presigned_get_url, put_object, remove_object
+from app.services.photo_metadata import (
+    FormalPhotoMetadata,
+    extract_formal_photo_metadata,
+    facade_orientation_from_yaw,
+    infer_drone_type,
+)
+from app.services.photo_precheck import run_stored_photo_precheck
+from app.services.photo_thumbnails import build_thumbnail, store_thumbnail
+from app.services.usage_tracking import add_photo_upload_event
 
-router = APIRouter(tags=["photos"], dependencies=[Depends(require_roles(UserRole.ADMIN))])
+router = APIRouter(tags=["photos"])
+
+FORMAL_MAX_PHOTO_COUNT = 30
+FORMAL_MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024
 
 
 def _enum_value(value: object) -> str:
@@ -33,22 +50,13 @@ def _batch_no() -> str:
     return f"UP-{timestamp}-{uuid4().hex[:6].upper()}"
 
 
-def _validate_project_scope(
-    db: Session,
-    project: Project,
-    building_id: UUID | None,
-    facade_id: UUID | None,
-) -> None:
-    if building_id is not None:
-        building = _get_building_or_404(db, building_id)
-        if building.project_id != project.id:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Building does not belong to project.")
-    if facade_id is not None:
-        facade = _get_facade_or_404(db, facade_id)
-        if facade.project_id != project.id:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Facade does not belong to project.")
-        if building_id is not None and facade.building_id != building_id:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Facade does not belong to building.")
+def _non_drone_photo_reason(metadata: FormalPhotoMetadata) -> str:
+    missing_items: list[str] = []
+    if not metadata["drone_metadata_available"]:
+        missing_items.append("无人机拍摄元数据")
+    if not metadata["camera_model"]:
+        missing_items.append("无人机机型信息")
+    return f"未检测到{'或'.join(missing_items)}。仅支持专业无人机拍摄的原始照片。"
 
 
 def _photo_to_read(photo: Photo) -> PhotoRead:
@@ -57,8 +65,6 @@ def _photo_to_read(photo: Photo) -> PhotoRead:
     return PhotoRead(
         id=photo.id,
         project_id=photo.project_id,
-        building_id=photo.building_id,
-        facade_id=photo.facade_id,
         upload_batch_id=photo.upload_batch_id,
         original_filename=photo.original_filename,
         file_ext=photo.file_ext,
@@ -69,8 +75,34 @@ def _photo_to_read(photo: Photo) -> PhotoRead:
         thumbnail_object_key=photo.thumbnail_object_key,
         image_width=photo.image_width,
         image_height=photo.image_height,
+        camera_make=photo.camera_make,
+        camera_model=photo.camera_model,
+        camera_product_name=photo.camera_product_name,
+        drone_model=photo.drone_model,
+        camera_image_source=photo.camera_image_source,
+        longitude=photo.longitude,
+        latitude=photo.latitude,
+        absolute_altitude=photo.absolute_altitude,
+        relative_altitude=photo.relative_altitude,
+        gimbal_yaw_degree=photo.gimbal_yaw_degree,
+        gimbal_pitch_degree=photo.gimbal_pitch_degree,
+        gimbal_roll_degree=photo.gimbal_roll_degree,
+        calibrated_focal_length=photo.calibrated_focal_length,
+        focal_length_mm=photo.focal_length_mm,
+        focal_length_35mm=photo.focal_length_35mm,
+        lrf_target_distance=photo.lrf_target_distance,
+        facade_orientation=facade_orientation_from_yaw(
+            float(photo.gimbal_yaw_degree) if photo.gimbal_yaw_degree is not None else None
+        ),
         photo_type=photo.photo_type,
         status=photo.status,
+        precheck_status=photo.precheck_status,
+        precheck_category=photo.precheck_category,
+        precheck_reason=photo.precheck_reason,
+        precheck_model=photo.precheck_model,
+        precheck_error=photo.precheck_error,
+        precheck_attempts=photo.precheck_attempts,
+        prechecked_at=photo.prechecked_at,
         preview_url=preview_url,
         thumbnail_url=thumbnail_url,
         created_at=photo.created_at,
@@ -91,6 +123,19 @@ def _count_active_batch_photos(db: Session, upload_batch_id: UUID) -> int:
     )
 
 
+def _count_active_project_photos(db: Session, project_id: UUID) -> int:
+    return len(
+        list(
+            db.scalars(
+                select(Photo).where(
+                    Photo.project_id == project_id,
+                    Photo.deleted_at.is_(None),
+                )
+            )
+        )
+    )
+
+
 @router.post(
     "/projects/{project_id}/upload-batches",
     response_model=UploadBatchRead,
@@ -103,14 +148,10 @@ def create_upload_batch(
     current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> UploadBatchRead:
     project = _get_project_or_404(db, project_id)
-    ensure_project_access(project, current_user)
+    ensure_project_write_access(project, current_user)
     _ensure_project_editable(project)
-    _validate_project_scope(db, project, payload.building_id, payload.facade_id)
-
     batch = UploadBatch(
         project_id=project.id,
-        building_id=payload.building_id,
-        facade_id=payload.facade_id,
         batch_no=_batch_no(),
         drone_type=payload.drone_type,
         upload_mode=_enum_value(payload.upload_mode),
@@ -129,45 +170,60 @@ def create_upload_batch(
 def upload_photo(
     project_id: UUID = Form(...),
     upload_batch_id: UUID = Form(...),
-    building_id: UUID | None = Form(default=None),
-    facade_id: UUID | None = Form(default=None),
     photo_type: PhotoType = Form(default=PhotoType.VISIBLE),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> PhotoRead:
     project = _get_project_or_404(db, project_id)
-    ensure_project_access(project, current_user)
+    ensure_project_write_access(project, current_user)
     _ensure_project_editable(project)
 
     batch = db.get(UploadBatch, upload_batch_id)
     if batch is None or batch.project_id != project.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Upload batch not found.")
 
-    final_building_id = building_id or batch.building_id
-    final_facade_id = facade_id or batch.facade_id
-    _validate_project_scope(db, project, final_building_id, final_facade_id)
-
     file.file.seek(0, 2)
     file_size = file.file.tell()
     file.file.seek(0)
     if file_size <= 0:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded file is empty.")
+    if file_size > FORMAL_MAX_FILE_SIZE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"单张图片最大 {FORMAL_MAX_FILE_SIZE_BYTES // (1024 * 1024)}MB。",
+        )
+    if _count_active_project_photos(db, project.id) >= FORMAL_MAX_PHOTO_COUNT:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"每个项目最多上传 {FORMAL_MAX_PHOTO_COUNT} 张照片。",
+        )
 
     suffix = Path(file.filename or "").suffix.lower()
     object_id = uuid4()
     object_key = f"projects/{project.id}/photos/{object_id}{suffix or '.bin'}"
-    bucket = put_object(
-        object_key=object_key,
-        data=file.file,
-        length=file_size,
-        content_type=file.content_type,
-    )
+    metadata = extract_formal_photo_metadata(file.file)
+    thumbnail = build_thumbnail(file.file, object_key)
+    bucket: str | None = None
+    thumbnail_bucket: str | None = None
+    try:
+        bucket = put_object(
+            object_key=object_key,
+            data=file.file,
+            length=file_size,
+            content_type=file.content_type,
+        )
+        if thumbnail is not None:
+            thumbnail_bucket = store_thumbnail(thumbnail)
+    except Exception:
+        if bucket is not None:
+            remove_object(bucket, object_key)
+        if thumbnail_bucket is not None and thumbnail is not None:
+            remove_object(thumbnail_bucket, thumbnail.object_key)
+        raise
 
     photo = Photo(
         project_id=project.id,
-        building_id=final_building_id,
-        facade_id=final_facade_id,
         upload_batch_id=batch.id,
         original_filename=file.filename or f"{object_id}{suffix}",
         file_ext=suffix.lstrip(".") or None,
@@ -175,16 +231,71 @@ def upload_photo(
         mime_type=file.content_type,
         storage_bucket=bucket,
         storage_object_key=object_key,
-        thumbnail_object_key=None,
-        photo_type=_enum_value(photo_type),
+        thumbnail_object_key=thumbnail.object_key if thumbnail is not None else None,
+        image_width=thumbnail.source_width if thumbnail is not None else None,
+        image_height=thumbnail.source_height if thumbnail is not None else None,
+        camera_make=metadata["camera_make"],
+        camera_model=metadata["camera_model"],
+        camera_product_name=metadata["camera_product_name"],
+        drone_model=metadata["drone_model"],
+        camera_image_source=metadata["xmp_drone_dji_image_source"],
+        longitude=metadata["longitude"],
+        latitude=metadata["latitude"],
+        absolute_altitude=metadata["absolute_altitude"],
+        relative_altitude=metadata["relative_altitude"],
+        gimbal_yaw_degree=metadata["gimbal_yaw_degree"],
+        gimbal_pitch_degree=metadata["gimbal_pitch_degree"],
+        gimbal_roll_degree=metadata["gimbal_roll_degree"],
+        calibrated_focal_length=metadata["calibrated_focal_length"],
+        focal_length_mm=metadata["focal_length_mm"],
+        focal_length_35mm=metadata["focal_length_35mm"],
+        lrf_target_distance=metadata["lrf_target_distance"],
+        photo_type=(
+            PhotoType.THERMAL.value
+            if metadata["thermal_imaging_available"]
+            else _enum_value(photo_type)
+        ),
         status=PhotoStatus.UPLOADED.value,
+        precheck_status=(
+            PhotoPrecheckStatus.PENDING.value
+            if metadata["professional_drone_photo"]
+            else PhotoPrecheckStatus.REJECTED.value
+        ),
+        precheck_category=None if metadata["professional_drone_photo"] else "NON_DRONE",
+        precheck_reason=(
+            None
+            if metadata["professional_drone_photo"]
+            else _non_drone_photo_reason(metadata)
+        ),
+        precheck_model=None if metadata["professional_drone_photo"] else "embedded-metadata",
+        precheck_attempts=0 if metadata["professional_drone_photo"] else 1,
+        prechecked_at=None if metadata["professional_drone_photo"] else datetime.now(UTC),
     )
     db.add(photo)
     db.flush()
+    add_photo_upload_event(
+        db,
+        source_type="formal",
+        photo_id=photo.id,
+        actor_id=current_user.id,
+        storage_bytes=file_size,
+        occurred_at=photo.created_at,
+    )
     batch.photo_count = _count_active_batch_photos(db, batch.id)
-    project.updated_at = datetime.now(UTC)
+    detected_drone_type = infer_drone_type(metadata)
+    if detected_drone_type and not batch.drone_type:
+        batch.drone_type = detected_drone_type
+    if detected_drone_type and not project.drone_type:
+        project.drone_type = detected_drone_type
+    uploaded_at = datetime.now(UTC)
+    project.setup_completed_at = (
+        getattr(project, "setup_completed_at", None) or uploaded_at
+    )
+    project.updated_at = uploaded_at
     db.commit()
     db.refresh(photo)
+    if metadata["professional_drone_photo"]:
+        run_stored_photo_precheck(db, photo)
     return _photo_to_read(photo)
 
 
@@ -192,7 +303,7 @@ def upload_photo(
 def list_project_photos(
     project_id: UUID,
     db: Session = Depends(get_db),
-    current_user: AuthenticatedUser = Depends(get_current_user),
+    current_user: AuthenticatedUser | None = Depends(get_optional_current_user),
 ) -> list[PhotoRead]:
     project = _get_project_or_404(db, project_id)
     ensure_project_access(project, current_user)
@@ -216,7 +327,7 @@ def delete_photo(
     if photo is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Photo not found.")
     project = _get_project_or_404(db, photo.project_id)
-    ensure_project_access(project, current_user)
+    ensure_project_write_access(project, current_user)
     _ensure_project_editable(project)
 
     deleted_at = datetime.now(UTC)

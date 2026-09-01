@@ -7,6 +7,20 @@ FRONTEND_DIR="$ROOT_DIR/frontend"
 SERVICE_NAME="building-exterior-backend"
 NGINX_SITE_NAME="building-exterior"
 APP_USER="${APP_USER:-$(id -un)}"
+PYTHON_BIN="${PYTHON_BIN:-python3}"
+NGINX_ONLY=false
+
+case "${1:-}" in
+  "")
+    ;;
+  --nginx-only)
+    NGINX_ONLY=true
+    ;;
+  *)
+    echo "Usage: $0 [--nginx-only]" >&2
+    exit 2
+    ;;
+esac
 
 log() {
   printf '\n[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*"
@@ -48,16 +62,25 @@ detect_server_names() {
 
 env_value() {
   local key="$1"
-  if [ ! -f "$ROOT_DIR/.env" ]; then
-    return 0
-  fi
-  awk -F= -v key="$key" '
-    $0 !~ /^[[:space:]]*#/ && $1 == key {
-      sub(/^[^=]*=/, "")
-      print
-      exit
-    }
-  ' "$ROOT_DIR/.env" | sed 's/^["'\'']//; s/["'\'']$//'
+  local env_file
+
+  # Keep production-only overrides (especially server-side credentials) out of
+  # the shared .env file. Vite applies the same .env.local-over-.env priority.
+  for env_file in "$ROOT_DIR/.env.local" "$ROOT_DIR/.env"; do
+    if [ ! -f "$env_file" ]; then
+      continue
+    fi
+    awk -F= -v key="$key" '
+      $0 !~ /^[[:space:]]*#/ && $1 == key {
+        sub(/^[^=]*=/, "")
+        print
+        exit
+      }
+    ' "$env_file" | sed 's/^["'\'']//; s/["'\'']$//'
+    if grep -qE "^${key}=" "$env_file"; then
+      return 0
+    fi
+  done
 }
 
 set_env_value() {
@@ -111,14 +134,77 @@ ensure_frontend_api_base_url() {
   esac
 }
 
+require_production_value() {
+  local key="$1"
+  local value
+  value="$(env_value "$key")"
+  if [ -z "$value" ] || [[ "$value" == your-* ]] || [[ "$value" == change-this-* ]]; then
+    echo "Missing secure production value: $key" >&2
+    exit 1
+  fi
+}
+
+has_production_value() {
+  local value
+  value="$(env_value "$1")"
+  [ -n "$value" ] && [[ "$value" != your-* ]] && [[ "$value" != change-this-* ]]
+}
+
+validate_trial_inference_config() {
+  if has_production_value DASHSCOPE_API_KEY || has_production_value ZHIPU_API_KEY; then
+    return 0
+  fi
+  if has_production_value LOCAL_QWEN_API_BASE_URL && has_production_value LOCAL_QWEN_MODEL; then
+    return 0
+  fi
+  echo "Configure DASHSCOPE_API_KEY, ZHIPU_API_KEY, or both LOCAL_QWEN_API_BASE_URL and LOCAL_QWEN_MODEL." >&2
+  exit 1
+}
+
+validate_production_env() {
+  if [ "$(env_value AUTH_SEED_DEMO_USERS)" != "false" ]; then
+    echo "AUTH_SEED_DEMO_USERS must be false in production." >&2
+    exit 1
+  fi
+  if [ "$(env_value SECURITY_STORE_BACKEND)" != "redis" ]; then
+    echo "SECURITY_STORE_BACKEND must be redis in production." >&2
+    exit 1
+  fi
+  if [ "$(env_value SECURITY_FAIL_CLOSED)" != "true" ]; then
+    echo "SECURITY_FAIL_CLOSED must be true in production." >&2
+    exit 1
+  fi
+  require_production_value AUTH_SECRET_KEY
+  validate_trial_inference_config
+  require_production_value VITE_AMAP_KEY
+  require_production_value AMAP_SECURITY_JS_CODE
+  require_production_value QWEATHER_API_HOST
+  if ! has_production_value QWEATHER_API_KEY; then
+    require_production_value QWEATHER_PROJECT_ID
+    require_production_value QWEATHER_CREDENTIAL_ID
+    require_production_value QWEATHER_PRIVATE_KEY_PATH
+  fi
+}
+
 cd "$ROOT_DIR"
 
 require_cmd sudo
-require_cmd docker
-require_cmd python3
-require_cmd npm
 require_cmd curl
 require_cmd ip
+
+if [ "$NGINX_ONLY" = false ]; then
+  require_cmd docker
+  require_cmd "$PYTHON_BIN"
+  require_cmd npm
+  if ! "$PYTHON_BIN" - <<'PY'
+import sys
+raise SystemExit(0 if sys.version_info >= (3, 11) else 1)
+PY
+  then
+    echo "$PYTHON_BIN must be Python 3.11 or newer." >&2
+    exit 1
+  fi
+fi
 
 if [ ! -f "$ROOT_DIR/.env" ]; then
   if [ -f "$ROOT_DIR/.env.example" ]; then
@@ -133,6 +219,7 @@ if [ ! -f "$ROOT_DIR/.env" ]; then
 Please edit /opt/building-exterior/.env before running this script again:
 
 - replace database, MinIO, worker and auth secrets
+- set DASHSCOPE_API_KEY for the /trial Qwen detection flow
 - set BACKEND_CORS_ORIGINS to your domain or server IP
 - set MINIO_ENDPOINT and MINIO_PUBLIC_URL to a browser-accessible address
 
@@ -145,31 +232,46 @@ EOF
 fi
 
 ensure_frontend_api_base_url
+validate_production_env
 
 sudo_keepalive
 
-log "Starting PostgreSQL, MinIO and Redis containers"
-sudo docker compose up -d postgres minio redis
-sudo docker compose ps
+if [ "$NGINX_ONLY" = false ]; then
+  log "Starting PostgreSQL, MinIO and Redis containers"
+  sudo docker compose up -d postgres minio redis
+  sudo docker compose ps
 
-log "Installing backend dependencies"
-cd "$BACKEND_DIR"
-python3 -m venv .venv
-# shellcheck disable=SC1091
-source "$BACKEND_DIR/.venv/bin/activate"
-pip install -r requirements.txt
+  log "Installing backend dependencies"
+  cd "$BACKEND_DIR"
+  venv_args=()
+  if [ -x "$BACKEND_DIR/.venv/bin/python" ] && \
+    ! "$BACKEND_DIR/.venv/bin/python" - <<'PY'
+import sys
+raise SystemExit(0 if sys.version_info >= (3, 11) else 1)
+PY
+  then
+    log "Recreating backend virtual environment with $PYTHON_BIN"
+    venv_args+=(--clear)
+  fi
+  "$PYTHON_BIN" -m venv "${venv_args[@]}" .venv
+  # shellcheck disable=SC1091
+  source "$BACKEND_DIR/.venv/bin/activate"
+  pip install -r requirements.txt
 
-log "Running database migrations"
-alembic upgrade head
-python -m app.db.check_connection
+  log "Running database migrations"
+  alembic upgrade head
+  python -m app.db.check_connection
+  log "Generating missing photo thumbnails"
+  python -m app.db.backfill_photo_thumbnails
+  python -m app.db.harden_production_accounts
 
-log "Installing frontend dependencies and building static assets"
-cd "$FRONTEND_DIR"
-npm ci
-npm run build
+  log "Installing frontend dependencies and building static assets"
+  cd "$FRONTEND_DIR"
+  npm ci
+  npm run build
 
-log "Installing systemd service: $SERVICE_NAME"
-sudo tee "/etc/systemd/system/$SERVICE_NAME.service" >/dev/null <<EOF
+  log "Installing systemd service: $SERVICE_NAME"
+  sudo tee "/etc/systemd/system/$SERVICE_NAME.service" >/dev/null <<EOF
 [Unit]
 Description=Building Exterior Backend
 After=network.target docker.service
@@ -185,12 +287,22 @@ RestartSec=5
 WantedBy=multi-user.target
 EOF
 
-sudo systemctl daemon-reload
-sudo systemctl enable --now "$SERVICE_NAME"
-sudo systemctl restart "$SERVICE_NAME"
+  sudo systemctl daemon-reload
+  sudo systemctl enable --now "$SERVICE_NAME"
+  sudo systemctl restart "$SERVICE_NAME"
+else
+  log "Nginx-only mode: skipping containers, dependencies, migrations, frontend build and backend restart"
+fi
 
 log "Configuring Nginx"
 SERVER_NAMES="$(detect_server_names)"
+AMAP_SECURITY_JS_CODE="$(env_value AMAP_SECURITY_JS_CODE)"
+NGINX_DNS_RESOLVER="$(awk '/^[[:space:]]*nameserver[[:space:]]+/{print $2; exit}' /etc/resolv.conf)"
+NGINX_DNS_RESOLVER="${NGINX_DNS_RESOLVER:-127.0.0.53}"
+MINIO_BUCKET="$(env_value MINIO_BUCKET)"
+MINIO_BUCKET="${MINIO_BUCKET:-building-exterior}"
+sudo rm -f "/etc/nginx/conf.d/building-exterior-rate-limits.conf"
+sudo install -o root -g root -m 640 /dev/null "/etc/nginx/sites-available/$NGINX_SITE_NAME"
 sudo tee "/etc/nginx/sites-available/$NGINX_SITE_NAME" >/dev/null <<EOF
 server {
     listen 80 default_server;
@@ -199,18 +311,92 @@ server {
 
     root $FRONTEND_DIR/dist;
     index index.html;
-    client_max_body_size 50M;
+    client_max_body_size 1G;
+    resolver $NGINX_DNS_RESOLVER valid=300s ipv6=off;
+    resolver_timeout 5s;
 
-    location /api/ {
+    gzip on;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_comp_level 6;
+    gzip_min_length 1024;
+    gzip_types text/plain text/css application/json application/javascript application/xml image/svg+xml;
+
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+
+    location = /index.html {
+        expires -1;
+        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header X-Frame-Options "SAMEORIGIN" always;
+    }
+
+    location /assets/ {
+        try_files \$uri =404;
+        expires 1y;
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header X-Frame-Options "SAMEORIGIN" always;
+    }
+
+    location ^~ /videos/ {
+        try_files \$uri =404;
+        expires 30d;
+        add_header Cache-Control "public, max-age=2592000" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header X-Frame-Options "SAMEORIGIN" always;
+    }
+
+    location ~* \.(?:png|jpe?g|webp|gif|svg|ico)\$ {
+        try_files \$uri =404;
+        expires 7d;
+    }
+
+    location ^~ /api/ {
         proxy_pass http://127.0.0.1:8000;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
         proxy_connect_timeout 30s;
-        proxy_send_timeout 300s;
-        proxy_read_timeout 300s;
-        send_timeout 300s;
+        proxy_send_timeout 900s;
+        proxy_read_timeout 900s;
+        send_timeout 900s;
+    }
+
+    # Browser-facing S3 signed URLs use this public host while MinIO itself
+    # remains bound to loopback. Preserve Host because it is part of SigV4.
+    location ^~ /$MINIO_BUCKET/ {
+        proxy_pass http://127.0.0.1:9002;
+        proxy_set_header Host \$http_host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_request_buffering off;
+        proxy_buffering off;
+    }
+
+    # Official AMap JS API security proxy. The security code remains server-side.
+    location /_AMapService/v4/map/styles {
+        set \$args "\$args&jscode=$AMAP_SECURITY_JS_CODE";
+        # AMap service plugins load JSONP through script tags. The upstream
+        # response is application/json, so nosniff would block execution.
+        add_header X-Content-Type-Options "";
+        proxy_ssl_server_name on;
+        proxy_ssl_name webapi.amap.com;
+        proxy_pass https://webapi.amap.com/v4/map/styles;
+    }
+
+    location /_AMapService/ {
+        set \$args "\$args&jscode=$AMAP_SECURITY_JS_CODE";
+        add_header X-Content-Type-Options "";
+        proxy_ssl_server_name on;
+        proxy_ssl_name restapi.amap.com;
+        proxy_pass https://restapi.amap.com/;
     }
 
     location / {
@@ -227,7 +413,6 @@ sudo systemctl reload nginx
 log "Opening firewall ports if UFW is active"
 if command -v ufw >/dev/null 2>&1 && sudo ufw status | grep -q '^Status: active'; then
   sudo ufw allow 80/tcp
-  sudo ufw allow 9002/tcp
 fi
 
 log "Health checks"

@@ -11,7 +11,9 @@ from app.enums.status import (
     AiResultStatus,
     DefectType,
     DetectionTaskStatus,
+    DroneType,
     InspectionReportStatus,
+    PhotoPrecheckStatus,
     PhotoStatus,
     PhotoType,
     ProjectStatus,
@@ -57,9 +59,9 @@ class UserAccountRead(OrmSchema):
 class ProjectBase(OrmSchema):
     project_no: str
     name: str
+    drone_type: DroneType | None = None
+    description: str | None = None
     client_name: str | None = None
-    contact_name: str | None = None
-    contact_phone: str | None = None
     province: str | None = None
     city: str | None = None
     district: str | None = None
@@ -80,51 +82,8 @@ class ProjectRead(ProjectBase):
     current_report_id: UUID | None
     started_at: datetime | None
     completed_at: datetime | None
-    created_at: datetime
-    updated_at: datetime
-    deleted_at: datetime | None
-
-
-class BuildingBase(OrmSchema):
-    project_id: UUID
-    name: str
-    building_no: str | None = None
-    floors: int | None = None
-    height: Decimal | None = None
-    structure_type: str | None = None
-    usage_type: str | None = None
-    built_year: int | None = None
-    remark: str | None = None
-    sort_order: int = 0
-
-
-class BuildingCreate(BuildingBase):
-    pass
-
-
-class BuildingRead(BuildingBase):
-    id: UUID
-    created_at: datetime
-    updated_at: datetime
-    deleted_at: datetime | None
-
-
-class FacadeBase(OrmSchema):
-    project_id: UUID
-    building_id: UUID
-    name: str
-    area: Decimal | None = None
-    floors_range: str | None = None
-    description: str | None = None
-    sort_order: int = 0
-
-
-class FacadeCreate(FacadeBase):
-    pass
-
-
-class FacadeRead(FacadeBase):
-    id: UUID
+    setup_completed_at: datetime | None
+    setup_step: int
     created_at: datetime
     updated_at: datetime
     deleted_at: datetime | None
@@ -132,8 +91,6 @@ class FacadeRead(FacadeBase):
 
 class CollectionTimeRecommendationCreate(OrmSchema):
     project_id: UUID
-    building_id: UUID | None = None
-    facade_id: UUID | None = None
     target_date: date
     orientation: RecommendationOrientation
     recommended_start_time: datetime
@@ -151,7 +108,7 @@ class CollectionTimeRecommendationRead(CollectionTimeRecommendationCreate):
 class DetectionConfigBase(OrmSchema):
     project_id: UUID
     model_types: list[DefectType]
-    high_precision: bool = False
+    high_precision: bool = True
     config_json: dict[str, Any] | None = None
     created_by: UUID
 
@@ -168,8 +125,6 @@ class DetectionConfigRead(DetectionConfigBase):
 
 class UploadBatchCreate(OrmSchema):
     project_id: UUID
-    building_id: UUID | None = None
-    facade_id: UUID | None = None
     batch_no: str
     drone_type: str | None = None
     upload_mode: UploadMode
@@ -186,8 +141,6 @@ class UploadBatchRead(UploadBatchCreate):
 
 class PhotoBase(OrmSchema):
     project_id: UUID
-    building_id: UUID | None = None
-    facade_id: UUID | None = None
     upload_batch_id: UUID
     original_filename: str
     file_ext: str | None = None
@@ -198,11 +151,32 @@ class PhotoBase(OrmSchema):
     thumbnail_object_key: str | None = None
     image_width: int | None = None
     image_height: int | None = None
+    camera_make: str | None = None
+    camera_model: str | None = None
+    camera_product_name: str | None = None
+    drone_model: str | None = None
+    camera_image_source: str | None = None
     photo_type: PhotoType
     capture_time: datetime | None = None
     longitude: Decimal | None = None
     latitude: Decimal | None = None
+    absolute_altitude: Decimal | None = None
+    relative_altitude: Decimal | None = None
+    gimbal_yaw_degree: Decimal | None = None
+    gimbal_pitch_degree: Decimal | None = None
+    gimbal_roll_degree: Decimal | None = None
+    calibrated_focal_length: Decimal | None = None
+    focal_length_mm: Decimal | None = None
+    focal_length_35mm: Decimal | None = None
+    lrf_target_distance: Decimal | None = None
     status: PhotoStatus = PhotoStatus.UPLOADED
+    precheck_status: PhotoPrecheckStatus = PhotoPrecheckStatus.PENDING
+    precheck_category: str | None = None
+    precheck_reason: str | None = None
+    precheck_model: str | None = None
+    precheck_error: str | None = None
+    precheck_attempts: int = 0
+    prechecked_at: datetime | None = None
 
 
 class PhotoCreate(PhotoBase):

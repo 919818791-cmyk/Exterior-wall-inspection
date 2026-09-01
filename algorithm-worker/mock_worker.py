@@ -20,24 +20,31 @@ def env(name: str, default: str) -> str:
 API_BASE_URL = env("WORKER_BACKEND_BASE_URL", "http://localhost:8000").rstrip("/")
 WORKER_ID = env("WORKER_ID", "mock-worker-local")
 WORKER_TOKEN = env("WORKER_TOKEN", "change-this-worker-token")
-MODEL_VERSION = env("WORKER_MODEL_VERSION", "trial-crack-missing-v1")
+MODEL_VERSION = env("WORKER_MODEL_VERSION", "trial-crack-spalling-v1")
 WORKER_MODE = env("WORKER_MODE", "mock").lower()
 ALGORITHM_INFERENCE_URL = env("ALGORITHM_INFERENCE_URL", "http://algorithm-model:9002").rstrip("/")
 ALGORITHM_INFERENCE_TIMEOUT_SECONDS = int(env("ALGORITHM_INFERENCE_TIMEOUT_SECONDS", "120"))
 
 DEFECT_TYPE_NAMES = {
     "crack": "裂缝",
-    "missing": "面砖剥落",
+    "spalling": "剥落",
+    "hollow": "空鼓",
 }
 DEFECT_ALIASES = {
     "crack": "crack",
     "裂缝": "crack",
     "开裂": "crack",
-    "missing": "missing",
-    "面砖剥落": "missing",
-    "瓷砖剥落": "missing",
-    "hollowing": "missing",
+    "missing": "spalling",
+    "spalling": "spalling",
+    "剥落": "spalling",
+    "面砖剥落": "spalling",
+    "瓷砖剥落": "spalling",
+    "面砖缺失": "spalling",
+    "hollowing": "spalling",
+    "hollow": "hollow",
+    "空鼓": "hollow",
 }
+VISIBLE_DEFECT_TYPES = frozenset({"crack", "spalling"})
 
 
 def api_url(path: str, params: dict[str, str] | None = None) -> str:
@@ -94,6 +101,12 @@ def normalize_models(models: list[Any] | None) -> list[str]:
         if defect_type in DEFECT_TYPE_NAMES and defect_type not in normalized:
             normalized.append(defect_type)
     return normalized or list(DEFECT_TYPE_NAMES)
+
+
+def compatible_models_for_photo(photo: dict[str, Any], models: list[str]) -> list[str]:
+    if photo.get("photo_type") == "thermal":
+        return ["hollow"] if "hollow" in models else []
+    return [model for model in models if model in VISIBLE_DEFECT_TYPES]
 
 
 def download_photo_bytes(photo: dict[str, Any]) -> bytes:
@@ -207,37 +220,49 @@ def normalize_detection(detection: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def build_mock_results(task: dict[str, Any]) -> dict[str, Any]:
-    selected_model = normalize_models(task.get("models"))[0]
+    models = normalize_models(task.get("models"))
     now = datetime.now(UTC).isoformat()
+    results: list[dict[str, Any]] = []
+    for index, photo in enumerate(task.get("photos", [])):
+        photo_models = compatible_models_for_photo(photo, models)
+        detections: list[dict[str, Any]] = []
+        if photo_models:
+            selected_model = photo_models[0]
+            detections.append(
+                {
+                    "id": f"mock-{index + 1}",
+                    "type": selected_model,
+                    "type_name": DEFECT_TYPE_NAMES[selected_model],
+                    "confidence": 0.91,
+                    "bbox": {
+                        "x": 120 + index * 16,
+                        "y": 80 + index * 12,
+                        "width": 260,
+                        "height": 140,
+                    },
+                    "mask": None,
+                    "severity": "medium",
+                    "description": f"模拟 Worker 固定结果：疑似{DEFECT_TYPE_NAMES[selected_model]}。",
+                }
+            )
+        results.append(
+            {
+                "photo_id": photo["photo_id"],
+                "detections": detections,
+                "model_output": {
+                    "requested_models": photo_models,
+                    "executed_models": photo_models,
+                    "detections": detections,
+                },
+            }
+        )
     return {
         "task_id": task["task_id"],
         "project_id": task["project_id"],
         "model_version": MODEL_VERSION,
         "started_at": now,
         "finished_at": now,
-        "results": [
-            {
-                "photo_id": photo["photo_id"],
-                "detections": [
-                    {
-                        "id": f"mock-{index + 1}",
-                        "type": selected_model,
-                        "type_name": DEFECT_TYPE_NAMES[selected_model],
-                        "confidence": 0.91,
-                        "bbox": {
-                            "x": 120 + index * 16,
-                            "y": 80 + index * 12,
-                            "width": 260,
-                            "height": 140,
-                        },
-                        "mask": None,
-                        "severity": "medium",
-                        "description": f"模拟 Worker 固定结果：疑似{DEFECT_TYPE_NAMES[selected_model]}。",
-                    }
-                ],
-            }
-            for index, photo in enumerate(task.get("photos", []))
-        ],
+        "results": results,
     }
 
 
@@ -246,17 +271,34 @@ def build_real_results(task: dict[str, Any]) -> dict[str, Any]:
     started_at = datetime.now(UTC).isoformat()
     photo_results: list[dict[str, Any]] = []
     for photo in task.get("photos", []):
+        photo_models = compatible_models_for_photo(photo, models)
+        if not photo_models:
+            photo_results.append(
+                {
+                    "photo_id": photo["photo_id"],
+                    "detections": [],
+                    "model_output": {
+                        "requested_models": [],
+                        "executed_models": [],
+                        "detections": [],
+                    },
+                }
+            )
+            continue
         content = download_photo_bytes(photo)
         inference = request_inference(
             photo=photo,
             content=content,
-            models=models,
+            models=photo_models,
             high_precision=bool(task.get("high_precision")),
         )
         detections = [
             normalized
             for detection in inference.get("detections", [])
-            if (normalized := normalize_detection(detection)) is not None
+            if (
+                (normalized := normalize_detection(detection)) is not None
+                and normalized["type"] in photo_models
+            )
         ]
         photo_results.append(
             {
@@ -265,7 +307,7 @@ def build_real_results(task: dict[str, Any]) -> dict[str, Any]:
                 "model_output": {
                     "image": inference.get("image"),
                     "model_version": inference.get("model_version") or MODEL_VERSION,
-                    "requested_models": inference.get("requested_models") or models,
+                    "requested_models": photo_models,
                     "executed_models": inference.get("executed_models") or [],
                     "detections": detections,
                 },

@@ -1,60 +1,35 @@
-import { Button, Card, CardBody, Divider, Skeleton } from "@heroui/react";
+import { Button, Card, CardBody, Skeleton } from "@heroui/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  ArrowLeft,
   CheckCircle2,
   Download,
   FileImage,
-  FileText,
-  Send,
+  Minus,
+  Plus,
+  RotateCcw,
   ZoomIn
 } from "lucide-react";
-import type { CSSProperties, ReactNode } from "react";
-import { useMemo, useState } from "react";
-import { Link as RouterLink, useParams, useSearchParams } from "react-router-dom";
+import type { MouseEvent as ReactMouseEvent } from "react";
+import { useMemo, useRef, useState } from "react";
+import { Link as RouterLink, Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
 
-import { downloadReportDocx, pushReport, reportQueryOptions } from "@/api/reports";
-import { ModelOutputDialog } from "@/components/ModelOutputDialog";
-import { StatusPill } from "@/components/StatusPill";
+import { downloadReportDocx, downloadTrialReportPdf, reportQueryOptions } from "@/api/reports";
+import { completeDetectionReview, reviewDetectionPreviewQueryOptions } from "@/api/review";
+import { ReportDefectBox } from "@/components/ReportDefectBox";
+import { WorkspaceTitleBar } from "@/components/WorkspaceTitleBar";
 import type {
-  ReportBuildingSnapshot,
   ReportDefectSnapshot,
   ReportDetail
 } from "@/types/reports";
 import { useAuthStore } from "@/stores/useAuthStore";
 import { formatDateTime } from "@/utils/projectDisplay";
 import { saveBlobAsFile } from "@/utils/download";
-import { formatModelOutputs, hasModelOutputs } from "@/utils/modelOutputs";
-import { trialDefectBoxLabel, trialDefectDescriptionFromType, trialDefectDisplayFromType } from "@/utils/trialDefectDisplay";
+import { pairVisibleThermalPhotos, photoVariantFromFilename } from "@/utils/photoPairing";
+import { formatDefectNumber, trialDefectDescriptionFromType } from "@/utils/trialDefectDisplay";
 
-const DEFECT_LABELS: Record<string, string> = {
-  crack: "裂缝",
-  missing: "面砖剥落",
-  spalling: "剥落",
-  moisture: "潮湿"
-};
-
-const REVIEW_STATUS_LABELS: Record<string, string> = {
-  generated: "自动生成",
-  confirmed: "已确认",
-  modified: "已修改",
-  added: "人工新增",
-  deleted: "已删除"
-};
-
-const REPORT_STATUS_LABELS = {
-  draft: "草稿",
-  generated: "待推送",
-  pushed: "已推送",
-  revoked: "已撤回"
-};
-
-const REPORT_STATUS_TONES = {
-  draft: "warning",
-  generated: "warning",
-  pushed: "success",
-  revoked: "danger"
-} as const;
+function confirmReportExport() {
+  return window.confirm("请妥善保管导出文件。确认继续导出？");
+}
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "操作失败，请稍后重试。";
@@ -62,50 +37,25 @@ function getErrorMessage(error: unknown) {
 
 export function ReportDetailPage() {
   const { id = "" } = useParams();
-  const [searchParams] = useSearchParams();
-  const queryClient = useQueryClient();
+  const location = useLocation();
   const user = useAuthStore((state) => state.user);
-  const canManageReports = user?.role === "reviewer" || user?.role === "admin";
-  const includeGenerated = canManageReports && searchParams.get("mode") === "review";
-  const reportQuery = useQuery(reportQueryOptions(id, includeGenerated, user));
-  const report = reportQuery.data;
-  const [message, setMessage] = useState("");
-  const [isModelOutputOpen, setIsModelOutputOpen] = useState(false);
-  const isTrialResult = report?.source_type === "trial";
-
-  const pushMutation = useMutation({
-    mutationFn: () => pushReport(id),
-    onSuccess: async () => {
-      setMessage("报告已推送，项目已进入已完成状态。");
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["reports"] }),
-        queryClient.invalidateQueries({ queryKey: ["review"] }),
-        queryClient.invalidateQueries({ queryKey: ["projects"] })
-      ]);
-    }
+  const requestedReviewTaskId = new URLSearchParams(location.search).get("reviewTaskId") ?? "";
+  const reviewTaskId = user?.role === "reviewer" || user?.role === "admin"
+    ? requestedReviewTaskId
+    : "";
+  const isReviewPreview = Boolean(reviewTaskId);
+  const reportQuery = useQuery({
+    ...reportQueryOptions(id, false, user),
+    enabled: Boolean(id && !isReviewPreview)
   });
-  const downloadMutation = useMutation({
-    mutationFn: () => downloadReportDocx(id, includeGenerated),
-    onSuccess: (blob) => {
-      if (report) saveBlobAsFile(blob, `${report.report_no}-${report.title}.docx`);
-    }
+  const reviewPreviewQuery = useQuery({
+    ...reviewDetectionPreviewQueryOptions(reviewTaskId),
+    enabled: isReviewPreview
   });
+  const activeQuery = isReviewPreview ? reviewPreviewQuery : reportQuery;
+  const report = activeQuery.data;
 
-  const defects = report?.defects ?? [];
-  const summary = report?.summary ?? {};
-  const canPush = canManageReports && !isTrialResult && report?.status === "generated";
-
-  const defectTypeSummary = useMemo(
-    () => Object.entries(summary.by_defect_type ?? {}),
-    [summary.by_defect_type]
-  );
-  const modelOutputText = useMemo(
-    () => formatModelOutputs(report?.raw_model_outputs),
-    [report?.raw_model_outputs]
-  );
-  const canShowModelOutputs = hasModelOutputs(report?.raw_model_outputs);
-
-  if (reportQuery.isLoading) {
+  if (activeQuery.isLoading) {
     return (
       <div className="grid gap-5">
         <Skeleton className="h-24 rounded-lg" />
@@ -114,440 +64,366 @@ export function ReportDetailPage() {
     );
   }
 
-  if (reportQuery.isError || !report) {
+  if (activeQuery.isError || !report) {
     return (
       <div className="grid min-h-[calc(100svh-8rem)] place-items-center">
         <Card className="w-full max-w-2xl rounded-lg border border-red-200 shadow-none">
           <CardBody className="gap-4 p-6">
             <h1 className="text-xl font-black text-ink">结果加载失败</h1>
             <p className="text-sm font-bold text-red-700">
-              {getErrorMessage(reportQuery.error)}
+              {getErrorMessage(activeQuery.error)}
             </p>
-            <Button
-              as={RouterLink}
-              className="w-fit rounded-lg border border-slate-300 bg-white font-bold text-slate-700 shadow-none"
-              to="/reports"
-              variant="flat"
-            >
-              返回结果列表
-            </Button>
+            <div className="flex flex-wrap gap-3">
+              <Button
+                className="w-fit rounded-lg bg-primary font-bold text-white shadow-none"
+                onPress={() => void activeQuery.refetch()}
+              >
+                重新加载
+              </Button>
+              {isReviewPreview ? (
+                <Button
+                  as={RouterLink}
+                  className="back-cancel-button w-fit"
+                  to={`/review/detections/${reviewTaskId}`}
+                  variant="flat"
+                >
+                  返回修改
+                </Button>
+              ) : null}
+            </div>
           </CardBody>
         </Card>
       </div>
     );
   }
 
-  if (isTrialResult) {
-    return (
-      <TrialResultDetail report={report} />
-    );
+  const canonicalPath = report.source_type === "trial"
+    ? `/trials/${report.id}`
+    : `/detections/results/${report.id}`;
+  if (location.pathname !== canonicalPath) {
+    return <Navigate replace to={canonicalPath} />;
   }
 
   return (
-    <>
-    <div className="grid gap-5 pb-8">
-      <section className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="text-xs font-black uppercase text-action">Detection Result</p>
-          <div className="mt-2 flex flex-wrap items-center gap-3">
-            <h1 className="text-3xl font-black text-ink">{report.title}</h1>
-            <StatusPill tone={REPORT_STATUS_TONES[report.status]}>
-              {REPORT_STATUS_LABELS[report.status]}
-            </StatusPill>
-          </div>
-          <p className="mt-3 max-w-3xl text-sm font-semibold leading-7 text-slate-600">
-            {report.report_no} · {report.project.name || "未命名项目"}
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-3">
-          <Button
-            as={RouterLink}
-            className="rounded-lg border border-slate-300 bg-white font-bold text-slate-700 shadow-none"
-            startContent={<ArrowLeft className="h-4 w-4" aria-hidden="true" />}
-            to={includeGenerated ? "/review" : "/reports"}
-            variant="flat"
-          >
-            {includeGenerated ? "返回工作台" : "返回结果列表"}
-          </Button>
-          <Button
-            className="rounded-lg border border-slate-300 bg-white font-bold text-slate-700 shadow-none"
-            isLoading={downloadMutation.isPending}
-            startContent={<Download className="h-4 w-4" aria-hidden="true" />}
-            variant="flat"
-            onPress={() => downloadMutation.mutate()}
-          >
-            下载 DOCX
-          </Button>
-          {canManageReports ? (
-            <Button
-              className="rounded-lg font-bold"
-              color="primary"
-              isDisabled={!canPush || pushMutation.isPending}
-              isLoading={pushMutation.isPending}
-              startContent={<Send className="h-4 w-4" aria-hidden="true" />}
-              onPress={() => {
-                const confirmed = window.confirm("确认推送报告？推送后普通用户可查看最终报告。");
-                if (confirmed) pushMutation.mutate();
-              }}
-            >
-              推送报告
-            </Button>
-          ) : null}
-        </div>
-      </section>
-
-      {message ? (
-        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700">
-          {message}
-        </div>
-      ) : null}
-
-      {pushMutation.isError ? (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
-          {getErrorMessage(pushMutation.error)}
-        </div>
-      ) : null}
-
-      <section className="grid gap-4 lg:grid-cols-4">
-        <MetricBlock label="缺陷总数" value={String(summary.total_review_results ?? defects.length)} />
-        <MetricBlock label="照片数量" value={String(summary.photo_count ?? report.photos.length)} />
-        <MetricBlock label="建筑数量" value={String(summary.building_count ?? report.buildings.length)} />
-        <MetricBlock label="立面数量" value={String(summary.facade_count ?? countFacades(report.buildings))} />
-      </section>
-
-      <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="grid gap-5">
-          <Card className="rounded-lg border border-slate-200 shadow-none">
-            <CardBody className="gap-0 p-0">
-              <SectionHeader
-                icon={<FileText className="h-5 w-5" aria-hidden="true" />}
-                title="结果概览"
-                subtitle="结果内容来自审核完成时固化的数据"
-              />
-              <Divider />
-              <div className="grid gap-4 p-5 md:grid-cols-2">
-                <InfoItem label="报告名称" value={report.title} />
-                <InfoItem label="项目名称" value={report.project.name} />
-                <InfoItem label="项目编号" value={report.project.project_no || report.report_no} />
-                <InfoItem label="委托单位" value={report.project.client_name} />
-                <InfoItem label="联系人" value={report.project.contact_name} />
-                <InfoItem label="联系电话" value={report.project.contact_phone} />
-                <InfoItem
-                  label="项目地址"
-                  value={[
-                    report.project.province,
-                    report.project.city,
-                    report.project.district,
-                    report.project.address
-                  ]
-                    .filter(Boolean)
-                    .join(" ")}
-                />
-                <InfoItem label="生成时间" value={formatDateTime(report.generated_at)} />
-                <InfoItem label="推送时间" value={formatDateTime(report.pushed_at)} />
-              </div>
-            </CardBody>
-          </Card>
-
-          <Card className="rounded-lg border border-slate-200 shadow-none">
-            <CardBody className="gap-0 p-0">
-              <SectionHeader
-                icon={<FileImage className="h-5 w-5" aria-hidden="true" />}
-                title="检测结果明细"
-                subtitle="标注框坐标按原图像素记录"
-                action={canShowModelOutputs ? (
-                  <button
-                    className="model-output-link"
-                    type="button"
-                    onClick={() => setIsModelOutputOpen(true)}
-                  >
-                    模型原始输出
-                  </button>
-                ) : null}
-              />
-              <Divider />
-              {defects.length ? (
-                <div className="overflow-x-auto">
-                  <table className="min-w-[1120px] w-full border-separate border-spacing-0 text-left text-sm">
-                    <thead className="bg-slate-50 text-xs font-black uppercase text-slate-500">
-                      <tr>
-                        <th className="border-b border-slate-200 px-5 py-3">图片</th>
-                        <th className="border-b border-slate-200 px-5 py-3">缺陷</th>
-                        <th className="border-b border-slate-200 px-5 py-3">位置</th>
-                        <th className="border-b border-slate-200 px-5 py-3">标注框</th>
-                        <th className="border-b border-slate-200 px-5 py-3">严重度</th>
-                        <th className="border-b border-slate-200 px-5 py-3">置信度</th>
-                        <th className="border-b border-slate-200 px-5 py-3">审核备注</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {defects.map((defect, index) => (
-                        <DefectRow key={defect.id || index} defect={defect} />
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <div className="grid min-h-48 place-items-center p-6 text-center">
-                  <div>
-                    <CheckCircle2 className="mx-auto h-10 w-10 text-emerald-500" aria-hidden="true" />
-                    <h2 className="mt-3 text-lg font-black text-ink">暂无识别明细</h2>
-                    <p className="mt-2 text-sm font-semibold text-slate-500">
-                      当前结果没有固化的识别记录。
-                    </p>
-                  </div>
-                </div>
-              )}
-            </CardBody>
-          </Card>
-        </div>
-
-        <aside className="grid h-fit gap-5">
-          <Card className="rounded-lg border border-slate-200 shadow-none">
-            <CardBody className="gap-4 p-5">
-              <h2 className="text-lg font-black text-ink">检测配置</h2>
-              <InfoItem
-                label="模型类型"
-                value={(report.detection_config?.model_types ?? [])
-                  .map((type) => DEFECT_LABELS[type] ?? type)
-                  .join("、")}
-              />
-              <InfoItem
-                label="高精度检测"
-                value={report.detection_config?.high_precision ? "已开启" : "未开启"}
-              />
-              <InfoItem label="任务编号" value={report.detection_task?.task_no} />
-              <InfoItem label="模型版本" value={report.detection_task?.model_version} />
-            </CardBody>
-          </Card>
-
-          <Card className="rounded-lg border border-slate-200 shadow-none">
-            <CardBody className="gap-4 p-5">
-              <h2 className="text-lg font-black text-ink">缺陷统计</h2>
-              {defectTypeSummary.length ? (
-                <div className="grid gap-2">
-                  {defectTypeSummary.map(([type, count]) => (
-                    <div
-                      key={type}
-                      className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2"
-                    >
-                      <span className="text-sm font-bold text-slate-600">
-                        {DEFECT_LABELS[type] ?? type}
-                      </span>
-                      <strong className="text-sm font-black text-ink">{count}</strong>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm font-semibold text-slate-500">暂无缺陷统计。</p>
-              )}
-            </CardBody>
-          </Card>
-
-          <Card className="rounded-lg border border-slate-200 shadow-none">
-            <CardBody className="gap-4 p-5">
-              <h2 className="text-lg font-black text-ink">建筑与立面</h2>
-              {report.buildings.length ? (
-                <div className="grid gap-3">
-                  {report.buildings.map((building, index) => (
-                    <BuildingBlock key={building.id || index} building={building} />
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm font-semibold text-slate-500">暂无建筑信息。</p>
-              )}
-            </CardBody>
-          </Card>
-        </aside>
-      </section>
-    </div>
-    {isModelOutputOpen ? (
-      <ModelOutputDialog
-        text={modelOutputText}
-        onClose={() => setIsModelOutputOpen(false)}
-      />
-    ) : null}
-    </>
+    <TrialResultDetail
+      report={report}
+      canExport={Boolean(user)}
+      reviewTaskId={reviewTaskId || undefined}
+    />
   );
 }
 
-function TrialResultDetail({ report }: { report: ReportDetail }) {
+function TrialResultDetail({
+  report,
+  canExport,
+  reviewTaskId
+}: {
+  report: ReportDetail;
+  canExport: boolean;
+  reviewTaskId?: string;
+}) {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [annotatedPreview, setAnnotatedPreview] = useState<TrialReportAnnotatedPreview | null>(null);
-  const [photoPreview, setPhotoPreview] = useState<TrialReportPhotoPreview | null>(null);
-  const [isModelOutputOpen, setIsModelOutputOpen] = useState(false);
+  const [previewScale, setPreviewScale] = useState(1);
+  const [previewOffset, setPreviewOffset] = useState({ x: 0, y: 0 });
+  const previewViewportRef = useRef<HTMLDivElement | null>(null);
+  const formalTableHeaderRef = useRef<HTMLDivElement | null>(null);
+  const previewDrag = useRef<{ pointerId: number; x: number; y: number; originX: number; originY: number } | null>(null);
+  const previewDragMoved = useRef(false);
+  const isTrialResult = report.source_type === "trial";
+  const exportFormat = isTrialResult ? "PDF" : "DOCX";
+  const exportMutation = useMutation({
+    mutationFn: () => isTrialResult
+      ? downloadTrialReportPdf(report.id)
+      : downloadReportDocx(report.id),
+    onSuccess: (blob) => {
+      const extension = isTrialResult ? "pdf" : "docx";
+      saveBlobAsFile(blob, `${report.report_no}-${report.title}.${extension}`);
+    }
+  });
+  const completeReviewMutation = useMutation({
+    mutationFn: () => completeDetectionReview(reviewTaskId ?? ""),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["review"] }),
+        queryClient.invalidateQueries({ queryKey: ["projects"] }),
+        queryClient.invalidateQueries({ queryKey: ["reports"] })
+      ]);
+      navigate("/review", { replace: true });
+    }
+  });
   const resultRows = useMemo(() => buildTrialResultRows(report), [report]);
-  const modelOutputText = useMemo(
-    () => formatModelOutputs(report.raw_model_outputs),
-    [report.raw_model_outputs]
+  const formalResultRows = useMemo(
+    () => isTrialResult ? [] : buildFormalResultRows(resultRows),
+    [isTrialResult, resultRows]
   );
-  const canShowModelOutputs = hasModelOutputs(report.raw_model_outputs);
+  function clampPreviewOffset(offset: { x: number; y: number }, scale: number) {
+    const viewport = previewViewportRef.current;
+    if (!viewport || scale <= 1) return { x: 0, y: 0 };
+    const maxX = (viewport.clientWidth * (scale - 1)) / 2;
+    const maxY = (viewport.clientHeight * (scale - 1)) / 2;
+    return {
+      x: Math.max(-maxX, Math.min(maxX, offset.x)),
+      y: Math.max(-maxY, Math.min(maxY, offset.y))
+    };
+  }
+
+  function updatePreviewScale(nextScale: number) {
+    const scale = Math.min(4, Math.max(1, nextScale));
+    setPreviewScale(scale);
+    setPreviewOffset((current) => clampPreviewOffset(current, scale));
+  }
+
+  function resetPreviewView() {
+    setPreviewScale(1);
+    setPreviewOffset({ x: 0, y: 0 });
+  }
+
+  function closeAnnotatedPreview() {
+    setAnnotatedPreview(null);
+    resetPreviewView();
+  }
+
+  function handleAnnotatedPreviewBackdropClick(event: ReactMouseEvent<HTMLDivElement>) {
+    if (previewDragMoved.current) return;
+    const target = event.target;
+    if (
+      target instanceof Element
+      && target.closest(".trial-photo-preview-toolbar, .trial-photo-preview-annotated, figcaption")
+    ) return;
+    closeAnnotatedPreview();
+  }
 
   return (
-    <div className="trial-result-detail-page">
-      <div className="trial-result-toolbar">
-        <div className="trial-result-title-block">
-          <h1>{report.title || "简易AI检测结果"}</h1>
-          <p>生成时间：{formatDateTime(report.generated_at)}</p>
-        </div>
-        <RouterLink className="button secondary" to="/reports">
-          <ArrowLeft aria-hidden="true" />返回结果列表
-        </RouterLink>
-      </div>
+    <div className={`trial-result-detail-page formal-result-detail-page${isTrialResult ? " quick-result-detail-page" : ""}`}>
+      <WorkspaceTitleBar
+        backLabel={reviewTaskId ? "返回修改" : isTrialResult ? "返回快速体验" : "返回专业检测"}
+        backTo={reviewTaskId ? `/review/detections/${reviewTaskId}` : isTrialResult ? "/trials" : "/detections"}
+        className="trial-result-toolbar result-title-bar"
+        meta={<time dateTime={report.generated_at}>{formatDateTime(report.generated_at)}</time>}
+        title={report.project.name || report.title || report.project.project_no || report.report_no}
+        actions={reviewTaskId ? (
+            <button
+              aria-busy={completeReviewMutation.isPending}
+              className="button primary-action-button review-preview-complete-button"
+              disabled={completeReviewMutation.isPending}
+              type="button"
+              onClick={() => {
+                if (window.confirm("确认当前预览结果无误并完成审核？完成后将推送正式结果并返回审核工作台。")) {
+                  completeReviewMutation.mutate();
+                }
+              }}
+            >
+              <CheckCircle2 aria-hidden="true" />
+              <span className="workspace-title-bar-action-label">
+                {completeReviewMutation.isPending ? "正在完成审核…" : "完成审核"}
+              </span>
+            </button>
+          ) : canExport ? (
+            <button
+              aria-busy={exportMutation.isPending}
+              className="button primary-action-button report-export-button"
+              disabled={exportMutation.isPending}
+              type="button"
+              onClick={() => {
+                if (confirmReportExport()) exportMutation.mutate();
+              }}
+            >
+              <Download aria-hidden="true" />
+              <span className="workspace-title-bar-action-label">
+                {exportMutation.isPending ? "正在导出" : `导出 ${exportFormat}`}
+              </span>
+            </button>
+          ) : undefined}
+      />
+      {exportMutation.isError ? (
+        <p className="project-list-error">{exportFormat} 导出失败：{getErrorMessage(exportMutation.error)}<button className="inline-retry-button" type="button" onClick={() => exportMutation.mutate()}>重试</button></p>
+      ) : null}
+      {completeReviewMutation.isError ? (
+        <p className="project-list-error">完成审核失败：{getErrorMessage(completeReviewMutation.error)}<button className="inline-retry-button" type="button" onClick={() => completeReviewMutation.mutate()}>重试</button></p>
+      ) : null}
       <div className="trial-experience-shell trial-experience-content-shell trial-result-detail-shell">
         <section className="trial-experience-grid">
-          <div className="trial-upload-panel">
-            <div className="trial-panel-heading">
-              <div>
-                <h2>检测照片</h2>
-              </div>
-            </div>
-            {report.photos.length ? (
-              <div className="trial-photo-grid trial-result-photo-grid">
-                {report.photos.map((photo, index) => {
-                  const filename = photo.original_filename || "未命名照片";
-                  const canPreview = Boolean(photo.preview_url);
-
-                  return (
-                    <figure
-                      key={photo.id || `${photo.original_filename}-${index}`}
-                      className={`trial-photo-thumb ${canPreview ? "is-previewable" : ""}`}
-                    >
+          <aside className="trial-report-panel">
+            <div className="trial-report-result is-headless">
+              {resultRows.length ? (
+                <div className={`trial-report-table-wrap${isTrialResult ? " formal-report-table-body-wrap" : " formal-report-table-layout"}`}>
+                  {isTrialResult ? (
+                    <table className="trial-report-table trial-report-table--without-tile">
+                      <colgroup>
+                        <col className="trial-sequence-col" />
+                        <col className="trial-photo-col" />
+                        <col className="trial-description-col" />
+                      </colgroup>
+                      <thead>
+                        <tr>
+                          <th className="trial-sequence-column">序号</th>
+                          <th className="trial-photo-column">含标注的照片</th>
+                          <th className="trial-report-description">检测说明</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {resultRows.map((row, index) => (
+                          <TrialResultRow
+                            key={row.key}
+                            row={row}
+                            index={index}
+                            onPreview={(preview) => {
+                              resetPreviewView();
+                              setAnnotatedPreview(preview);
+                            }}
+                          />
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <>
+                      <div ref={formalTableHeaderRef} className="formal-report-table-header-wrap">
+                        <table
+                          aria-label="检测结果表头"
+                          className="trial-report-table trial-report-table--without-tile formal-report-table--with-metadata formal-report-table--paired-photos"
+                        >
+                          <FormalResultColumns />
+                          <thead>
+                            <tr>
+                              <th className="trial-sequence-column">序号</th>
+                              <th className="trial-photo-column formal-visible-photo-column">可见光图像</th>
+                              <th className="trial-photo-column formal-thermal-photo-column">热红外图像</th>
+                              <th className="trial-report-description">检测说明</th>
+                              <th className="formal-report-detail-column">缺陷详情</th>
+                              <th className="formal-report-metadata-column">立面朝向<br />拍摄高度（m）</th>
+                            </tr>
+                          </thead>
+                        </table>
+                      </div>
                       <div
-                        className="trial-photo-thumb-image"
-                        title={canPreview ? "点击放大查看" : undefined}
-                        onClick={() => {
-                          if (photo.preview_url) {
-                            setPhotoPreview({ filename, imageUrl: photo.preview_url });
-                            setAnnotatedPreview(null);
+                        className="formal-report-table-body-wrap"
+                        onScroll={(event) => {
+                          if (formalTableHeaderRef.current) {
+                            formalTableHeaderRef.current.scrollLeft = event.currentTarget.scrollLeft;
                           }
                         }}
                       >
-                        {photo.preview_url ? (
-                          <img alt={filename} src={photo.preview_url} />
-                        ) : (
-                          <div className="trial-result-photo-placeholder"><FileImage aria-hidden="true" /></div>
-                        )}
-                        {photo.thermal_imaging_available ? (
-                          <span className="trial-thermal-available-tag">热成像可用</span>
-                        ) : null}
-                        {canPreview ? (
-                          <div className="trial-photo-thumb-actions">
-                            <button
-                              type="button"
-                              aria-label="放大查看检测照片"
-                              title="放大查看"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                if (photo.preview_url) {
-                                  setPhotoPreview({ filename, imageUrl: photo.preview_url });
-                                  setAnnotatedPreview(null);
-                                }
-                              }}
-                            >
-                              <ZoomIn aria-hidden="true" />
-                            </button>
-                          </div>
-                        ) : null}
+                        <table
+                          aria-label="检测结果列表"
+                          className="trial-report-table trial-report-table--without-tile formal-report-table--with-metadata formal-report-table--paired-photos"
+                        >
+                          <FormalResultColumns />
+                          <tbody>
+                            {formalResultRows.map((row, index) => (
+                              <FormalResultRow
+                                key={row.key}
+                                row={row}
+                                index={index}
+                                onPreview={(preview) => {
+                                  resetPreviewView();
+                                  setAnnotatedPreview(preview);
+                                }}
+                              />
+                            ))}
+                          </tbody>
+                        </table>
                       </div>
-                      <figcaption>{filename}</figcaption>
-                    </figure>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="trial-result-photo-empty">
-                <FileImage aria-hidden="true" />
-                <strong>暂无检测结果</strong>
-              </div>
-            )}
-          </div>
-
-          <aside className="trial-report-panel">
-            <div className="trial-report-result">
-              <div className="trial-report-head">
-                <div className="trial-report-title-row">
-                  <h2>检测结果明细</h2>
-                  {canShowModelOutputs ? (
-                    <button
-                      className="model-output-link"
-                      type="button"
-                      onClick={() => setIsModelOutputOpen(true)}
-                    >
-                      模型原始输出
-                    </button>
-                  ) : null}
-                </div>
-              </div>
-              {resultRows.length ? (
-                <div className="trial-report-table-wrap">
-                  <table className="trial-report-table">
-                    <thead>
-                      <tr>
-                        <th>序号</th>
-                        <th>含标注的照片</th>
-                        <th>检测说明</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {resultRows.map((row, index) => (
-                        <TrialResultRow
-                          key={row.key}
-                          row={row}
-                          index={index}
-                          onPreview={(preview) => {
-                            setAnnotatedPreview(preview);
-                            setPhotoPreview(null);
-                          }}
-                        />
-                      ))}
-                    </tbody>
-                  </table>
+                    </>
+                  )}
                 </div>
               ) : (
                 <div className="trial-report-empty">
                   <CheckCircle2 aria-hidden="true" />
                   <h2>暂无识别结果</h2>
-                  <p>简易检测归档中没有可展示的检测结果。</p>
+                  <p>当前记录中没有可展示的检测照片。</p>
                 </div>
               )}
             </div>
           </aside>
         </section>
       </div>
-      {annotatedPreview || photoPreview ? (
+      {annotatedPreview ? (
         <div
           className="trial-photo-preview-modal"
           role="dialog"
           aria-modal="true"
-          aria-label={annotatedPreview ? "含标注的照片预览" : "检测照片预览"}
-          onClick={() => {
-            setAnnotatedPreview(null);
-            setPhotoPreview(null);
-          }}
+          aria-label="含标注的照片预览"
+          onClick={handleAnnotatedPreviewBackdropClick}
         >
-          <figure onClick={(event) => event.stopPropagation()}>
-            {annotatedPreview ? (
-              <div className="trial-annotated-photo trial-photo-preview-annotated">
-                <img alt={`${annotatedPreview.filename} 检测标注预览`} src={annotatedPreview.imageUrl} />
+          <figure>
+            <div className="trial-photo-preview-toolbar" aria-label="照片缩放控制">
+              <button type="button" aria-label="缩小照片" title="缩小" disabled={previewScale <= 1} onClick={() => updatePreviewScale(previewScale - 0.25)}>
+                <Minus aria-hidden="true" />
+              </button>
+              <output aria-label="当前缩放比例">{Math.round(previewScale * 100)}%</output>
+              <button type="button" aria-label="放大照片" title="放大" disabled={previewScale >= 4} onClick={() => updatePreviewScale(previewScale + 0.25)}>
+                <Plus aria-hidden="true" />
+              </button>
+              <button type="button" aria-label="恢复照片原始大小" title="恢复原始大小" onClick={resetPreviewView}>
+                <RotateCcw aria-hidden="true" />
+              </button>
+            </div>
+            <div
+              ref={previewViewportRef}
+              className={`trial-photo-preview-viewport ${previewScale > 1 ? "is-draggable" : ""}`}
+              onWheel={(event) => {
+                event.preventDefault();
+                updatePreviewScale(previewScale + (event.deltaY < 0 ? 0.25 : -0.25));
+              }}
+              onPointerDown={(event) => {
+                if (previewScale <= 1 || (event.pointerType === "mouse" && event.button !== 0)) return;
+                event.preventDefault();
+                previewDragMoved.current = false;
+                event.currentTarget.setPointerCapture(event.pointerId);
+                previewDrag.current = {
+                  pointerId: event.pointerId,
+                  x: event.clientX,
+                  y: event.clientY,
+                  originX: previewOffset.x,
+                  originY: previewOffset.y
+                };
+              }}
+              onPointerMove={(event) => {
+                if (!previewDrag.current || previewDrag.current.pointerId !== event.pointerId) return;
+                if (
+                  Math.abs(event.clientX - previewDrag.current.x)
+                  + Math.abs(event.clientY - previewDrag.current.y) >= 3
+                ) previewDragMoved.current = true;
+                setPreviewOffset(clampPreviewOffset({
+                  x: previewDrag.current.originX + event.clientX - previewDrag.current.x,
+                  y: previewDrag.current.originY + event.clientY - previewDrag.current.y
+                }, previewScale));
+              }}
+              onPointerUp={(event) => {
+                if (previewDrag.current?.pointerId !== event.pointerId) return;
+                previewDrag.current = null;
+                if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+                  event.currentTarget.releasePointerCapture(event.pointerId);
+                }
+                window.setTimeout(() => { previewDragMoved.current = false; }, 0);
+              }}
+              onPointerCancel={() => {
+                previewDrag.current = null;
+                window.setTimeout(() => { previewDragMoved.current = false; }, 0);
+              }}
+              onLostPointerCapture={() => { previewDrag.current = null; }}
+            >
+              <div
+                className="trial-annotated-photo trial-photo-preview-annotated"
+                style={{ transform: `translate3d(${previewOffset.x}px, ${previewOffset.y}px, 0) scale(${previewScale})` }}
+              >
+                <img draggable={false} alt={`${annotatedPreview.filename} 检测标注预览`} src={annotatedPreview.imageUrl} />
                 {annotatedPreview.defects.map((defect, defectIndex) => (
-                  <TrialReportDefectBox
+                  <ReportDefectBox
                     key={defect.id || `${defect.defect_type}-${defectIndex}`}
                     defect={defect}
+                    imageHeight={annotatedPreview.imageHeight}
+                    imageWidth={annotatedPreview.imageWidth}
+                    fallbackIndex={defectIndex}
                   />
                 ))}
               </div>
-            ) : photoPreview ? (
-              <img alt={`${photoPreview.filename} 预览`} src={photoPreview.imageUrl} />
-            ) : null}
-            <figcaption>{annotatedPreview?.filename ?? photoPreview?.filename}</figcaption>
+            </div>
+            <figcaption>{annotatedPreview.filename}</figcaption>
           </figure>
         </div>
-      ) : null}
-      {isModelOutputOpen ? (
-        <ModelOutputDialog
-          text={modelOutputText}
-          onClose={() => setIsModelOutputOpen(false)}
-        />
       ) : null}
     </div>
   );
@@ -556,19 +432,40 @@ function TrialResultDetail({ report }: { report: ReportDetail }) {
 interface TrialReportAnnotatedPreview {
   filename: string;
   imageUrl: string;
+  imageWidth?: number | string | null;
+  imageHeight?: number | string | null;
   defects: ReportDefectSnapshot[];
-}
-
-interface TrialReportPhotoPreview {
-  filename: string;
-  imageUrl: string;
 }
 
 interface TrialResultPhotoRow {
   key: string;
   filename: string;
   imageUrl: string;
+  imageWidth?: number | string | null;
+  imageHeight?: number | string | null;
+  relativeAltitude?: number | string | null;
+  facadeOrientation?: string | null;
+  isThermal: boolean;
   defects: ReportDefectSnapshot[];
+}
+
+interface FormalResultPhotoPair {
+  key: string;
+  visiblePhoto: TrialResultPhotoRow | null;
+  thermalPhoto: TrialResultPhotoRow | null;
+}
+
+function FormalResultColumns() {
+  return (
+    <colgroup>
+      <col className="trial-sequence-col" />
+      <col className="formal-visible-photo-col" />
+      <col className="formal-thermal-photo-col" />
+      <col className="trial-description-col" />
+      <col className="formal-report-detail-col" />
+      <col className="formal-report-metadata-col" />
+    </colgroup>
+  );
 }
 
 function TrialResultRow({
@@ -580,128 +477,215 @@ function TrialResultRow({
   index: number;
   onPreview: (preview: TrialReportAnnotatedPreview) => void;
 }) {
-  const canPreview = Boolean(row.imageUrl);
   const summary = trialResultDefectSummary(row.defects);
-
-  function previewAnnotatedPhoto() {
-    if (!row.imageUrl) return;
-    onPreview({ filename: row.filename, imageUrl: row.imageUrl, defects: row.defects });
-  }
 
   return (
     <tr>
-      <td>{String(index + 1).padStart(2, "0")}</td>
-      <td>
-        <figure className="trial-annotated-photo-frame">
-          <div
-            className={`trial-annotated-photo ${row.imageUrl ? "" : "trial-annotated-photo-placeholder"} ${canPreview ? "is-clickable" : ""}`}
-            title={canPreview ? "点击放大查看" : undefined}
-            onClick={previewAnnotatedPhoto}
-          >
-            {row.imageUrl ? <img alt={`${row.filename} 检测标注`} src={row.imageUrl} /> : <FileImage aria-hidden="true" />}
-            {row.defects.map((defect, defectIndex) => (
-              <TrialReportDefectBox
-                key={defect.id || `${defect.defect_type}-${defectIndex}`}
-                defect={defect}
-              />
-            ))}
-            {canPreview ? (
-              <div className="trial-annotated-photo-actions">
-                <button
-                  type="button"
-                  aria-label="放大查看含标注的照片"
-                  title="放大查看"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    previewAnnotatedPhoto();
-                  }}
-                >
-                  <ZoomIn aria-hidden="true" />
-                </button>
-              </div>
-            ) : null}
-          </div>
-          <figcaption>{row.filename}</figcaption>
-        </figure>
+      <td className="trial-sequence-column">
+        <span className="trial-report-index">
+          {String(index + 1).padStart(2, "0")}
+        </span>
       </td>
-      <td className="trial-report-description">
-        {summary.length ? (
-          <p>
-            {summary.map((item) => {
-              const description = trialDefectDescriptionFromType(item.defectType, item.count);
-              return (
-                <span key={item.defectType} className={description.className}>
-                  {description.text}
-                </span>
-              );
-            })}
-          </p>
-        ) : (
-          <p><span>未检出明显缺陷</span></p>
-        )}
+      <ResultPhotoCell row={row} onPreview={onPreview} />
+      <ResultDescriptionCell summary={summary} />
+    </tr>
+  );
+}
+
+function FormalResultRow({
+  row,
+  index,
+  onPreview
+}: {
+  row: FormalResultPhotoPair;
+  index: number;
+  onPreview: (preview: TrialReportAnnotatedPreview) => void;
+}) {
+  const primaryPhoto = row.visiblePhoto ?? row.thermalPhoto;
+  const defects = [
+    ...(row.visiblePhoto?.defects ?? []),
+    ...(row.thermalPhoto?.defects ?? [])
+  ];
+  const summary = trialResultDefectSummary(defects);
+
+  return (
+    <tr>
+      <td className="trial-sequence-column">
+        <span className="trial-report-index">
+          {String(index + 1).padStart(2, "0")}
+        </span>
+      </td>
+      <ResultPhotoCell row={row.visiblePhoto} onPreview={onPreview} />
+      <ResultPhotoCell row={row.thermalPhoto} onPreview={onPreview} />
+      <ResultDescriptionCell summary={summary} />
+      <ResultDetailCell defects={defects} />
+      <td className="formal-report-metadata-column">
+        <strong>{primaryPhoto?.facadeOrientation || "未知立面"}</strong>
+        <span>{formatRelativeAltitude(primaryPhoto?.relativeAltitude)}</span>
       </td>
     </tr>
   );
 }
 
-function TrialReportDefectBox({ defect }: { defect: ReportDefectSnapshot }) {
-  const defectDisplay = trialDefectDisplayFromType(defect.defect_type);
-  const boxStyle = trialReportDefectBoxStyle(defect);
-  if (!boxStyle) return null;
+function ResultPhotoCell({
+  row,
+  onPreview
+}: {
+  row: TrialResultPhotoRow | null;
+  onPreview: (preview: TrialReportAnnotatedPreview) => void;
+}) {
+  if (!row) {
+    return (
+      <td className="trial-photo-column formal-unmatched-photo-cell">
+        <div className="formal-unmatched-photo">
+          <FileImage aria-hidden="true" />
+          <strong>无匹配图像</strong>
+        </div>
+      </td>
+    );
+  }
+
+  const photo = row;
+  const canPreview = Boolean(photo.imageUrl);
+  function previewAnnotatedPhoto() {
+    if (!photo.imageUrl) return;
+    onPreview({
+      filename: photo.filename,
+      imageUrl: photo.imageUrl,
+      imageWidth: photo.imageWidth,
+      imageHeight: photo.imageHeight,
+      defects: photo.defects
+    });
+  }
 
   return (
-    <span
-      className={`trial-defect-box ${defectDisplay.boxClassName}`}
-      style={boxStyle}
-    >
-      <span className="trial-defect-label">
-        {trialDefectBoxLabel(defectDisplay, defect.confidence)}
-      </span>
-    </span>
+    <td className="trial-photo-column">
+      <figure className="trial-annotated-photo-frame">
+        <div
+          className={`trial-annotated-photo ${photo.imageUrl ? "" : "trial-annotated-photo-placeholder"} ${canPreview ? "is-clickable" : ""}`}
+          title={canPreview ? "点击放大查看" : undefined}
+          onClick={previewAnnotatedPhoto}
+        >
+          {photo.imageUrl ? <img alt={`${photo.filename} 检测标注`} src={photo.imageUrl} /> : <FileImage aria-hidden="true" />}
+          {photo.defects.map((defect, defectIndex) => (
+            <ReportDefectBox
+              key={defect.id || `${defect.defect_type}-${defectIndex}`}
+              defect={defect}
+              imageHeight={photo.imageHeight}
+              imageWidth={photo.imageWidth}
+              fallbackIndex={defectIndex}
+            />
+          ))}
+          {canPreview ? (
+            <div className="trial-annotated-photo-actions">
+              <button
+                type="button"
+                aria-label={`放大查看${photo.filename}`}
+                title="放大查看"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  previewAnnotatedPhoto();
+                }}
+              >
+                <ZoomIn aria-hidden="true" />
+              </button>
+            </div>
+          ) : null}
+        </div>
+        <figcaption title={photo.filename}>{photo.filename}</figcaption>
+      </figure>
+    </td>
   );
 }
 
-function trialReportDefectBoxStyle(defect: ReportDefectSnapshot): CSSProperties | undefined {
-  const bbox = defect.bbox_json;
-  const x = finiteNumber(bbox?.x);
-  const y = finiteNumber(bbox?.y);
-  const width = finiteNumber(bbox?.width);
-  const height = finiteNumber(bbox?.height);
-  const imageWidth = finiteNumber(defect.raw_result_json?.finding?.image_width);
-  const imageHeight = finiteNumber(defect.raw_result_json?.finding?.image_height);
-
-  if (x === null || y === null || width === null || height === null || width <= 0 || height <= 0) {
-    return undefined;
-  }
-
-  if (imageWidth && imageHeight) {
-    return {
-      left: `${(x / imageWidth) * 100}%`,
-      top: `${(y / imageHeight) * 100}%`,
-      width: `${(width / imageWidth) * 100}%`,
-      height: `${(height / imageHeight) * 100}%`,
-      right: "auto",
-      bottom: "auto"
-    };
-  }
-
-  if (x <= 1 && y <= 1 && width <= 1 && height <= 1) {
-    return {
-      left: `${x * 100}%`,
-      top: `${y * 100}%`,
-      width: `${width * 100}%`,
-      height: `${height * 100}%`,
-      right: "auto",
-      bottom: "auto"
-    };
-  }
-
-  return undefined;
+function ResultDescriptionCell({
+  summary
+}: {
+  summary: ReturnType<typeof trialResultDefectSummary>;
+}) {
+  return (
+    <td className="trial-report-description">
+      {summary.length ? (
+        <p>
+          {summary.map((item) => {
+            const description = trialDefectDescriptionFromType(item.defectType, item.count);
+            return (
+              <span key={item.defectType} className={description.className}>
+                {description.text}
+              </span>
+            );
+          })}
+        </p>
+      ) : (
+        <p><span>未检出明显缺陷</span></p>
+      )}
+    </td>
+  );
 }
 
-function finiteNumber(value: number | string | null | undefined) {
-  const numeric = Number(value);
-  return Number.isFinite(numeric) ? numeric : null;
+function formatDefectMeasurement(defect: ReportDefectSnapshot) {
+  const isCrack = defect.defect_type === "crack";
+  const rawValue = isCrack ? defect.length : defect.area;
+  if (rawValue === null || rawValue === undefined || rawValue === "") {
+    return { available: false, value: "", estimated: false, unit: isCrack ? "m" : "m²" };
+  }
+  const value = Number(rawValue);
+  if (!Number.isFinite(value) || value < 0) {
+    return { available: false, value: "", estimated: false, unit: isCrack ? "m" : "m²" };
+  }
+  return {
+    available: true,
+    value: value.toFixed(3),
+    estimated: Boolean(isCrack ? defect.length_estimated : defect.area_estimated),
+    unit: isCrack ? "m" : "m²"
+  };
+}
+
+const MAX_VISIBLE_DETAIL_ITEMS = 10;
+
+function ResultDetailCell({ defects }: { defects: ReportDefectSnapshot[] }) {
+  const formattedDetailItems = defects.map((defect, index) => {
+    const defectNumber = defect.defect_no || formatDefectNumber(defect.defect_type, index + 1);
+    const measurement = formatDefectMeasurement(defect);
+    return {
+      key: `${defect.id || defectNumber}-${index}`,
+      defectNumber,
+      ...measurement,
+      text: measurement.available
+        ? `${defectNumber}${measurement.estimated ? " ≈" : ""} ${measurement.value} ${measurement.unit}`
+        : "参数不足"
+    };
+  });
+  const missingDetailItem = formattedDetailItems.find((item) => !item.available);
+  const detailItems = [
+    ...formattedDetailItems.filter((item) => item.available),
+    ...(missingDetailItem ? [missingDetailItem] : [])
+  ];
+  const detailSummary = detailItems.map((item) => item.text).join("、");
+  const hasOverflow = detailItems.length > MAX_VISIBLE_DETAIL_ITEMS;
+  const visibleDetailItems = detailItems.slice(0, MAX_VISIBLE_DETAIL_ITEMS);
+
+  return (
+    <td className="formal-report-detail-column">
+      {detailItems.length ? (
+        <div className="formal-report-detail-list" title={detailSummary} aria-label={detailSummary}>
+          {visibleDetailItems.map((item) => (
+            <div key={item.key} className="formal-report-detail-item">
+              {item.available ? (
+                <>
+                  <span className="formal-report-detail-muted">
+                    {item.defectNumber}{item.estimated ? " ≈" : ""}
+                  </span>
+                  <span className="formal-report-detail-value"> {item.value} {item.unit}</span>
+                </>
+              ) : item.text}
+            </div>
+          ))}
+          {hasOverflow ? <div className="formal-report-detail-ellipsis" aria-hidden="true">......</div> : null}
+        </div>
+      ) : "—"}
+    </td>
+  );
 }
 
 function buildTrialResultRows(report: ReportDetail): TrialResultPhotoRow[] {
@@ -721,14 +705,19 @@ function buildTrialResultRows(report: ReportDetail): TrialResultPhotoRow[] {
       const key = trialPhotoGroupKey(photo) || `photo-index:${index}`;
       consumedKeys.add(key);
       const rowDefects = defectsByPhoto.get(key) ?? [];
+      const modelOutput = findTrialModelOutput(report, photo.id, photo.original_filename);
       return {
         key,
         filename: photo.original_filename || "检测结果照片",
         imageUrl: trialResultRowImageUrl(rowDefects, photo),
+        imageWidth: modelOutput?.image_width ?? photo.image_width,
+        imageHeight: modelOutput?.image_height ?? photo.image_height,
+        relativeAltitude: photo.relative_altitude,
+        facadeOrientation: photo.facade_orientation,
+        isThermal: isThermalReportPhoto(photo),
         defects: rowDefects
       };
-    })
-    .filter((row) => row.defects.length > 0);
+    });
 
   for (const [key, rowDefects] of defectsByPhoto) {
     if (consumedKeys.has(key) || !rowDefects.length) continue;
@@ -736,11 +725,47 @@ function buildTrialResultRows(report: ReportDetail): TrialResultPhotoRow[] {
       key,
       filename: rowDefects[0]?.photo_filename || "检测结果照片",
       imageUrl: trialResultRowImageUrl(rowDefects),
+      imageWidth: rowDefects[0]?.raw_result_json?.finding?.image_width,
+      imageHeight: rowDefects[0]?.raw_result_json?.finding?.image_height,
+      relativeAltitude: undefined,
+      facadeOrientation: undefined,
+      isThermal: photoVariantFromFilename(rowDefects[0]?.photo_filename) === "thermal",
       defects: rowDefects
     });
   }
 
   return rows;
+}
+
+function buildFormalResultRows(rows: TrialResultPhotoRow[]): FormalResultPhotoPair[] {
+  return pairVisibleThermalPhotos(rows, {
+    filename: (row) => row.filename,
+    isThermal: (row) => row.isThermal,
+    itemKey: (row) => row.key
+  }).map((pair) => ({
+    key: pair.key,
+    visiblePhoto: pair.visible,
+    thermalPhoto: pair.thermal
+  }));
+}
+
+function isThermalReportPhoto(photo: ReportDetail["photos"][number]) {
+  const namedVariant = photoVariantFromFilename(photo.original_filename);
+  if (namedVariant) return namedVariant === "thermal";
+  return photo.photo_type === "thermal"
+    || photo.thermal_imaging_available === true
+    || photo.metadata_json?.thermal_imaging_available === true;
+}
+
+function formatRelativeAltitude(value: number | string | null | undefined) {
+  if (value === null || value === undefined || value === "") return "--";
+  const altitude = Number(value);
+  return Number.isFinite(altitude) ? altitude.toFixed(1) : "--";
+}
+
+function findTrialModelOutput(report: ReportDetail, photoId?: string, filename?: string | null) {
+  return report.raw_model_outputs.find((output) => photoId && output.photo_id === photoId)
+    ?? report.raw_model_outputs.find((output) => filename && output.filename === filename);
 }
 
 function trialPhotoGroupKey(photo: ReportDetail["photos"][number]) {
@@ -780,133 +805,4 @@ function trialResultDefectSummary(defects: ReportDefectSnapshot[]) {
 function findTrialPhoto(report: ReportDetail, defect: ReportDefectSnapshot) {
   return report.photos.find((photo) => photo.id && defect.photo_id === photo.id)
     ?? report.photos.find((photo) => photo.original_filename && photo.original_filename === defect.photo_filename);
-}
-
-function DefectRow({ defect }: { defect: ReportDefectSnapshot }) {
-  const bbox = defect.bbox_json ?? {};
-  const imageUrl = defect.photo_thumbnail_url || defect.photo_preview_url;
-
-  return (
-    <tr className="align-middle hover:bg-slate-50">
-      <td className="border-b border-slate-100 px-5 py-4">
-        <div className="flex items-center gap-3">
-          {imageUrl ? (
-            <img
-              alt={defect.photo_filename || "缺陷图片"}
-              className="h-14 w-20 rounded-md border border-slate-200 object-cover"
-              src={imageUrl}
-            />
-          ) : (
-            <span className="grid h-14 w-20 place-items-center rounded-md border border-slate-200 bg-slate-50 text-slate-400">
-              <FileImage className="h-5 w-5" aria-hidden="true" />
-            </span>
-          )}
-          <span className="max-w-48 truncate text-xs font-semibold text-slate-500">
-            {defect.photo_filename || "-"}
-          </span>
-        </div>
-      </td>
-      <td className="border-b border-slate-100 px-5 py-4">
-        <p className="font-black text-ink">
-          {DEFECT_LABELS[defect.defect_type || ""] ?? defect.defect_type ?? "-"}
-        </p>
-        <p className="mt-1 text-xs font-bold text-slate-500">
-          {REVIEW_STATUS_LABELS[defect.status || ""] ?? defect.status ?? "-"}
-        </p>
-      </td>
-      <td className="border-b border-slate-100 px-5 py-4 font-semibold text-slate-600">
-        {(defect.building_name || "-") + " / " + (defect.facade_name || "-")}
-      </td>
-      <td className="border-b border-slate-100 px-5 py-4 font-mono text-xs font-semibold text-slate-600">
-        x {bbox.x ?? "-"} · y {bbox.y ?? "-"} · w {bbox.width ?? "-"} · h {bbox.height ?? "-"}
-      </td>
-      <td className="border-b border-slate-100 px-5 py-4 font-semibold text-slate-600">
-        {defect.severity || "-"}
-      </td>
-      <td className="border-b border-slate-100 px-5 py-4 font-semibold text-slate-600">
-        {confidenceText(defect.confidence)}
-      </td>
-      <td className="border-b border-slate-100 px-5 py-4 text-sm font-semibold text-slate-600">
-        {defect.review_note || "-"}
-      </td>
-    </tr>
-  );
-}
-
-function BuildingBlock({ building }: { building: ReportBuildingSnapshot }) {
-  return (
-    <div className="rounded-lg border border-slate-200 p-3">
-      <p className="font-black text-ink">{building.name || "未命名建筑"}</p>
-      <p className="mt-1 text-xs font-semibold text-slate-500">
-        楼层 {building.floors ?? "-"} · 高度 {building.height ?? "-"}
-      </p>
-      {building.facades?.length ? (
-        <div className="mt-3 grid gap-2">
-          {building.facades.map((facade, index) => (
-            <div
-              key={facade.id || index}
-              className="rounded-md bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600"
-            >
-              {facade.name || "未命名立面"} · {facade.floors_range || "-"} · {facade.area || "-"}
-            </div>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function SectionHeader({
-  icon,
-  title,
-  subtitle,
-  action
-}: {
-  icon: ReactNode;
-  title: string;
-  subtitle: string;
-  action?: ReactNode;
-}) {
-  return (
-    <div className="flex items-center gap-3 px-5 py-4">
-      <span className="grid h-10 w-10 place-items-center rounded-lg bg-action-soft text-action">
-        {icon}
-      </span>
-      <div>
-        <div className="model-output-title-row">
-          <h2 className="text-lg font-black text-ink">{title}</h2>
-          {action}
-        </div>
-        <p className="mt-1 text-xs font-bold text-slate-500">{subtitle}</p>
-      </div>
-    </div>
-  );
-}
-
-function InfoItem({ label, value }: { label: string; value?: string | number | null }) {
-  return (
-    <div>
-      <p className="text-xs font-black uppercase text-slate-500">{label}</p>
-      <p className="mt-1 text-sm font-bold text-slate-700">{value || "-"}</p>
-    </div>
-  );
-}
-
-function MetricBlock({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4">
-      <p className="text-xs font-black uppercase text-slate-500">{label}</p>
-      <strong className="mt-2 block text-2xl font-black text-ink">{value}</strong>
-    </div>
-  );
-}
-
-function countFacades(buildings: ReportBuildingSnapshot[]) {
-  return buildings.reduce((sum, building) => sum + (building.facades?.length ?? 0), 0);
-}
-
-function confidenceText(value: string | null | undefined) {
-  if (!value) return "-";
-  const numeric = Number(value);
-  return Number.isFinite(numeric) ? `${Math.round(numeric * 100)}%` : value;
 }

@@ -4,9 +4,9 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.enums.status import InspectionReportStatus
+from app.enums.status import InspectionReportStatus, PhotoPrecheckStatus
 
 
 class ApiSchema(BaseModel):
@@ -21,12 +21,18 @@ class ReportListItem(ApiSchema):
     report_no: str
     title: str
     status: InspectionReportStatus
+    is_example: bool = False
     project_name: str
     client_name: str | None
     address: str | None
     total_defects: int
+    by_defect_type: dict[str, int] = Field(default_factory=dict)
+    model_types: list[str] = Field(default_factory=list)
+    photo_count: int = 0
+    first_photo_url: str | None = None
     generated_at: datetime
     pushed_at: datetime | None
+    created_at: datetime
     updated_at: datetime
 
 
@@ -38,9 +44,9 @@ class ReportDetailRead(ApiSchema):
     report_no: str
     title: str
     status: InspectionReportStatus
+    is_example: bool = False
     report_data_json: dict | None
     project: dict
-    buildings: list[dict]
     detection_config: dict | None
     detection_task: dict | None
     summary: dict
@@ -54,6 +60,10 @@ class ReportDetailRead(ApiSchema):
     pushed_at: datetime | None
     created_at: datetime
     updated_at: datetime
+
+
+class ReportTitleUpdate(ApiSchema):
+    title: str = Field(min_length=1, max_length=255)
 
 
 class TrialReportFile(ApiSchema):
@@ -71,12 +81,25 @@ class TrialReportFinding(ApiSchema):
     image_width: int | None = None
     image_height: int | None = None
     detection_id: str | None = None
+    description: str | None = Field(default=None, max_length=20)
 
 
 class TrialGenerateRequest(ApiSchema):
     report_name: str | None = Field(default=None, max_length=255)
-    models: list[str] = Field(default_factory=lambda: ["裂缝", "面砖剥落"])
+    models: list[str] = Field(default_factory=lambda: ["裂缝", "剥落"])
     photo_ids: list[UUID] = Field(default_factory=list)
+    archived_report_id: UUID | None = None
+
+    @field_validator("models")
+    @classmethod
+    def validate_models(cls, models: list[str]) -> list[str]:
+        allowed_models = {"裂缝", "剥落", "空鼓"}
+        unique_models = list(dict.fromkeys(models))
+        if any(model not in allowed_models for model in unique_models):
+            raise ValueError("models contains an unsupported defect type")
+        if not unique_models:
+            raise ValueError("models must select at least one supported defect type")
+        return unique_models
 
 
 class TrialUploadedPhotoRead(ApiSchema):
@@ -86,6 +109,13 @@ class TrialUploadedPhotoRead(ApiSchema):
     mime_type: str | None
     metadata_json: dict
     thermal_imaging_available: bool
+    precheck_status: PhotoPrecheckStatus
+    precheck_category: str | None
+    precheck_reason: str | None
+    precheck_model: str | None
+    precheck_error: str | None
+    precheck_attempts: int
+    prechecked_at: datetime | None
     created_at: datetime
 
 
@@ -99,4 +129,5 @@ class TrialReportRequest(ApiSchema):
 
 
 class TrialGeneratedResult(TrialReportRequest):
-    pass
+    archived_report_id: UUID | None = None
+    archived_report_title: str | None = None

@@ -1,40 +1,61 @@
 import { queryOptions } from "@tanstack/react-query";
 
-import { ApiError, apiFetch, apiRequest } from "@/api/client";
+import { ApiError, apiFetch, apiRequest, apiUploadRequest } from "@/api/client";
+import type { ApiUploadProgress } from "@/api/client";
+import type { ReportDetail } from "@/types/reports";
+import type { AuthUser } from "@/types/auth";
 import type {
-  Building,
-  BuildingPayload,
-  BuildingUpdatePayload,
+  BuildingModel,
   DetectionConfig,
   DetectionConfigPayload,
   DetectionTask,
-  Facade,
-  FacadePayload,
-  FacadeUpdatePayload,
   Photo,
   ProjectCreatePayload,
+  ProjectDraftCreatePayload,
   ProjectDetail,
+  ProjectFinalizePayload,
   ProjectListItem,
   ProjectUpdatePayload,
+  StartDetectionPayload,
   UploadBatch,
   UploadBatchPayload
 } from "@/types/projects";
 
-export const projectsQueryOptions = queryOptions({
-  queryKey: ["projects"],
-  queryFn: () => apiRequest<ProjectListItem[]>("/projects")
-});
+type ProjectViewer = Pick<AuthUser, "id" | "role"> | null | undefined;
+
+function viewerQueryKey(viewer: ProjectViewer) {
+  return {
+    role: viewer?.role ?? "anonymous",
+    userId: viewer?.id ?? "anonymous"
+  };
+}
+
+export function projectsQueryOptions(viewer: ProjectViewer) {
+  return queryOptions({
+    queryKey: ["projects", "list", viewerQueryKey(viewer)],
+    queryFn: () => apiRequest<ProjectListItem[]>("/projects"),
+    refetchInterval: 30_000
+  });
+}
 
 export function projectQueryOptions(projectId: string) {
   return queryOptions({
     queryKey: ["projects", projectId],
     queryFn: () => apiRequest<ProjectDetail>(`/projects/${projectId}`),
-    enabled: Boolean(projectId)
+    enabled: Boolean(projectId),
+    refetchInterval: 30_000
   });
 }
 
 export function createProject(payload: ProjectCreatePayload) {
   return apiRequest<ProjectDetail>("/projects", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function createProjectDraft(payload: ProjectDraftCreatePayload) {
+  return apiRequest<ProjectDetail>("/projects/drafts", {
     method: "POST",
     body: JSON.stringify(payload)
   });
@@ -53,42 +74,40 @@ export function deleteProject(projectId: string) {
   });
 }
 
-export function createBuilding(projectId: string, payload: BuildingPayload) {
-  return apiRequest<Building>(`/projects/${projectId}/buildings`, {
+export function finalizeProject(projectId: string, payload: ProjectFinalizePayload) {
+  return apiRequest<ProjectDetail>(`/projects/${projectId}/finalize`, {
     method: "POST",
     body: JSON.stringify(payload)
   });
 }
 
-export function updateBuilding(buildingId: string, payload: BuildingUpdatePayload) {
-  return apiRequest<Building>(`/buildings/${buildingId}`, {
+export function buildingModelQueryKey(projectId: string) {
+  return ["projects", projectId, "building-model"] as const;
+}
+
+export function buildingModelQueryOptions(projectId: string) {
+  return queryOptions({
+    queryKey: buildingModelQueryKey(projectId),
+    queryFn: () => apiRequest<BuildingModel | null>(`/projects/${projectId}/building-model`),
+    enabled: Boolean(projectId)
+  });
+}
+
+export function uploadBuildingModel(
+  projectId: string,
+  file: File,
+  onProgress?: (progress: ApiUploadProgress) => void
+) {
+  const body = new FormData();
+  body.append("file", file);
+  return apiUploadRequest<BuildingModel>(`/projects/${projectId}/building-model`, body, {
     method: "PUT",
-    body: JSON.stringify(payload)
+    onProgress
   });
 }
 
-export function deleteBuilding(buildingId: string) {
-  return apiRequest<{ ok: boolean }>(`/buildings/${buildingId}`, {
-    method: "DELETE"
-  });
-}
-
-export function createFacade(buildingId: string, payload: FacadePayload) {
-  return apiRequest<Facade>(`/buildings/${buildingId}/facades`, {
-    method: "POST",
-    body: JSON.stringify(payload)
-  });
-}
-
-export function updateFacade(facadeId: string, payload: FacadeUpdatePayload) {
-  return apiRequest<Facade>(`/facades/${facadeId}`, {
-    method: "PUT",
-    body: JSON.stringify(payload)
-  });
-}
-
-export function deleteFacade(facadeId: string) {
-  return apiRequest<{ ok: boolean }>(`/facades/${facadeId}`, {
+export function deleteBuildingModel(projectId: string) {
+  return apiRequest<{ ok: boolean }>(`/projects/${projectId}/building-model`, {
     method: "DELETE"
   });
 }
@@ -98,6 +117,19 @@ export function projectPhotosQueryOptions(projectId: string) {
     queryKey: ["projects", projectId, "photos"],
     queryFn: () => apiRequest<Photo[]>(`/projects/${projectId}/photos`),
     enabled: Boolean(projectId)
+  });
+}
+
+export function projectReviewedResultQueryOptions(
+  projectId: string,
+  enabled: boolean
+) {
+  return queryOptions({
+    queryKey: ["projects", projectId, "reviewed-result"],
+    queryFn: () => apiRequest<ReportDetail>(
+      `/projects/${projectId}/reviewed-result`
+    ),
+    enabled: Boolean(projectId && enabled)
   });
 }
 
@@ -151,8 +183,9 @@ export function updateDetectionConfig(projectId: string, payload: DetectionConfi
   });
 }
 
-export function startDetection(projectId: string) {
+export function startDetection(projectId: string, payload: StartDetectionPayload) {
   return apiRequest<DetectionTask>(`/projects/${projectId}/start-detection`, {
-    method: "POST"
+    method: "POST",
+    body: JSON.stringify(payload)
   });
 }

@@ -12,12 +12,15 @@
     "@heroui/react": "2.8.10",
     "@tanstack/react-query": "^5.90.15",
     "framer-motion": "^11.18.2",
+    "gsap": "^3.15.0",
     "konva": "^9.3.20",
     "lucide-react": "^0.468.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-konva": "^18.2.16",
     "react-router-dom": "^6.30.2",
+    "three": "^0.185.1",
+    "three-mesh-bvh": "^0.9.14",
     "zustand": "^5.0.9"
   },
   "devDependencies": {
@@ -25,6 +28,7 @@
     "@types/node": "^22.10.10",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
+    "@types/three": "^0.185.4",
     "@vitejs/plugin-react": "^6.0.3",
     "autoprefixer": "^10.4.21",
     "postcss": "^8.5.6",

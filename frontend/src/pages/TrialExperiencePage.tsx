@@ -1,34 +1,85 @@
-import { Skeleton, Spinner } from "@heroui/react";
-import { Archive, Check, FileSearch, Home, ImageUp, RefreshCcw, Sparkles, Trash2, Undo2, ZoomIn } from "lucide-react";
-import { type CSSProperties, type ChangeEvent, type DragEvent, useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+﻿import {
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalFooter,
+  ModalHeader
+} from "@heroui/react";
+import {
+  ArrowLeft,
+  Check,
+  CircleCheckBig,
+  Home,
+  Images,
+  LoaderCircle,
+  RefreshCcw,
+  ScanSearch,
+  Send,
+  ShieldCheck,
+  TriangleAlert,
+  X,
+  ZoomIn,
+  ZoomOut
+} from "lucide-react";
+import {
+  type CSSProperties,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+  type WheelEvent as ReactWheelEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState
+} from "react";
+import { Link, useBeforeUnload, useBlocker, useNavigate } from "react-router-dom";
 
 import { ApiError } from "@/api/client";
 import {
   archiveTrialResult,
   deleteTrialPhoto,
   generateTrialResult,
+  getTrialRequestStatus,
+  updateTrialReportTitle,
   uploadTrialPhoto as uploadTrialPhotoFile,
   type TrialGeneratedResult,
   type TrialUploadedPhoto
 } from "@/api/reports";
-import { ModelOutputDialog } from "@/components/ModelOutputDialog";
+import { ListPagination } from "@/components/ListPagination";
+import { PhotoUploadThumbnail } from "@/components/project/PhotoUploadThumbnail";
+import { DetectionGuidePanel } from "@/components/project/DetectionCreateWorkbench";
+import { ProjectPhotoUploader } from "@/components/project/ProjectPhotoUploader";
+import { ProjectWorkbenchShell } from "@/components/project/ProjectWorkbenchShell";
+import { StartDetectionModal } from "@/components/project/StartDetectionModal";
+import { useAuthStore } from "@/stores/useAuthStore";
+import type { StartDetectionPayload } from "@/types/projects";
+import { createAsyncLimiter } from "@/utils/asyncLimiter";
+import { createClientId } from "@/utils/id";
+import {
+  PROFESSIONAL_PHOTO_UPLOAD_HINT,
+  PHOTO_UPLOAD_WINDOW_WARNING,
+  validatePhotoUpload
+} from "@/utils/photoUpload";
 import { trialDefectBoxLabel, trialDefectDisplayFromModel } from "@/utils/trialDefectDisplay";
 import { readTrialPhotoMetadata, type TrialPhotoMetadata } from "@/utils/photoMetadata";
-import { createClientId } from "@/utils/id";
-import { formatModelOutputs, hasModelOutputs } from "@/utils/modelOutputs";
 
-const MODEL_OPTIONS = ["裂缝", "面砖剥落"] as const;
-const MAX_TRIAL_PHOTO_COUNT = 20;
-const MAX_TRIAL_PHOTO_SIZE_BYTES = 20 * 1024 * 1024;
-const ACCEPTED_TRIAL_PHOTO_TYPES = new Set(["image/jpeg", "image/png"]);
-const UPLOAD_LIMIT_TIP = "支持 JPG、PNG 图片，单张最大 20MB，单次最多 20 张";
+const MODEL_OPTIONS = ["裂缝", "剥落", "空鼓"] as const;
+const MAX_TRIAL_PHOTO_COUNT = 30;
+const TRIAL_PHOTO_PAGE_SIZE = 12;
+const MAX_TRIAL_PHOTO_SIZE_BYTES = 5 * 1024 * 1024;
+const TRIAL_RESULT_CONFIDENCE_THRESHOLD = 0.6;
+const PHOTO_PREVIEW_DEFAULT_ZOOM = 1;
+const PHOTO_PREVIEW_MIN_ZOOM = 1;
+const PHOTO_PREVIEW_MAX_ZOOM = 4;
+const PHOTO_PREVIEW_ZOOM_STEP = 0.25;
+const runTrialPhotoUpload = createAsyncLimiter(6);
 const GENERATION_STEP_MESSAGES = [
   "正在读取照片信息",
-  "正在调用裂缝与剥落识别模型",
+  "正在调用视觉检测服务",
   "正在分析外墙缺陷区域",
   "正在生成标注结果"
 ] as const;
+const TRIAL_REQUEST_STORAGE_PREFIX = "exterior-wall:active-trial-request:";
 const EMPTY_TRIAL_PHOTO_METADATA: TrialPhotoMetadata = {
   xmpDroneDjiImageSource: null,
   ifd0ImageDescription: null,
@@ -43,10 +94,11 @@ interface SelectedTrialPhoto {
   file: File;
   metadata: TrialPhotoMetadata;
   uploadStatus: TrialPhotoUploadStatus;
-  uploadProgress: number;
   uploadError?: string;
+  unsupportedFormat?: boolean;
   uploadedPhoto?: TrialUploadedPhoto;
   generatedFile?: TrialGeneratedFile;
+  isArchived?: boolean;
 }
 
 interface SelectedPhotoPreview extends SelectedTrialPhoto {
@@ -64,20 +116,82 @@ interface TrialAnnotatedPreview {
   findings: TrialGeneratedResult["findings"];
 }
 
+type TrialDetectionDialogStage = "confirmation" | "progress" | "completed" | "error";
+
+interface PreparedTrialDetection {
+  appendToReportId: string | null;
+  photoCount: number;
+  photoIds: string[];
+  thermalPhotoCount: number;
+  reportName?: string;
+}
+
+function trialRequestStorageKey(userId: string) {
+  return `${TRIAL_REQUEST_STORAGE_PREFIX}${userId}`;
+}
+
 export function TrialExperiencePage() {
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const navigate = useNavigate();
+  const user = useAuthStore((state) => state.user);
+  const previewViewportRef = useRef<HTMLDivElement | null>(null);
+  const resultPanelRef = useRef<HTMLElement | null>(null);
+  const previewDragRef = useRef<{ pointerId: number; x: number; y: number; distance: number } | null>(null);
+  const previewDragMovedRef = useRef(false);
+  const allowNavigationRef = useRef(false);
+  const handledTrialRequestIdsRef = useRef(new Set<string>());
   const [selectedPhotos, setSelectedPhotos] = useState<SelectedTrialPhoto[]>([]);
+  const [selectedModels, setSelectedModels] = useState<Array<(typeof MODEL_OPTIONS)[number]>>([...MODEL_OPTIONS]);
+  const [modelSelectionError, setModelSelectionError] = useState("");
   const [reportName, setReportName] = useState("");
+  const [savedReportName, setSavedReportName] = useState("");
   const [error, setError] = useState("");
+  const [actionHint, setActionHint] = useState("");
   const [generatedResult, setGeneratedResult] = useState<TrialGeneratedResult | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isArchiving, setIsArchiving] = useState(false);
+  const [isReportNameSaving, setIsReportNameSaving] = useState(false);
   const [archivedReportId, setArchivedReportId] = useState<string | null>(null);
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
+  const [photoPage, setPhotoPage] = useState(1);
   const [annotatedPreview, setAnnotatedPreview] = useState<TrialAnnotatedPreview | null>(null);
+  const [previewZoom, setPreviewZoom] = useState(PHOTO_PREVIEW_DEFAULT_ZOOM);
+  const [previewPan, setPreviewPan] = useState({ x: 0, y: 0 });
   const [generationStepIndex, setGenerationStepIndex] = useState(0);
-  const [showGenerationLongWait, setShowGenerationLongWait] = useState(false);
-  const [isModelOutputOpen, setIsModelOutputOpen] = useState(false);
+  const [detectionDialogStage, setDetectionDialogStage] = useState<TrialDetectionDialogStage | null>(null);
+  const [detectionDialogMessage, setDetectionDialogMessage] = useState("");
+  const [preparedDetection, setPreparedDetection] = useState<PreparedTrialDetection | null>(null);
+  const [isVersionNoticeOpen, setIsVersionNoticeOpen] = useState(true);
+  const [guideExampleTab, setGuideExampleTab] = useState<"original" | "annotated">("original");
+  const [activeTrialRequestId, setActiveTrialRequestId] = useState<string | null>(() => {
+    if (!user) return null;
+    try {
+      return window.localStorage.getItem(trialRequestStorageKey(user.id));
+    } catch {
+      return null;
+    }
+  });
+
+  const pendingPhotos = useMemo(
+    () => selectedPhotos.filter((photo) => !photo.isArchived),
+    [selectedPhotos]
+  );
+  const qualifiedPendingPhotos = useMemo(
+    () => pendingPhotos.filter((photo) => (
+      photo.uploadStatus === "uploaded"
+      && photo.uploadedPhoto?.precheck_status === "passed"
+    )),
+    [pendingPhotos]
+  );
+  const incompletePrecheckPhotos = useMemo(
+    () => pendingPhotos.filter((photo) => (
+      photo.uploadStatus === "uploaded"
+      && photo.uploadedPhoto
+      && ["pending", "running", "error"].includes(photo.uploadedPhoto.precheck_status)
+    )),
+    [pendingPhotos]
+  );
+  const isHollowSelected = selectedModels.includes("空鼓");
+  const isModelSelectionInvalid = Boolean(modelSelectionError);
 
   const photoPreviews = useMemo<SelectedPhotoPreview[]>(
     () => selectedPhotos.map((photo) => ({
@@ -95,7 +209,8 @@ export function TrialExperiencePage() {
     );
     return generatedResult.files.map((file, index) => {
       const findings = generatedResult.findings.filter((item) => (
-        file.photo_id ? item.photo_id === file.photo_id : item.filename === file.filename
+        isTrialResultFinding(item)
+        && (file.photo_id ? item.photo_id === file.photo_id : item.filename === file.filename)
       ));
       return {
         filename: file.filename,
@@ -104,46 +219,176 @@ export function TrialExperiencePage() {
       };
     });
   }, [generatedResult, photoPreviews]);
-  const uploadSummary = useMemo(() => trialUploadSummary(selectedPhotos), [selectedPhotos]);
-  const modelOutputText = useMemo(
-    () => formatModelOutputs(generatedResult?.raw_model_outputs),
-    [generatedResult?.raw_model_outputs]
-  );
-  const canShowModelOutputs = hasModelOutputs(generatedResult?.raw_model_outputs);
-  const isUploading = selectedPhotos.some((photo) => photo.uploadStatus === "uploading");
-  const isUploadLocked = isUploading || isGenerating || isArchiving || Boolean(archivedReportId);
+  const isUploading = pendingPhotos.some((photo) => photo.uploadStatus === "uploading");
+  const isInteractionBusy = isUploading || isGenerating || isArchiving;
+  const isPhotoEditingLocked = isInteractionBusy || (Boolean(generatedResult) && !archivedReportId);
+  const canContinueDetection = Boolean(archivedReportId)
+    && qualifiedPendingPhotos.length > 0
+    && incompletePrecheckPhotos.length === 0;
+  const isReportNameLocked = isGenerating || isArchiving || isReportNameSaving;
+  const isReportNameDirty = Boolean(archivedReportId) && reportName.trim() !== savedReportName;
+  const hasUnsafePageWork = isUploading
+    || isGenerating
+    || isArchiving
+    || isReportNameDirty
+    || pendingPhotos.length > 0
+    || (!archivedReportId && Boolean(reportName.trim()));
+  const navigationBlocker = useBlocker(({ currentLocation, nextLocation }) => (
+    !allowNavigationRef.current
+    && hasUnsafePageWork
+    && `${currentLocation.pathname}${currentLocation.search}` !== `${nextLocation.pathname}${nextLocation.search}`
+  ));
+
+  useBeforeUnload((event) => {
+    if (!hasUnsafePageWork) return;
+    event.preventDefault();
+  });
+
+  const acceptTrialResult = useCallback((
+    requestId: string,
+    generated: TrialGeneratedResult,
+    appendToExisting: boolean
+  ) => {
+    if (handledTrialRequestIdsRef.current.has(requestId)) return;
+    handledTrialRequestIdsRef.current.add(requestId);
+    setGeneratedResult((current) => (
+      current && appendToExisting
+        ? mergeTrialGeneratedResults(current, generated)
+        : generated
+    ));
+    setPreparedDetection(null);
+    setDetectionDialogMessage("");
+    setDetectionDialogStage("completed");
+    if (generated.archived_report_id) {
+      setArchivedReportId(generated.archived_report_id);
+      const archivedTitle = generated.archived_report_title ?? (generated.report_name?.trim() || "");
+      setReportName(archivedTitle);
+      setSavedReportName(archivedTitle);
+      const archivedPhotoIds = new Set(
+        generated.files
+          .map((file) => file.photo_id)
+          .filter((photoId): photoId is string => Boolean(photoId))
+      );
+      setSelectedPhotos((current) => current.map((photo) => (
+        photo.uploadedPhoto && archivedPhotoIds.has(photo.uploadedPhoto.id)
+          ? { ...photo, isArchived: true }
+          : photo
+      )));
+    }
+  }, []);
 
   useEffect(() => () => {
     photoPreviews.forEach((photo) => URL.revokeObjectURL(photo.previewUrl));
   }, [photoPreviews]);
 
   useEffect(() => {
+    if (!activeTrialRequestId || !user) return undefined;
+    let disposed = false;
+    setIsGenerating(true);
+    setDetectionDialogMessage("");
+    setDetectionDialogStage("progress");
+
+    const refreshStatus = async () => {
+      try {
+        const requestStatus = await getTrialRequestStatus(activeTrialRequestId);
+        if (disposed) return;
+        if (requestStatus.status === "processing") {
+          setIsGenerating(true);
+          setActionHint("");
+          return;
+        }
+        if (requestStatus.status === "completed" && requestStatus.result) {
+          acceptTrialResult(
+            activeTrialRequestId,
+            requestStatus.result,
+            Boolean(archivedReportId && generatedResult)
+          );
+          clearActiveTrialRequest(activeTrialRequestId);
+          setIsGenerating(false);
+          setError("");
+          setActionHint("");
+          return;
+        }
+        clearActiveTrialRequest(activeTrialRequestId);
+        setIsGenerating(false);
+        setActionHint("");
+        const requestError = requestStatus.error || "此前提交的检测任务失败，请重新发起。";
+        setError(requestError);
+        setDetectionDialogMessage(requestError);
+        setDetectionDialogStage("error");
+      } catch (statusError) {
+        if (disposed) return;
+        if (statusError instanceof ApiError && statusError.status === 404) return;
+        if (!(statusError instanceof ApiError && statusError.status === 0)) {
+          setError(statusError instanceof Error ? statusError.message : "检测任务状态查询失败。");
+        }
+      }
+    };
+
+    void refreshStatus();
+    const timer = window.setInterval(() => void refreshStatus(), 3000);
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+    };
+  }, [acceptTrialResult, activeTrialRequestId, archivedReportId, generatedResult, user]);
+
+  useEffect(() => {
+    if (navigationBlocker.state !== "blocked") return;
+
+    const confirmAndLeave = async () => {
+      const warning = isGenerating
+        ? "检测任务仍在执行。确认离开后可稍后在“试用记录”中查看，且请勿重复提交。"
+        : "当前有未完成或未保存的内容。确认离开？未归档的上传照片将被清理。";
+      if (!window.confirm(warning)) {
+        navigationBlocker.reset();
+        return;
+      }
+      if (isReportNameDirty && !(await saveArchivedReportName())) {
+        navigationBlocker.reset();
+        return;
+      }
+      if (!isGenerating) await discardPendingUploads();
+      allowNavigationRef.current = true;
+      navigationBlocker.proceed();
+    };
+
+    void confirmAndLeave();
+  }, [navigationBlocker.state]);
+
+  useEffect(() => {
+    if (previewIndex === null && !annotatedPreview) return;
+
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") closePhotoPreview();
+    }
+
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [annotatedPreview, previewIndex]);
+
+  useEffect(() => {
     if (!isGenerating) {
       setGenerationStepIndex(0);
-      setShowGenerationLongWait(false);
       return;
     }
 
-    setShowGenerationLongWait(false);
     const stepTimer = window.setInterval(() => {
-      setGenerationStepIndex((current) => (current + 1) % GENERATION_STEP_MESSAGES.length);
+      setGenerationStepIndex((current) => Math.min(current + 1, GENERATION_STEP_MESSAGES.length - 1));
     }, 1600);
-    const longWaitTimer = window.setTimeout(() => {
-      setShowGenerationLongWait(true);
-    }, 15000);
 
     return () => {
       window.clearInterval(stepTimer);
-      window.clearTimeout(longWaitTimer);
     };
   }, [isGenerating]);
 
   async function applyFiles(fileList: File[]) {
-    if (!fileList.length || isUploadLocked) return;
+    if (!fileList.length || isPhotoEditingLocked) return;
 
+    setActionHint("");
     const rejectionMessages: string[] = [];
     const selected = fileList.filter((file) => {
-      const message = validateTrialPhoto(file);
+      const message = validatePhotoUpload(file, { maxSizeBytes: MAX_TRIAL_PHOTO_SIZE_BYTES });
       if (message) {
         rejectionMessages.push(`${file.name}: ${message}`);
         return false;
@@ -151,19 +396,17 @@ export function TrialExperiencePage() {
       return true;
     });
 
-    const remainingSlots = MAX_TRIAL_PHOTO_COUNT - selectedPhotos.length;
+    const remainingSlots = MAX_TRIAL_PHOTO_COUNT - pendingPhotos.length;
     if (remainingSlots <= 0) {
       setError(`单次最多上传 ${MAX_TRIAL_PHOTO_COUNT} 张照片。`);
       return;
     }
     const accepted = selected.slice(0, remainingSlots);
     if (!accepted.length) {
-      if (fileInputRef.current) fileInputRef.current.value = "";
       setError(rejectionMessages[0] ?? "未选择可上传的照片。");
       return;
     }
 
-    if (fileInputRef.current) fileInputRef.current.value = "";
     const limitMessage = selected.length > accepted.length
       ? `单次最多上传 ${MAX_TRIAL_PHOTO_COUNT} 张照片，已添加前 ${remainingSlots} 张。`
       : "";
@@ -178,95 +421,204 @@ export function TrialExperiencePage() {
       ...current,
       ...nextPhotos
     ]);
-    setGeneratedResult(null);
-    setArchivedReportId(null);
+    setPhotoPage(Math.max(1, Math.ceil((selectedPhotos.length + nextPhotos.length) / TRIAL_PHOTO_PAGE_SIZE)));
     nextPhotos.forEach((photo, offset) => {
       void uploadTrialPhoto(photo, startIndex + offset);
     });
   }
 
-  function updateFiles(event: ChangeEvent<HTMLInputElement>) {
-    void applyFiles(Array.from(event.target.files ?? []));
-  }
-
-  function dropFiles(event: DragEvent<HTMLDivElement>) {
-    event.preventDefault();
-    if (isUploadLocked) return;
-    void applyFiles(Array.from(event.dataTransfer.files));
-  }
-
-  function openFilePicker() {
-    if (isUploadLocked) return;
-    fileInputRef.current?.click();
-  }
-
   function previewPhoto(index: number) {
+    resetPhotoPreviewTransform();
     setAnnotatedPreview(null);
     setPreviewIndex(index);
   }
 
   function previewAnnotatedPhoto(preview: TrialAnnotatedPreview) {
     if (!preview.previewUrl) return;
+    resetPhotoPreviewTransform();
     setPreviewIndex(null);
     setAnnotatedPreview(preview);
   }
 
-  async function removePhoto(index: number) {
-    if (isUploadLocked) return;
-    const photo = selectedPhotos[index];
-    if (!photo) return;
-    if (photo.uploadedPhoto) {
-      try {
-        await deleteTrialPhoto(photo.uploadedPhoto.id);
-      } catch (deleteError) {
-        const message = deleteError instanceof Error ? deleteError.message : "删除照片失败。";
-        setError(message);
-        return;
-      }
+  function resetPhotoPreviewTransform() {
+    previewDragRef.current = null;
+    previewDragMovedRef.current = false;
+    setPreviewZoom(PHOTO_PREVIEW_DEFAULT_ZOOM);
+    setPreviewPan({ x: 0, y: 0 });
+  }
+
+  function clampPreviewPan(pan: { x: number; y: number }, zoom: number) {
+    const viewport = previewViewportRef.current;
+    if (!viewport || zoom <= PHOTO_PREVIEW_DEFAULT_ZOOM) return { x: 0, y: 0 };
+    const maxX = (viewport.clientWidth * (zoom - 1)) / 2;
+    const maxY = (viewport.clientHeight * (zoom - 1)) / 2;
+    return {
+      x: Math.max(-maxX, Math.min(maxX, pan.x)),
+      y: Math.max(-maxY, Math.min(maxY, pan.y))
+    };
+  }
+
+  function updatePhotoPreviewZoom(nextZoom: number) {
+    const zoom = Math.max(PHOTO_PREVIEW_MIN_ZOOM, Math.min(PHOTO_PREVIEW_MAX_ZOOM, nextZoom));
+    setPreviewZoom(zoom);
+    setPreviewPan((current) => clampPreviewPan(current, zoom));
+  }
+
+  function zoomPhotoPreviewBy(delta: number) {
+    updatePhotoPreviewZoom(previewZoom + delta);
+  }
+
+  function handlePhotoPreviewWheel(event: ReactWheelEvent<HTMLDivElement>) {
+    event.preventDefault();
+    zoomPhotoPreviewBy(event.deltaY < 0 ? PHOTO_PREVIEW_ZOOM_STEP : -PHOTO_PREVIEW_ZOOM_STEP);
+  }
+
+  function startPhotoPreviewDrag(event: ReactPointerEvent<HTMLDivElement>) {
+    if (previewZoom <= PHOTO_PREVIEW_DEFAULT_ZOOM || (event.pointerType === "mouse" && event.button !== 0)) return;
+    event.preventDefault();
+    previewDragMovedRef.current = false;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    previewDragRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, distance: 0 };
+  }
+
+  function movePhotoPreview(event: ReactPointerEvent<HTMLDivElement>) {
+    const drag = previewDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const deltaX = event.clientX - drag.x;
+    const deltaY = event.clientY - drag.y;
+    const distance = drag.distance + Math.abs(deltaX) + Math.abs(deltaY);
+    if (distance >= 3) previewDragMovedRef.current = true;
+    previewDragRef.current = { ...drag, x: event.clientX, y: event.clientY, distance };
+    setPreviewPan((current) => clampPreviewPan({ x: current.x + deltaX, y: current.y + deltaY }, previewZoom));
+  }
+
+  function stopPhotoPreviewDrag(event: ReactPointerEvent<HTMLDivElement>) {
+    if (previewDragRef.current?.pointerId !== event.pointerId) return;
+    previewDragRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
     }
+    window.setTimeout(() => { previewDragMovedRef.current = false; }, 0);
+  }
+
+  function handlePhotoPreviewBackdropClick(event: ReactMouseEvent<HTMLDivElement>) {
+    if (previewDragMovedRef.current) return;
+    const target = event.target;
+    if (
+      target instanceof Element
+      && target.closest(".trial-photo-preview-close, .trial-photo-preview-toolbar, .trial-photo-preview-content, .trial-photo-preview-caption")
+    ) return;
+    closePhotoPreview();
+  }
+
+  async function removePhoto(index: number) {
+    if (isPhotoEditingLocked) return;
+    const photo = selectedPhotos[index];
+    if (!photo || photo.isArchived) return;
     setSelectedPhotos((current) => current.filter((_, photoIndex) => photoIndex !== index));
     setPreviewIndex((current) => (
       current === null ? null : current === index ? null : current > index ? current - 1 : current
     ));
-    setGeneratedResult(null);
-    setArchivedReportId(null);
     setError("");
+    if (!photo.uploadedPhoto) return;
+    try {
+      await deleteTrialPhoto(photo.uploadedPhoto.id);
+    } catch (deleteError) {
+      setSelectedPhotos((current) => {
+        if (current.some((currentPhoto) => currentPhoto.id === photo.id)) return current;
+        const next = [...current];
+        next.splice(Math.min(index, next.length), 0, photo);
+        return next;
+      });
+      setError(deleteError instanceof Error ? `${deleteError.message}，照片已恢复。` : "删除照片失败，照片已恢复。");
+    }
   }
 
   function closePhotoPreview() {
     setPreviewIndex(null);
     setAnnotatedPreview(null);
+    resetPhotoPreviewTransform();
   }
 
   function updateReportName(value: string) {
     setReportName(value);
-    setGeneratedResult(null);
-    setArchivedReportId(null);
     setError("");
   }
 
-  async function discardGeneratedResult() {
-    if (archivedReportId) return;
-    const uploadedPhotoIds = selectedPhotos
-      .map((photo) => photo.uploadedPhoto?.id)
-      .filter((photoId): photoId is string => Boolean(photoId));
-    try {
-      await Promise.all(uploadedPhotoIds.map((photoId) => deleteTrialPhoto(photoId)));
-    } catch (deleteError) {
-      const message = deleteError instanceof Error ? deleteError.message : "撤销失败，请稍后重试。";
-      setError(message);
-      return;
+  function toggleModel(model: (typeof MODEL_OPTIONS)[number]) {
+    if (isInteractionBusy) return;
+    setSelectedModels((current) => (
+      current.includes(model)
+        ? current.filter((item) => item !== model)
+        : MODEL_OPTIONS.filter((item) => item === model || current.includes(item))
+    ));
+    setModelSelectionError("");
+    setError("");
+  }
+
+  async function saveArchivedReportName(): Promise<boolean> {
+    const title = reportName.trim();
+    if (!archivedReportId || !isReportNameDirty) return true;
+    if (isReportNameSaving) return false;
+    if (!title) {
+      setError("请输入检测名称。");
+      return false;
     }
-    if (fileInputRef.current) fileInputRef.current.value = "";
-    setSelectedPhotos([]);
-    setGeneratedResult(null);
-    setPreviewIndex(null);
+
+    setIsReportNameSaving(true);
     setError("");
+    try {
+      const updated = await updateTrialReportTitle(archivedReportId, title);
+      setReportName(updated.title);
+      setSavedReportName(updated.title);
+      setActionHint("检测名称已保存。");
+      return true;
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "检测名称保存失败，请稍后重试。");
+      return false;
+    } finally {
+      setIsReportNameSaving(false);
+    }
   }
 
-  async function generateReport() {
-    if (!selectedPhotos.length) {
-      setError("请先上传照片。");
+  function persistActiveTrialRequest(requestId: string) {
+    setActiveTrialRequestId(requestId);
+    if (!user) return;
+    try {
+      window.localStorage.setItem(trialRequestStorageKey(user.id), requestId);
+    } catch {
+      // Recovery remains available in-memory when storage is unavailable.
+    }
+  }
+
+  function clearActiveTrialRequest(requestId: string) {
+    setActiveTrialRequestId((current) => current === requestId ? null : current);
+    if (!user) return;
+    try {
+      if (window.localStorage.getItem(trialRequestStorageKey(user.id)) === requestId) {
+        window.localStorage.removeItem(trialRequestStorageKey(user.id));
+      }
+    } catch {
+      // No action needed when browser storage is unavailable.
+    }
+  }
+
+  async function discardPendingUploads() {
+    const unarchivedPhotos = selectedPhotos.filter((photo) => !photo.isArchived);
+    await Promise.allSettled(unarchivedPhotos.map((photo) => (
+      photo.uploadedPhoto ? deleteTrialPhoto(photo.uploadedPhoto.id) : Promise.resolve()
+    )));
+  }
+
+  async function finishAndExit() {
+    if (isReportNameDirty && !(await saveArchivedReportName())) return;
+    navigate("/");
+  }
+
+  function generateReport() {
+    setActionHint("");
+    if (!pendingPhotos.length) {
+      setError("请先上传新照片。");
       return;
     }
 
@@ -275,46 +627,137 @@ export function TrialExperiencePage() {
       return;
     }
 
-    const failedCount = selectedPhotos.filter((photo) => photo.uploadStatus === "failed").length;
+    const unsupportedFormatCount = pendingPhotos.filter((photo) => photo.unsupportedFormat).length;
+    if (unsupportedFormatCount) {
+      setError(`${unsupportedFormatCount} 张照片格式不受支持，请删除后再开始检测。`);
+      return;
+    }
+
+    const failedCount = pendingPhotos.filter((photo) => photo.uploadStatus === "failed").length;
     if (failedCount) {
       setError(`${failedCount} 张照片上传失败，请先单张重新上传。`);
       return;
     }
 
-    const photoIds = selectedPhotos
+    if (incompletePrecheckPhotos.length) {
+      const failedPrecheckCount = incompletePrecheckPhotos.filter(
+        (photo) => photo.uploadedPhoto?.precheck_status === "error"
+      ).length;
+      setError(
+        failedPrecheckCount
+          ? `${failedPrecheckCount} 张照片预检失败，请删除后重新上传。`
+          : "照片仍在预检中，请稍后再开始检测。"
+      );
+      return;
+    }
+
+    if (!qualifiedPendingPhotos.length) {
+      setError("没有通过建筑照片预检的照片；不合格原图仍已保留，可预览或删除。如需再次判断，请重新上传。");
+      return;
+    }
+
+    const thermalPhotoCount = qualifiedPendingPhotos.filter(
+      (photo) => photo.uploadedPhoto?.thermal_imaging_available
+    ).length;
+
+    const photoIds = qualifiedPendingPhotos
       .map((photo) => photo.uploadedPhoto?.id)
       .filter((photoId): photoId is string => Boolean(photoId));
-    if (photoIds.length !== selectedPhotos.length) {
+    if (photoIds.length !== qualifiedPendingPhotos.length) {
       setError("请等待照片上传完成。");
       return;
     }
 
+    setPreparedDetection({
+      appendToReportId: archivedReportId,
+      photoCount: qualifiedPendingPhotos.length,
+      photoIds,
+      thermalPhotoCount,
+      reportName: reportName.trim() || undefined
+    });
+    setDetectionDialogMessage("");
+    setDetectionDialogStage("confirmation");
+  }
+
+  async function confirmDetection(payload: StartDetectionPayload) {
+    if (!preparedDetection || isGenerating) return;
+    const models = payload.model_types.map((model) => (
+      model === "crack" ? "裂缝" : model === "spalling" ? "剥落" : "空鼓"
+    ));
+    const previousResult = generatedResult;
+    const requestId = createClientId("trial-detection");
+    persistActiveTrialRequest(requestId);
     setIsGenerating(true);
-    setArchivedReportId(null);
+    setDetectionDialogMessage("");
+    setDetectionDialogStage("progress");
     setError("");
+    setActionHint("");
+    let keepRecovering = false;
     try {
       const generated = await generateTrialResult({
-        report_name: reportName.trim() || undefined,
-        models: [...MODEL_OPTIONS],
-        photo_ids: photoIds
-      });
-      setGeneratedResult(generated);
+        report_name: preparedDetection.reportName,
+        models,
+        photo_ids: preparedDetection.photoIds,
+        archived_report_id: preparedDetection.appendToReportId ?? undefined
+      }, requestId);
+      acceptTrialResult(requestId, generated, Boolean(previousResult && preparedDetection.appendToReportId));
+      clearActiveTrialRequest(requestId);
+      setIsGenerating(false);
+      if (!generated.archived_report_id) {
+        // 兼容尚未升级为服务端自动归档的后端版本。
+        await archiveGeneratedResult(generated, new Set(preparedDetection.photoIds));
+      }
     } catch (generateError) {
+      keepRecovering = generateError instanceof ApiError
+        && (generateError.status === 0 || (generateError.status === 409 && generateError.message.includes("处理中")));
       const message = generateError instanceof ApiError && generateError.status === 401
         ? "请先登录后再生成检测结果。"
+        : keepRecovering
+          ? "连接中断，但检测任务可能仍在执行；系统正在自动查询结果，请勿重复提交。"
         : generateError instanceof Error ? generateError.message : "生成检测结果失败。";
       setError(message);
+      if (keepRecovering) {
+        setDetectionDialogMessage(message);
+      } else {
+        clearActiveTrialRequest(requestId);
+        setDetectionDialogMessage(message);
+        setDetectionDialogStage("error");
+      }
     } finally {
-      setIsGenerating(false);
+      if (!keepRecovering) setIsGenerating(false);
     }
+  }
+
+  function viewDetectionResult() {
+    if (!archivedReportId) return;
+    allowNavigationRef.current = true;
+    setDetectionDialogStage(null);
+    navigate(`/trials/${archivedReportId}`);
+  }
+
+  function returnToTrialList() {
+    allowNavigationRef.current = true;
+    setDetectionDialogStage(null);
+    navigate("/trials");
+  }
+
+  function handleGeneratedPrimaryAction() {
+    if (!archivedReportId) {
+      void archiveGeneratedResult();
+      return;
+    }
+    if (!pendingPhotos.length) {
+      setError("");
+      setActionHint("请继续添加新照片。");
+      return;
+    }
+    void generateReport();
   }
 
   async function retryPhoto(index: number) {
     const photo = selectedPhotos[index];
-    if (!photo || isUploadLocked) return;
+    if (!photo || photo.isArchived || isPhotoEditingLocked) return;
 
-    setArchivedReportId(null);
-    setGeneratedResult(null);
     setError("");
     const result = await uploadTrialPhoto(photo, index);
     if (!result) {
@@ -328,18 +771,14 @@ export function TrialExperiencePage() {
   ): Promise<TrialPhotoUploadSuccess | null> {
     setSelectedPhotos((current) => current.map((currentPhoto) => (
       currentPhoto.id === photo.id
-        ? { ...resetTrialPhotoUpload(currentPhoto), uploadStatus: "uploading", uploadProgress: 0 }
+        ? { ...resetTrialPhotoUpload(currentPhoto), uploadStatus: "uploading" }
         : currentPhoto
     )));
 
     try {
-      const uploadedPhoto = await uploadTrialPhotoFile(photo.file, (progress) => {
-        setSelectedPhotos((current) => current.map((currentPhoto) => (
-          currentPhoto.id === photo.id
-            ? { ...currentPhoto, uploadProgress: progress.percent }
-          : currentPhoto
-        )));
-      });
+      const uploadedPhoto = await runTrialPhotoUpload(() => (
+        uploadTrialPhotoFile(photo.file)
+      ));
 
       const generatedFile = {
         photo_id: uploadedPhoto.id,
@@ -355,15 +794,23 @@ export function TrialExperiencePage() {
       const message = trialUploadErrorMessage(uploadError);
       setSelectedPhotos((current) => current.map((currentPhoto) => (
         currentPhoto.id === photo.id
-          ? { ...currentPhoto, uploadStatus: "failed", uploadError: message }
+          ? {
+            ...currentPhoto,
+            uploadStatus: "failed",
+            uploadError: message,
+            unsupportedFormat: isUnsupportedTrialPhotoFormatError(uploadError)
+          }
           : currentPhoto
       )));
       return null;
     }
   }
 
-  async function archiveGeneratedResult() {
-    if (!generatedResult) {
+  async function archiveGeneratedResult(
+    result: TrialGeneratedResult | null = generatedResult,
+    archivedPhotoIds?: Set<string>
+  ) {
+    if (!result) {
       setError("请先生成检测结果。");
       return;
     }
@@ -375,8 +822,24 @@ export function TrialExperiencePage() {
     setIsArchiving(true);
     setError("");
     try {
-      const archivedResult = await archiveTrialResult(generatedResult);
+      const archivedResult = await archiveTrialResult({
+        ...result,
+        report_name: reportName.trim() || undefined,
+        findings: result.findings.filter(isTrialResultFinding)
+      });
       setArchivedReportId(archivedResult.id);
+      setReportName(archivedResult.title);
+      setSavedReportName(archivedResult.title);
+      const photoIds = archivedPhotoIds ?? new Set(
+        result.files
+          .map((file) => file.photo_id)
+          .filter((photoId): photoId is string => Boolean(photoId))
+      );
+      setSelectedPhotos((current) => current.map((photo) => (
+        photo.uploadedPhoto && photoIds.has(photo.uploadedPhoto.id)
+          ? { ...photo, isArchived: true }
+          : photo
+      )));
     } catch (archiveError) {
       const message = archiveError instanceof ApiError && archiveError.status === 401
         ? "请先登录后再存档检测结果。"
@@ -388,456 +851,431 @@ export function TrialExperiencePage() {
   }
 
   const previewingPhoto = previewIndex === null ? null : photoPreviews[previewIndex] ?? null;
+  const totalPhotoPages = Math.max(1, Math.ceil(photoPreviews.length / TRIAL_PHOTO_PAGE_SIZE));
+  const visiblePhotoPage = Math.min(photoPage, totalPhotoPages);
+  const paginatedPhotos = useMemo(() => {
+    const startIndex = (visiblePhotoPage - 1) * TRIAL_PHOTO_PAGE_SIZE;
+    return photoPreviews.slice(startIndex, startIndex + TRIAL_PHOTO_PAGE_SIZE);
+  }, [photoPreviews, visiblePhotoPage]);
+  const detectionProgress = [18, 42, 68, 88][generationStepIndex] ?? 88;
+  const activePhotoUploadCount = pendingPhotos.filter(
+    (photo) => photo.uploadStatus === "ready" || photo.uploadStatus === "uploading"
+  ).length;
+
+  function openProfessionalDetection() {
+    allowNavigationRef.current = true;
+    navigate("/detections/new");
+  }
 
   return (
     <>
-      <div className="trial-experience-shell trial-experience-content-shell">
-        <section className="trial-experience-grid">
-          <div className="trial-upload-panel">
-            <label className="trial-report-name-field">
-              <span>报告名称</span>
-              <input
-                disabled={isUploadLocked}
-                maxLength={255}
-                placeholder="请输入报告名称"
-                value={reportName}
-                onChange={(event) => updateReportName(event.target.value)}
-              />
-            </label>
-            <div
-              className={`trial-photo-uploader ${photoPreviews.length ? "has-photos" : "is-empty"}`}
-              aria-live="polite"
-              onDragOver={(event) => event.preventDefault()}
-              onDrop={dropFiles}
-            >
-              <input
-                ref={fileInputRef}
-                className="sr-only"
-                accept="image/jpeg,image/png"
-                disabled={isUploadLocked}
-                multiple
-                type="file"
-                onChange={updateFiles}
-              />
-              {photoPreviews.length ? (
-                <>
-                  <div className="trial-photo-grid">
-                    {photoPreviews.map((photo, index) => {
-                      const photoProgress = clampProgress(photo.uploadProgress);
-                      const thermalAvailable = photo.uploadStatus === "uploaded"
-                        && (photo.uploadedPhoto?.thermal_imaging_available ?? photo.metadata.thermalImagingAvailable);
-                      return (
-                        <figure
-                          key={photo.id}
-                          className={`trial-photo-thumb is-${photo.uploadStatus}`}
-                        >
-                          <div className="trial-photo-thumb-image">
-                            <img alt={photo.file.name} src={photo.previewUrl} />
-                            {thermalAvailable ? (
-                              <span className="trial-thermal-available-tag">热成像可用</span>
-                            ) : null}
-                            {photo.uploadStatus === "uploaded" ? (
-                              <span className="trial-photo-check"><Check aria-hidden="true" /></span>
-                            ) : null}
-                            {photo.uploadStatus === "uploaded" ? (
-                              <div className="trial-photo-thumb-actions">
-                                <button
-                                  type="button"
-                                  aria-label="放大看"
-                                  title="放大看"
-                                  onClick={() => previewPhoto(index)}
-                                >
-                                  <ZoomIn aria-hidden="true" />
-                                </button>
-                                <button
-                                  className="danger"
-                                  disabled={isUploadLocked}
-                                  type="button"
-                                  aria-label="删除"
-                                  title="删除"
-                                  onClick={() => void removePhoto(index)}
-                                >
-                                  <Trash2 aria-hidden="true" />
-                                </button>
-                              </div>
-                            ) : null}
-                          </div>
-                          <figcaption>{photo.file.name}</figcaption>
-                          <div className="trial-photo-progress" aria-label={`${photo.file.name} 上传进度`}>
-                            <div className="trial-photo-progress-meta">
-                              <span>{trialPhotoStatusLabel(photo)}</span>
-                              <strong>{photoProgress}%</strong>
-                            </div>
-                            <div
-                              className="trial-progress-track"
-                              role="progressbar"
-                              aria-valuemin={0}
-                              aria-valuemax={100}
-                              aria-valuenow={photoProgress}
-                            >
-                              <span
-                                className="trial-progress-fill"
-                                style={{ width: `${photoProgress}%` }}
-                              />
-                            </div>
-                          </div>
-                          {photo.uploadStatus === "failed" ? (
-                            <>
-                              <p className="trial-photo-upload-error">{photo.uploadError || "上传失败，请重新上传。"}</p>
-                              <button
-                                className="trial-photo-retry-button"
-                                disabled={isUploadLocked}
-                                type="button"
-                                onClick={() => void retryPhoto(index)}
-                              >
-                                <RefreshCcw aria-hidden="true" />
-                                重新上传
-                              </button>
-                            </>
-                          ) : null}
-                        </figure>
-                      );
-                    })}
-                    <button
-                      className="trial-photo-add-button"
-                      disabled={isUploadLocked}
-                      type="button"
-                      onClick={openFilePicker}
-                    >
-                      + 继续添加
-                    </button>
-                  </div>
-                  <div className={`trial-uploader-progress-footer ${uploadSummary.failedCount ? "has-error" : ""}`}>
-                    <div className="trial-uploader-progress-head">
-                      <span>{uploadSummary.label}</span>
-                      <strong>{uploadSummary.percent}%</strong>
-                    </div>
-                    <div
-                      className="trial-progress-track"
-                      role="progressbar"
-                      aria-label="照片上传总进度"
-                      aria-valuemin={0}
-                      aria-valuemax={100}
-                      aria-valuenow={uploadSummary.percent}
-                    >
-                      <span
-                        className="trial-progress-fill"
-                        style={{ width: `${uploadSummary.percent}%` }}
-                      />
-                    </div>
-                  </div>
-                </>
-              ) : (
-                <button
-                  className="trial-upload-empty"
-                  disabled={isUploadLocked}
-                  type="button"
-                  onClick={openFilePicker}
+      <ProjectWorkbenchShell actionLabel="返回" hideHeader>
+        <div className="trial-new-project-layout">
+        <form className="create-workspace" onSubmit={(event) => event.preventDefault()}>
+          <h1 className="sr-only">AI检测体验</h1>
+          <section className="project-editor-panel" aria-label="AI检测体验">
+            <div className="project-fields project-editor-basic-fields">
+              <label className="form-field floating-line-field">
+                <input
+                  disabled={isReportNameLocked}
+                  maxLength={255}
+                  placeholder=" "
+                  value={reportName}
+                  onBlur={() => void saveArchivedReportName()}
+                  onChange={(event) => updateReportName(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") void saveArchivedReportName();
+                  }}
+                />
+                <span>检测名称</span>
+              </label>
+            </div>
+
+            <div className="project-editor-photo-block">
+              <section className="project-photo-workspace professional-create-photos" aria-label="检测照片">
+                <ProjectPhotoUploader
+                  addDisabled={isPhotoEditingLocked}
+                  disabled={isPhotoEditingLocked}
+                  emptyHint={(
+                    <span className="professional-drone-upload-hint">
+                      {PROFESSIONAL_PHOTO_UPLOAD_HINT}
+                      {activePhotoUploadCount ? (
+                        <>
+                          <br />
+                          <span role="status">
+                            正在上传 {activePhotoUploadCount} 张，
+                            <span className="photo-upload-window-warning">{PHOTO_UPLOAD_WINDOW_WARNING}</span>
+                          </span>
+                        </>
+                      ) : null}
+                    </span>
+                  )}
+                  hasPhotos={Boolean(photoPreviews.length)}
+                  onFilesSelected={(files) => void applyFiles(files)}
+                  presentation="line"
                 >
-                  <ImageUp aria-hidden="true" />
-                  <strong>点击或拖拽照片到此处上传</strong>
-                  <span className="trial-upload-note">{UPLOAD_LIMIT_TIP}</span>
-                </button>
-              )}
-            </div>
-            {error ? <p className="trial-error">{error}</p> : null}
-            {archivedReportId ? <p className="trial-status-message">已存档到检测结果页。</p> : null}
-            <div className="trial-actions">
-              {generatedResult ? (
-                <>
-                  <button
-                    className="button primary"
-                    disabled={isGenerating || isArchiving || Boolean(archivedReportId)}
-                    type="button"
-                    onClick={() => void archiveGeneratedResult()}
-                  >
-                    <Archive aria-hidden="true" />
-                    {isArchiving ? "存档中" : archivedReportId ? "已存档" : "存档"}
-                  </button>
-                  <button
-                    className="button secondary"
-                    disabled={isGenerating || isArchiving || Boolean(archivedReportId)}
-                    type="button"
-                    onClick={() => void discardGeneratedResult()}
-                  >
-                    <Undo2 aria-hidden="true" />
-                    撤销
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button
-                    className="button primary"
-                    disabled={isUploadLocked}
-                    type="button"
-                    onClick={() => void generateReport()}
-                  >
-                    <Sparkles aria-hidden="true" />
-                    {isGenerating ? "生成中" : "生成检测结果"}
-                  </button>
-                  <Link className="button secondary" to="/">
-                    <Home aria-hidden="true" />
-                    取消并返回
-                  </Link>
-                </>
-              )}
-            </div>
-          </div>
-          <aside className="trial-report-panel">
-            {generatedResult ? (
-              <div className="trial-report-result">
-                <div className="trial-report-head">
-                  <div className="trial-report-title-row">
-                    <h2>检测结果明细</h2>
-                    {canShowModelOutputs ? (
-                      <button
-                        className="model-output-link"
-                        type="button"
-                        onClick={() => setIsModelOutputOpen(true)}
+                  {paginatedPhotos.map((photo, index) => {
+                    const photoIndex = (visiblePhotoPage - 1) * TRIAL_PHOTO_PAGE_SIZE + index;
+                    const precheckStatus = photo.uploadedPhoto?.precheck_status;
+                    const thermalAvailable = photo.uploadStatus === "uploaded"
+                      && (photo.uploadedPhoto?.thermal_imaging_available ?? photo.metadata.thermalImagingAvailable);
+                    return (
+                      <PhotoUploadThumbnail
+                        badges={thermalAvailable ? <span className="trial-thermal-available-tag">热成像</span> : null}
+                        fileName={photo.file.name}
+                        footer={photo.uploadStatus === "failed" && !photo.unsupportedFormat ? (
+                          <>
+                            <p className="trial-photo-upload-error">{photo.uploadError || "上传失败，请重新上传。"}</p>
+                            <button
+                              className="trial-photo-retry-button"
+                              disabled={isPhotoEditingLocked}
+                              type="button"
+                              onClick={() => void retryPhoto(photoIndex)}
+                            >
+                              <RefreshCcw aria-hidden="true" />
+                              重新上传
+                            </button>
+                          </>
+                        ) : null}
+                        key={photo.id}
+                        precheckReason={photo.uploadedPhoto?.precheck_reason}
+                        precheckStatus={precheckStatus}
+                        previewUrl={photo.previewUrl}
+                        removeDisabled={isPhotoEditingLocked}
+                        removePlacement="footer"
+                        statusClassName={`is-${photo.uploadStatus}`}
+                        unsupportedFormat={photo.unsupportedFormat}
+                        onPreview={photo.uploadStatus === "uploaded" ? () => previewPhoto(photoIndex) : undefined}
+                        onRemove={!photo.isArchived ? () => void removePhoto(photoIndex) : undefined}
                       >
-                        模型原始输出
-                      </button>
-                    ) : null}
-                  </div>
-                </div>
-                <div className="trial-report-table-wrap">
-                  <table className="trial-report-table">
-                    <thead>
-                      <tr>
-                        <th>序号</th>
-                        <th>含标注的照片</th>
-                        <th>检测说明</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {reportRows.map((row, index) => (
-                        <tr key={`finding-${row.filename}-${index}`}>
-                          <td>{String(index + 1).padStart(2, "0")}</td>
-                          <td>
-                            <figure className="trial-annotated-photo-frame">
-                              <div
-                                className={`trial-annotated-photo ${row.previewUrl ? "is-clickable" : ""}`}
-                                title={row.previewUrl ? "点击放大查看" : undefined}
-                                onClick={() => previewAnnotatedPhoto({
-                                  filename: row.filename,
-                                  previewUrl: row.previewUrl,
-                                  findings: row.findings
-                                })}
-                              >
-                                <img alt={`${row.filename} 检测标注`} src={row.previewUrl} />
-                                {row.findings.slice(0, 8).map((finding, findingIndex) => {
-                                  const display = trialDefectDisplayFromModel(finding.model);
-                                  const boxStyle = trialFindingBoxStyle(finding);
-                                  if (!boxStyle) return null;
-                                  return (
-                                    <span
-                                      key={finding.detection_id ?? `${finding.model}-${findingIndex}`}
-                                      className={`trial-defect-box ${display.boxClassName}`}
-                                      style={boxStyle}
-                                    >
-                                      <span className="trial-defect-label">
-                                        {trialDefectBoxLabel(display, finding.confidence)}
-                                      </span>
-                                    </span>
-                                  );
-                                })}
-                                {row.previewUrl ? (
-                                  <div className="trial-annotated-photo-actions">
-                                    <button
-                                      type="button"
-                                      aria-label="放大查看含标注的照片"
-                                      title="放大查看"
-                                      onClick={(event) => {
-                                        event.stopPropagation();
-                                        previewAnnotatedPhoto({
-                                          filename: row.filename,
-                                          previewUrl: row.previewUrl,
-                                          findings: row.findings
-                                        });
-                                      }}
-                                    >
-                                      <ZoomIn aria-hidden="true" />
-                                    </button>
-                                  </div>
-                                ) : null}
-                              </div>
-                              <figcaption>{row.filename}</figcaption>
-                            </figure>
-                          </td>
-                          <td className="trial-report-description">
-                            {row.findings.length ? (
-                              <p>
-                                {trialFindingSummary(row.findings).map((item) => (
-                                  <span key={item.model} className={trialFindingClass(item.model)}>
-                                    疑似{trialDefectDisplayFromModel(item.model).label}: {item.count}处
-                                  </span>
-                                ))}
-                              </p>
-                            ) : (
-                              <p><span>未检出明显缺陷</span></p>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            ) : isGenerating ? (
-              <TrialGeneratingResult
-                photos={photoPreviews}
-                stepIndex={generationStepIndex}
-                showLongWait={showGenerationLongWait}
-              />
-            ) : (
-              <div className="trial-report-empty">
-                <FileSearch aria-hidden="true" />
-                <h2>等待生成结果</h2>
-                <p>照片上传完成后点击“生成检测结果”。</p>
-              </div>
-            )}
-          </aside>
+                        {photo.uploadStatus === "ready" || photo.uploadStatus === "uploading" ? (
+                          <span
+                            aria-label={`${photo.file.name}${photo.uploadStatus === "ready" ? "等待上传" : "正在上传"}`}
+                            className="new-project-photo-upload-indicator"
+                            role="status"
+                          >
+                            <span aria-hidden="true" className="new-project-photo-upload-ring" />
+                            <small>{photo.uploadStatus === "ready" ? "等待上传" : "上传中"}</small>
+                          </span>
+                        ) : null}
+                      </PhotoUploadThumbnail>
+                    );
+                  })}
+                </ProjectPhotoUploader>
+                <ListPagination
+                  ariaLabel="照片分页"
+                  className="professional-create-photo-pagination"
+                  currentPage={visiblePhotoPage}
+                  itemUnit="张"
+                  onPageChange={setPhotoPage}
+                  pageSize={TRIAL_PHOTO_PAGE_SIZE}
+                  showWhenEmpty
+                  totalItems={photoPreviews.length}
+                />
+                <footer className="professional-create-actions">
+                  <button
+                    className="back-cancel-button"
+                    disabled={isPhotoEditingLocked || isReportNameSaving}
+                    type="button"
+                    onClick={() => navigate("/trials")}
+                  >
+                    取消
+                  </button>
+                  <button
+                    className="button primary-action-button professional-create-submit"
+                    disabled={isPhotoEditingLocked || isReportNameSaving}
+                    type="button"
+                    onClick={generateReport}
+                  >
+                    {isGenerating ? "检测中" : "开始检测"}
+                  </button>
+                </footer>
+              </section>
+            </div>
+
+            <section className="trial-project-feedback" aria-live="polite">
+              {error ? <p className="create-form-error">{error}</p> : null}
+              {actionHint ? <p className="trial-action-hint">{actionHint}</p> : null}
+            </section>
         </section>
-      </div>
+        </form>
+        <DetectionGuidePanel
+          description={<>支持裂缝、剥落、空鼓外墙缺陷识别</>}
+        />
+        </div>
+      </ProjectWorkbenchShell>
       {previewingPhoto || annotatedPreview ? (
         <div
           className="trial-photo-preview-modal"
           role="dialog"
           aria-modal="true"
           aria-label="照片预览"
-          onClick={closePhotoPreview}
+          onClick={handlePhotoPreviewBackdropClick}
         >
-          <figure onClick={(event) => event.stopPropagation()}>
-            {annotatedPreview ? (
-              <div className="trial-annotated-photo trial-photo-preview-annotated">
-                <img alt={`${annotatedPreview.filename} 检测标注预览`} src={annotatedPreview.previewUrl} />
-                {annotatedPreview.findings.slice(0, 8).map((finding, findingIndex) => {
-                  const display = trialDefectDisplayFromModel(finding.model);
-                  const boxStyle = trialFindingBoxStyle(finding);
-                  if (!boxStyle) return null;
-                  return (
-                    <span
-                      key={finding.detection_id ?? `${finding.model}-${findingIndex}`}
-                      className={`trial-defect-box ${display.boxClassName}`}
-                      style={boxStyle}
-                    >
-                      <span className="trial-defect-label">
-                        {trialDefectBoxLabel(display, finding.confidence)}
-                      </span>
-                    </span>
-                  );
-                })}
+          <figure>
+            <button
+              className="trial-photo-preview-close"
+              type="button"
+              aria-label="关闭照片预览"
+              onClick={closePhotoPreview}
+            >
+              <X aria-hidden="true" />
+            </button>
+            <div className="trial-photo-preview-toolbar" aria-label="照片缩放控制">
+              <button
+                type="button"
+                aria-label="缩小照片"
+                disabled={previewZoom <= PHOTO_PREVIEW_MIN_ZOOM}
+                onClick={() => zoomPhotoPreviewBy(-PHOTO_PREVIEW_ZOOM_STEP)}
+              >
+                <ZoomOut aria-hidden="true" />
+              </button>
+              <output aria-live="polite">{Math.round(previewZoom * 100)}%</output>
+              <button
+                type="button"
+                aria-label="放大照片"
+                disabled={previewZoom >= PHOTO_PREVIEW_MAX_ZOOM}
+                onClick={() => zoomPhotoPreviewBy(PHOTO_PREVIEW_ZOOM_STEP)}
+              >
+                <ZoomIn aria-hidden="true" />
+              </button>
+              <button type="button" aria-label="恢复照片原始大小" onClick={resetPhotoPreviewTransform}>
+                <RefreshCcw aria-hidden="true" />
+              </button>
+            </div>
+            <div
+              ref={previewViewportRef}
+              className={`trial-photo-preview-viewport ${previewZoom > PHOTO_PREVIEW_DEFAULT_ZOOM ? "is-draggable" : ""}`}
+              onWheel={handlePhotoPreviewWheel}
+              onPointerDown={startPhotoPreviewDrag}
+              onPointerMove={movePhotoPreview}
+              onPointerUp={stopPhotoPreviewDrag}
+              onPointerCancel={stopPhotoPreviewDrag}
+              onLostPointerCapture={() => { previewDragRef.current = null; }}
+            >
+              <div
+                className="trial-photo-preview-content"
+                style={{ transform: `translate3d(${previewPan.x}px, ${previewPan.y}px, 0) scale(${previewZoom})` }}
+              >
+                {annotatedPreview ? (
+                  <div className="trial-annotated-photo trial-photo-preview-annotated">
+                    <img draggable={false} alt={`${annotatedPreview.filename} 检测标注预览`} src={annotatedPreview.previewUrl} />
+                    {annotatedPreview.findings.map((finding, findingIndex) => {
+                      const display = trialDefectDisplayFromModel(finding.model);
+                      const boxStyle = trialFindingBoxStyle(finding);
+                      if (!boxStyle) return null;
+                      return (
+                        <span
+                          key={finding.detection_id ?? `${finding.model}-${findingIndex}`}
+                          className={`trial-defect-box ${display.boxClassName}`}
+                          style={boxStyle}
+                        >
+                          <span className="trial-defect-label">
+                            {trialDefectBoxLabel(display)}
+                          </span>
+                        </span>
+                      );
+                    })}
+                  </div>
+                ) : previewingPhoto ? (
+                  <img draggable={false} alt={previewingPhoto.file.name} src={previewingPhoto.previewUrl} />
+                ) : null}
               </div>
-            ) : previewingPhoto ? (
-              <img alt={previewingPhoto.file.name} src={previewingPhoto.previewUrl} />
-            ) : null}
-            <figcaption>{annotatedPreview?.filename ?? previewingPhoto?.file.name}</figcaption>
+            </div>
+            <figcaption className="trial-photo-preview-caption">
+              {annotatedPreview?.filename ?? previewingPhoto?.file.name}
+            </figcaption>
           </figure>
         </div>
       ) : null}
-      {isModelOutputOpen ? (
-        <ModelOutputDialog
-          text={modelOutputText}
-          onClose={() => setIsModelOutputOpen(false)}
-        />
-      ) : null}
+      <StartDetectionModal
+        isOpen={detectionDialogStage === "confirmation" && Boolean(preparedDetection)}
+        isPending={false}
+        qualifiedPhotoCount={preparedDetection?.photoCount ?? 0}
+        thermalPhotoCount={preparedDetection?.thermalPhotoCount ?? 0}
+        onOpenChange={(isOpen) => {
+          if (!isOpen && detectionDialogStage === "confirmation") setDetectionDialogStage(null);
+        }}
+        onSubmit={(payload) => void confirmDetection(payload)}
+      />
+      <Modal
+        classNames={{
+          backdrop: "trial-detection-modal-backdrop",
+          base: "trial-detection-modal-content",
+          wrapper: "trial-detection-modal-wrapper"
+        }}
+        hideCloseButton
+        isDismissable={false}
+        isKeyboardDismissDisabled
+        isOpen={detectionDialogStage !== null && detectionDialogStage !== "confirmation"}
+        placement="center"
+        size="lg"
+        onOpenChange={(isOpen) => {
+          if (!isOpen && detectionDialogStage !== "progress") setDetectionDialogStage(null);
+        }}
+      >
+        <ModalContent>
+          {detectionDialogStage === "progress" ? (
+            <>
+              <ModalHeader className="trial-detection-modal-header trial-detection-progress-header">
+                <span className="trial-detection-modal-visual is-progress" aria-hidden="true">
+                  <LoaderCircle />
+                </span>
+                <div>
+                  <small>正在处理</small>
+                  <h2>AI检测进行中</h2>
+                </div>
+              </ModalHeader>
+              <ModalBody className="trial-detection-modal-body trial-detection-progress-body">
+                <div className="trial-detection-progress-copy">
+                  <strong>{GENERATION_STEP_MESSAGES[generationStepIndex]}</strong>
+                </div>
+                <div
+                  aria-label="AI检测进度"
+                  aria-valuemax={100}
+                  aria-valuemin={0}
+                  aria-valuenow={detectionProgress}
+                  className="trial-detection-progress-track"
+                  role="progressbar"
+                >
+                  <span style={{ width: `${detectionProgress}%` }} />
+                </div>
+                <ol className="trial-detection-progress-steps">
+                  {GENERATION_STEP_MESSAGES.map((message, index) => (
+                    <li
+                      className={index < generationStepIndex ? "is-complete" : index === generationStepIndex ? "is-current" : ""}
+                      key={message}
+                    >
+                      <span>{index < generationStepIndex ? <Check aria-hidden="true" /> : index + 1}</span>
+                      {message}
+                    </li>
+                  ))}
+                </ol>
+                <p className="trial-detection-progress-note">
+                  {detectionDialogMessage || "检测耗时受照片数量与服务负载影响，请耐心等待。完成后将直接显示结果。"}
+                </p>
+              </ModalBody>
+            </>
+          ) : detectionDialogStage === "completed" ? (
+            <>
+              <ModalHeader className="trial-detection-modal-header trial-detection-progress-header">
+                <span className="trial-detection-modal-visual is-completed" aria-hidden="true">
+                  <CircleCheckBig />
+                </span>
+                <div>
+                  <small>检测状态</small>
+                  <h2>已完成</h2>
+                </div>
+              </ModalHeader>
+              <ModalBody className="trial-detection-modal-body trial-detection-progress-body">
+                <div className="trial-detection-progress-copy">
+                  <strong>AI检测已完成</strong>
+                </div>
+                <div
+                  aria-label="AI检测进度"
+                  aria-valuemax={100}
+                  aria-valuemin={0}
+                  aria-valuenow={100}
+                  className="trial-detection-progress-track"
+                  role="progressbar"
+                >
+                  <span style={{ width: "100%" }} />
+                </div>
+                <ol className="trial-detection-progress-steps">
+                  {GENERATION_STEP_MESSAGES.map((message) => (
+                    <li className="is-complete" key={message}>
+                      <span><Check aria-hidden="true" /></span>
+                      {message}
+                    </li>
+                  ))}
+                </ol>
+              </ModalBody>
+              <ModalFooter className="trial-detection-modal-footer">
+                <button
+                  className="back-cancel-button"
+                  disabled={!archivedReportId || isArchiving}
+                  type="button"
+                  onClick={returnToTrialList}
+                >
+                  <ArrowLeft aria-hidden="true" />
+                  返回列表
+                </button>
+                <button
+                  className="button primary-action-button trial-view-result-button"
+                  disabled={!archivedReportId || isArchiving}
+                  type="button"
+                  onClick={viewDetectionResult}
+                >
+                  <ScanSearch aria-hidden="true" />
+                  {archivedReportId ? "查看结果" : "结果归档中"}
+                </button>
+              </ModalFooter>
+            </>
+          ) : detectionDialogStage === "error" ? (
+            <>
+              <ModalHeader className="trial-detection-error-header">
+                <span className="trial-detection-modal-visual is-error" aria-hidden="true">
+                  <TriangleAlert />
+                </span>
+                <span className="trial-detection-error-title">检测状态异常</span>
+              </ModalHeader>
+              <ModalBody className="trial-detection-error-body">
+                <p>{detectionDialogMessage || "检测任务未能完成，请返回调整后重新发起。"}</p>
+              </ModalBody>
+              <ModalFooter className="trial-detection-modal-footer trial-detection-error-footer">
+                <button className="button primary-action-button" type="button" onClick={() => setDetectionDialogStage(null)}>
+                  确认
+                </button>
+              </ModalFooter>
+            </>
+          ) : null}
+        </ModalContent>
+      </Modal>
+      <Modal
+        classNames={{
+          backdrop: "trial-version-modal-backdrop",
+          base: "trial-version-modal-content",
+          wrapper: "trial-version-modal-wrapper"
+        }}
+        disableAnimation
+        hideCloseButton
+        isDismissable={false}
+        isKeyboardDismissDisabled
+        isOpen={isVersionNoticeOpen}
+        placement="center"
+        size="lg"
+        onOpenChange={setIsVersionNoticeOpen}
+      >
+        <ModalContent>
+          <ModalHeader className="trial-version-modal-header">
+            <div className="trial-version-modal-heading">
+              <h2>选择适合您的检测方式</h2>
+            </div>
+          </ModalHeader>
+          <ModalBody className="trial-version-modal-body">
+            <p>
+              当前功能适合快速体验检测流程。若需要准确率更高的检测结果与更全面的检测信息，请使用专业版检测。
+            </p>
+          </ModalBody>
+          <ModalFooter className="trial-version-modal-footer">
+            <button
+              className="back-cancel-button"
+              type="button"
+              onClick={openProfessionalDetection}
+            >
+              前往专业版检测
+            </button>
+            <button
+              className="button primary-action-button"
+              type="button"
+              onClick={() => setIsVersionNoticeOpen(false)}
+            >
+              继续快速体验
+            </button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
     </>
-  );
-}
-
-function TrialGeneratingResult({
-  photos,
-  stepIndex,
-  showLongWait
-}: {
-  photos: SelectedPhotoPreview[];
-  stepIndex: number;
-  showLongWait: boolean;
-}) {
-  const rows = photos.length
-    ? photos.map((photo) => ({
-      id: photo.id,
-      filename: photo.file.name,
-      previewUrl: photo.previewUrl
-    }))
-    : Array.from({ length: 3 }, (_, index) => ({
-      id: `placeholder-${index}`,
-      filename: "",
-      previewUrl: ""
-    }));
-
-  return (
-    <div
-      className="trial-report-result trial-generating-result"
-      role="status"
-      aria-live="polite"
-      aria-label="检测结果生成中"
-    >
-      <div className="trial-report-head trial-generating-head">
-        <div>
-          <h2>检测结果明细</h2>
-          <p>{showLongWait ? "模型仍在运行，完成后将自动展示结果。" : "算法正在检测照片，结果生成后会自动更新。"}</p>
-        </div>
-        <span className="trial-generating-status">
-          <Spinner size="sm" color="primary" />
-          模型检测中
-        </span>
-      </div>
-      <div className="trial-report-table-wrap trial-generating-table-wrap">
-        <table className="trial-report-table trial-generating-table" aria-busy="true">
-          <thead>
-            <tr>
-              <th>序号</th>
-              <th>含标注的照片</th>
-              <th>检测说明</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row, index) => {
-              const message = GENERATION_STEP_MESSAGES[(stepIndex + index) % GENERATION_STEP_MESSAGES.length];
-              return (
-                <tr key={row.id}>
-                  <td>
-                    <span className="trial-generating-index">{String(index + 1).padStart(2, "0")}</span>
-                  </td>
-                  <td>
-                    <figure className="trial-annotated-photo-frame trial-generating-photo-frame">
-                      <div className={`trial-generating-photo ${row.previewUrl ? "has-preview" : ""}`}>
-                        {row.previewUrl ? (
-                          <img alt={`${row.filename} 正在检测`} src={row.previewUrl} />
-                        ) : (
-                          <Skeleton className="trial-generating-photo-skeleton" />
-                        )}
-                        <span className="trial-generating-scan-line" aria-hidden="true" />
-                      </div>
-                      {row.filename ? (
-                        <figcaption>{row.filename}</figcaption>
-                      ) : (
-                        <Skeleton className="trial-generating-caption-skeleton" />
-                      )}
-                    </figure>
-                  </td>
-                  <td className="trial-report-description trial-generating-description">
-                    <div className="trial-generating-description-stack">
-                      <span className="trial-generating-message">
-                        {message}
-                        <span className="trial-loading-dots" aria-hidden="true">
-                          <span>.</span>
-                          <span>.</span>
-                          <span>.</span>
-                        </span>
-                      </span>
-                      <Skeleton className="trial-generating-line is-wide" />
-                      <Skeleton className="trial-generating-line is-short" />
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </div>
   );
 }
 
@@ -854,8 +1292,7 @@ async function createSelectedTrialPhoto(file: File): Promise<SelectedTrialPhoto>
     id: createTrialPhotoId(file),
     file,
     metadata: await readMetadataSafely(file),
-    uploadStatus: "ready",
-    uploadProgress: 0
+    uploadStatus: "ready"
   };
 }
 
@@ -864,18 +1301,12 @@ function createTrialPhotoId(file: File) {
   return `${file.name}-${file.size}-${file.lastModified}-${randomId}`;
 }
 
-function validateTrialPhoto(file: File) {
-  if (!ACCEPTED_TRIAL_PHOTO_TYPES.has(file.type)) return "仅支持 JPG、PNG 图片。";
-  if (file.size > MAX_TRIAL_PHOTO_SIZE_BYTES) return "单张图片最大 20MB。";
-  return "";
-}
-
 function resetTrialPhotoUpload(photo: SelectedTrialPhoto): SelectedTrialPhoto {
   return {
     ...photo,
     uploadStatus: "ready",
-    uploadProgress: 0,
     uploadError: undefined,
+    unsupportedFormat: undefined,
     uploadedPhoto: undefined,
     generatedFile: undefined
   };
@@ -889,10 +1320,30 @@ function photoWithUploadResult(
     ...photo,
     metadata: metadataFromUploadedPhoto(result.uploadedPhoto, photo.metadata),
     uploadStatus: "uploaded",
-    uploadProgress: 100,
     uploadError: undefined,
+    unsupportedFormat: undefined,
     uploadedPhoto: result.uploadedPhoto,
     generatedFile: result.generatedFile
+  };
+}
+
+function mergeTrialGeneratedResults(
+  previous: TrialGeneratedResult,
+  latest: TrialGeneratedResult
+): TrialGeneratedResult {
+  return {
+    ...previous,
+    ...latest,
+    report_name: latest.report_name ?? previous.report_name,
+    models: Array.from(new Set([...previous.models, ...latest.models])),
+    files: [...previous.files, ...latest.files],
+    findings: [...previous.findings, ...latest.findings],
+    raw_model_outputs: [
+      ...(previous.raw_model_outputs ?? []),
+      ...(latest.raw_model_outputs ?? [])
+    ],
+    archived_report_id: latest.archived_report_id ?? previous.archived_report_id,
+    archived_report_title: latest.archived_report_title ?? previous.archived_report_title
   };
 }
 
@@ -909,59 +1360,15 @@ function metadataFromUploadedPhoto(uploadedPhoto: TrialUploadedPhoto, fallback: 
   };
 }
 
-function trialUploadSummary(photos: SelectedTrialPhoto[]) {
-  const totalBytes = photos.reduce((sum, photo) => sum + Math.max(photo.file.size, 1), 0);
-  const uploadedBytes = photos.reduce(
-    (sum, photo) => sum + Math.max(photo.file.size, 1) * (clampProgress(photo.uploadProgress) / 100),
-    0
-  );
-  const uploadedCount = photos.filter((photo) => photo.uploadStatus === "uploaded").length;
-  const uploadingCount = photos.filter((photo) => photo.uploadStatus === "uploading").length;
-  const failedCount = photos.filter((photo) => photo.uploadStatus === "failed").length;
-  const percent = totalBytes ? Math.round((uploadedBytes / totalBytes) * 100) : 0;
-  return {
-    failedCount,
-    percent: clampProgress(percent),
-    label: uploadSummaryLabel({
-      totalCount: photos.length,
-      uploadedCount,
-      uploadingCount,
-      failedCount
-    })
-  };
-}
-
-function uploadSummaryLabel({
-  totalCount,
-  uploadedCount,
-  uploadingCount,
-  failedCount
-}: {
-  totalCount: number;
-  uploadedCount: number;
-  uploadingCount: number;
-  failedCount: number;
-}) {
-  if (uploadingCount) return `正在上传 ${uploadingCount} 张，已完成 ${uploadedCount}/${totalCount}`;
-  if (failedCount) return `${failedCount} 张上传失败，可单张重新上传`;
-  if (totalCount && uploadedCount === totalCount) return `上传完成 ${uploadedCount}/${totalCount}`;
-  return `等待上传 0/${totalCount}`;
-}
-
-function trialPhotoStatusLabel(photo: SelectedTrialPhoto) {
-  if (photo.uploadStatus === "uploading") return "上传中";
-  if (photo.uploadStatus === "uploaded") return "上传完成";
-  if (photo.uploadStatus === "failed") return "上传失败";
-  return "等待上传";
-}
-
-function clampProgress(value: number) {
-  return Math.min(100, Math.max(0, Math.round(value)));
-}
-
 function trialUploadErrorMessage(error: unknown) {
   if (error instanceof ApiError && error.status === 401) return "登录状态已失效，请重新登录后上传。";
   return error instanceof Error ? error.message : "上传失败，请重新上传。";
+}
+
+function isUnsupportedTrialPhotoFormatError(error: unknown) {
+  return error instanceof ApiError
+    && error.status === 400
+    && error.message === "图片格式与文件内容不匹配。";
 }
 
 function trialFindingSummary(findings: TrialGeneratedResult["findings"]) {
@@ -972,16 +1379,36 @@ function trialFindingSummary(findings: TrialGeneratedResult["findings"]) {
   return Array.from(counts, ([model, count]) => ({ model, count }));
 }
 
+function isTrialResultFinding(finding: TrialGeneratedResult["findings"][number]) {
+  const confidence = Number(finding.confidence);
+  return Number.isFinite(confidence) && confidence > TRIAL_RESULT_CONFIDENCE_THRESHOLD;
+}
+
 function trialFindingBoxStyle(finding: TrialGeneratedResult["findings"][number]): CSSProperties | undefined {
   const bbox = finding.bbox;
-  const imageWidth = finding.image_width;
-  const imageHeight = finding.image_height;
-  if (!bbox || !imageWidth || !imageHeight) return undefined;
+  const imageWidth = Number(finding.image_width);
+  const imageHeight = Number(finding.image_height);
+  if (!bbox || !Number.isFinite(imageWidth) || !Number.isFinite(imageHeight) || imageWidth <= 0 || imageHeight <= 0) {
+    return undefined;
+  }
+
+  const x = Number(bbox.x);
+  const y = Number(bbox.y);
+  const width = Number(bbox.width);
+  const height = Number(bbox.height);
+  if (![x, y, width, height].every(Number.isFinite) || width <= 0 || height <= 0) return undefined;
+
+  const left = Math.min(imageWidth, Math.max(0, x));
+  const top = Math.min(imageHeight, Math.max(0, y));
+  const right = Math.min(imageWidth, Math.max(0, x + width));
+  const bottom = Math.min(imageHeight, Math.max(0, y + height));
+  if (right <= left || bottom <= top) return undefined;
+
   return {
-    left: `${(bbox.x / imageWidth) * 100}%`,
-    top: `${(bbox.y / imageHeight) * 100}%`,
-    width: `${(bbox.width / imageWidth) * 100}%`,
-    height: `${(bbox.height / imageHeight) * 100}%`,
+    left: `${(left / imageWidth) * 100}%`,
+    top: `${(top / imageHeight) * 100}%`,
+    width: `${((right - left) / imageWidth) * 100}%`,
+    height: `${((bottom - top) / imageHeight) * 100}%`,
     right: "auto",
     bottom: "auto"
   };

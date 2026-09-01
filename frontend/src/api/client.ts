@@ -1,21 +1,28 @@
 import { getAuthToken } from "@/auth/storage";
 
+export const AUTH_UNAUTHORIZED_EVENT = "exterior-wall:auth-unauthorized";
+
 export class ApiError extends Error {
   status: number;
   payload: unknown;
+  retryAfterSeconds: number | null;
 
-  constructor(message: string, status: number, payload: unknown) {
+  constructor(message: string, status: number, payload: unknown, retryAfterSeconds: number | null = null) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.payload = payload;
+    this.retryAfterSeconds = retryAfterSeconds;
   }
 }
 
-const DEFAULT_API_BASE_URL = "http://127.0.0.1:8000/api";
+// Use the current origin by default. Vite/Nginx proxies /api to the backend,
+// which keeps local-network and production access from targeting the browser's
+// own 127.0.0.1 by accident.
+const DEFAULT_API_BASE_URL = "/api";
 
 export const API_BASE_URL = (
-  import.meta.env.VITE_API_BASE_URL ?? DEFAULT_API_BASE_URL
+  import.meta.env.VITE_API_BASE_URL?.trim() || DEFAULT_API_BASE_URL
 ).replace(/\/$/, "");
 
 export interface ApiUploadProgress {
@@ -41,7 +48,7 @@ export async function apiRequest<TResponse>(
         ? String((payload as { message: unknown }).message)
         : `API request failed with status ${response.status}`;
 
-    throw new ApiError(message, response.status, payload);
+    throw new ApiError(message, response.status, payload, parseRetryAfter(response.headers.get("Retry-After")));
   }
 
   return payload as TResponse;
@@ -55,7 +62,11 @@ export async function apiFetch(path: string, init: RequestInit = {}) {
     headers.set("Content-Type", "application/json");
   }
   try {
-    return await fetch(`${API_BASE_URL}${path}`, { ...init, headers });
+    const response = await fetch(`${API_BASE_URL}${path}`, { ...init, headers });
+    if (response.status === 401 && token && !path.startsWith("/auth/login")) {
+      window.dispatchEvent(new CustomEvent(AUTH_UNAUTHORIZED_EVENT));
+    }
+    return response;
   } catch (error) {
     throw new ApiError(
       `无法连接后端服务（${API_BASE_URL}），请确认后端已启动或 VITE_API_BASE_URL 配置正确。`,
@@ -93,7 +104,15 @@ export function apiUploadRequest<TResponse>(
     xhr.onload = () => {
       const payload = parseXhrPayload(xhr);
       if (xhr.status < 200 || xhr.status >= 300) {
-        reject(new ApiError(errorMessageFromPayload(payload, xhr.status), xhr.status, payload));
+        if (xhr.status === 401 && token) {
+          window.dispatchEvent(new CustomEvent(AUTH_UNAUTHORIZED_EVENT));
+        }
+        reject(new ApiError(
+          errorMessageFromPayload(payload, xhr.status),
+          xhr.status,
+          payload,
+          parseRetryAfter(xhr.getResponseHeader("Retry-After"))
+        ));
         return;
       }
       resolve(payload as TResponse);
@@ -113,6 +132,12 @@ export function apiUploadRequest<TResponse>(
 
     xhr.send(body);
   });
+}
+
+function parseRetryAfter(value: string | null) {
+  if (!value) return null;
+  const seconds = Number.parseInt(value, 10);
+  return Number.isFinite(seconds) && seconds > 0 ? seconds : null;
 }
 
 function parseXhrPayload(xhr: XMLHttpRequest) {

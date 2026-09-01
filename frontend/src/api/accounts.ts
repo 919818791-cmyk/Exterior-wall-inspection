@@ -1,12 +1,31 @@
 import { queryOptions } from "@tanstack/react-query";
 
 import { apiRequest } from "@/api/client";
-import type { AccountCreatePayload, AccountUpdatePayload, AccountUser } from "@/types/auth";
+import type { AccountUsageDetailResponse, AccountUsagePeriod, AccountUsageSummaryItem, CurrentAccountUsageResponse } from "@/types/accountUsage";
+import type { AccountCreatePayload, AccountPasswordResetResponse, AccountUpdatePayload, AccountUser } from "@/types/auth";
 
 export const accountsQueryOptions = queryOptions({
   queryKey: ["accounts"],
   queryFn: () => apiRequest<AccountUser[]>("/accounts")
 });
+
+export const accountUsageSummaryQueryOptions = queryOptions({
+  queryKey: ["account-usage-summary"],
+  queryFn: () => apiRequest<AccountUsageSummaryItem[]>("/accounts/usage-summary")
+});
+
+export const currentAccountUsageQueryOptions = queryOptions({
+  queryKey: ["current-account-usage"],
+  queryFn: () => apiRequest<CurrentAccountUsageResponse>("/accounts/me/usage"),
+  staleTime: 0
+});
+
+export function accountUsageDetailQueryOptions(accountId: string, period: AccountUsagePeriod) {
+  return queryOptions({
+    queryKey: ["account-usage", accountId, period],
+    queryFn: () => apiRequest<AccountUsageDetailResponse>(`/accounts/${accountId}/usage?period=${period}`)
+  });
+}
 
 export function createAccount(payload: AccountCreatePayload) {
   return apiRequest<AccountUser>("/accounts", {
@@ -23,7 +42,7 @@ export function updateAccount(accountId: string, payload: AccountUpdatePayload) 
 }
 
 export function resetAccountPassword(accountId: string) {
-  return apiRequest<AccountUser>(`/accounts/${accountId}/reset-password`, {
+  return apiRequest<AccountPasswordResetResponse>(`/accounts/${accountId}/reset-password`, {
     method: "POST"
   });
 }
