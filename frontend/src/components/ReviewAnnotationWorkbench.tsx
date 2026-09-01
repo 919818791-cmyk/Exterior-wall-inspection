@@ -312,7 +312,7 @@ export function ReviewAnnotationWorkbench({
           <CardBody className="gap-4 p-6">
             <h1 className="text-xl font-black text-ink">{pageTitle}详情加载失败</h1>
             <p className="text-sm font-bold text-red-700">{errorMessage(detailQuery.error)}</p>
-            <RouterLink className="button secondary report-back-button" to={backTo}>
+            <RouterLink className="back-cancel-button" to={backTo}>
               <ChevronLeft aria-hidden="true" />
               <span>{backLabel}</span>
             </RouterLink>
@@ -496,7 +496,7 @@ export function ReviewAnnotationWorkbench({
                 onChange={handleImportInputChange}
               />
               <button
-                className="button primary annotation-complete-review"
+                className="button primary-action-button annotation-complete-review"
                 disabled={readOnly || hasUnsavedChanges || isAnyEditorSaving || importMutation.isPending}
                 type="button"
                 onClick={previewAnnotations}
@@ -509,7 +509,7 @@ export function ReviewAnnotationWorkbench({
                     : "预览报告"}
               </button>
               <button
-                className="button primary annotation-save-annotations"
+                className="button primary-action-button annotation-save-annotations"
                 disabled={readOnly || !activeSaveStatus?.dirty || activeSaveStatus.isSaving || importMutation.isPending}
                 type="button"
                 onClick={saveActivePhoto}
@@ -518,7 +518,7 @@ export function ReviewAnnotationWorkbench({
                 {activeSaveStatus?.isSaving ? "保存中…" : "保存标注"}
               </button>
               <button
-                className="button primary annotation-import-annotations"
+                className="button primary-action-button annotation-import-annotations"
                 disabled={readOnly || hasUnsavedChanges || isAnyEditorSaving || importMutation.isPending}
                 title={hasUnsavedChanges ? "请先保存当前未保存的标注" : "按照片文件名匹配并覆盖现有标注"}
                 type="button"
@@ -528,7 +528,7 @@ export function ReviewAnnotationWorkbench({
                 {importMutation.isPending ? "导入保存中…" : "批量导入 JSON"}
               </button>
               <button
-                className="button primary annotation-export-annotations"
+                className="button primary-action-button annotation-export-annotations"
                 disabled={hasUnsavedChanges || isAnyEditorSaving || importMutation.isPending}
                 title={hasUnsavedChanges ? "请先保存当前未保存的标注" : "导出全部照片的已保存标注"}
                 type="button"
@@ -539,7 +539,7 @@ export function ReviewAnnotationWorkbench({
               </button>
               <RouterLink
                 aria-label={backLabel}
-                className="button secondary report-back-button annotation-back-link"
+                className="back-cancel-button"
                 title={backLabel}
                 to={backTo}
               >
@@ -781,6 +781,7 @@ function AnnotationPhotoEditor({
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <AnnotationIconButton
             disabled={readOnly}
+            isCancel={isDrawing}
             label={isDrawing ? "取消画框" : "新增标注"}
             pressed={isDrawing}
             tone="add"
@@ -881,6 +882,7 @@ function AnnotationPhotoEditor({
 function AnnotationIconButton({
   children,
   disabled,
+  isCancel,
   label,
   onPress,
   pressed,
@@ -888,6 +890,7 @@ function AnnotationIconButton({
 }: {
   children: React.ReactNode;
   disabled: boolean;
+  isCancel?: boolean;
   label: string;
   onPress: () => void;
   pressed?: boolean;
@@ -897,7 +900,7 @@ function AnnotationIconButton({
     <Button
       aria-label={label}
       aria-pressed={pressed}
-      className={`annotation-action-button annotation-action-${tone}`}
+      className={`annotation-action-button annotation-action-${tone}${isCancel ? " back-cancel-button" : ""}`}
       isDisabled={disabled}
       isIconOnly
       size="sm"

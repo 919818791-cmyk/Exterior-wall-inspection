@@ -365,28 +365,6 @@
   to { background-position: -200% 0; }
 }
 
-.project-list-route .project-workbench-layout > .project-workbench-content-panel {
-  width: auto;
-  min-width: 0;
-  margin: 0;
-  flex: 1;
-  border: 1px solid rgba(255, 255, 255, 0.68);
-  border-radius: 12px;
-  background: linear-gradient(158deg, rgba(248, 252, 255, 0.94), rgba(225, 236, 251, 0.9));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.82),
-    inset 1px 0 0 rgba(255, 255, 255, 0.28),
-    0 18px 42px rgba(9, 31, 75, 0.18);
-}
-
-@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
-  .project-list-route .project-workbench-layout > .project-workbench-content-panel {
-    background: linear-gradient(148deg, rgba(248, 252, 255, 0.5), rgba(218, 235, 255, 0.34));
-    -webkit-backdrop-filter: blur(26px) saturate(150%) brightness(1.1);
-    backdrop-filter: blur(26px) saturate(150%) brightness(1.1);
-  }
-}
-
 .project-list-route .project-management-page .project-workbench-table {
   width: 100%;
   min-width: 760px;
@@ -415,13 +393,6 @@
   flex: 0 1 auto;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.project-list-route .project-management-page .project-workbench-layout .project-workbench-table tbody tr {
-  background-image: linear-gradient(90deg, rgba(255, 255, 255, 0.26), rgba(255, 255, 255, 0.26));
-  background-position: center bottom;
-  background-repeat: no-repeat;
-  background-size: calc(100% - 80px) 1px;
 }
 
 .project-list-route .project-management-page .project-workbench-layout .project-workbench-table td {
@@ -830,7 +801,7 @@ body.auth-modal-open {
   background: #fff;
 }
 
-.personal-info-action.primary {
+.personal-info-action.primary:not(.primary-action-button) {
   color: #fff;
   border: 1px solid #245cff;
   background: #245cff;
@@ -846,8 +817,8 @@ body.auth-modal-open {
   transform: none;
 }
 
-.personal-info-action.primary:hover:not(:disabled),
-.personal-info-action.primary:focus-visible:not(:disabled) {
+.personal-info-action.primary:not(.primary-action-button):hover:not(:disabled),
+.personal-info-action.primary:not(.primary-action-button):focus-visible:not(:disabled) {
   border-color: #184bd7;
   outline: 0;
   background: #184bd7;
@@ -1496,9 +1467,6 @@ body.auth-modal-open {
   height: auto;
   min-height: calc(100svh - var(--site-header-height, 74px));
   overflow: visible;
-  background:
-    linear-gradient(rgba(5, 12, 25, 0.58), rgba(5, 12, 25, 0.58)),
-    url("/hero-facade.webp") center / cover no-repeat;
 }
 
 .report-list-page .project-workspace {
@@ -1755,36 +1723,6 @@ body.auth-modal-open {
   background: #fff;
 }
 
-.annotation-detail-header-actions .annotation-back-link {
-  width: 46px;
-  min-width: 46px;
-  max-width: 46px;
-  flex: none;
-  flex-basis: 46px;
-  align-self: center;
-  padding: 0;
-  color: #1748d4;
-  border: 1px solid rgba(36, 92, 255, 0.45);
-  border-radius: 50%;
-  background: #edf4ff;
-  box-shadow: none;
-  white-space: nowrap;
-}
-
-.annotation-detail-header-actions .annotation-back-link svg {
-  width: 24px;
-  height: 24px;
-  stroke-width: 3;
-}
-
-.annotation-detail-header-actions .annotation-back-link:hover,
-.annotation-detail-header-actions .annotation-back-link:focus-visible {
-  color: #fff;
-  outline: 0;
-  background: #1748d4;
-  box-shadow: none;
-}
-
 .annotation-detail-header-actions {
   display: flex;
   align-items: center;
@@ -1796,13 +1734,12 @@ body.auth-modal-open {
   .annotation-import-annotations,
   .annotation-export-annotations,
   .annotation-complete-review,
-  .annotation-save-annotations,
-  .annotation-back-link
+  .annotation-save-annotations
 ) {
-  min-height: 46px;
-  height: 46px;
-  font-size: 16px;
-  font-weight: 800;
+  min-height: 40px;
+  height: 40px;
+  font-size: 14px;
+  font-weight: 600;
 }
 
 .annotation-import-annotations,
@@ -1810,9 +1747,9 @@ body.auth-modal-open {
   min-width: 142px;
   min-height: 40px;
   height: 40px;
-  padding: 0 16px;
-  border: 0;
-  border-radius: 999px;
+  padding: 0 14px;
+  border: 1px solid #000;
+  border-radius: 10px;
   white-space: nowrap;
   cursor: pointer;
 }
@@ -1854,32 +1791,20 @@ body.auth-modal-open {
 .annotation-complete-review {
   min-width: 132px;
   height: 40px;
-  border-radius: 999px;
+  border-radius: 10px;
   white-space: nowrap;
-}
-
-.button.primary.annotation-complete-review:not(:disabled) {
-  border-color: #16a34a;
-  background: #16a34a;
-}
-
-.button.primary.annotation-complete-review:hover:not(:disabled),
-.button.primary.annotation-complete-review:focus-visible:not(:disabled) {
-  border-color: #15803d;
-  outline: 0;
-  background: #15803d;
 }
 
 .annotation-save-annotations {
   min-width: 0;
   min-height: 40px;
   height: 40px;
-  padding: 0 16px;
-  border: 0;
-  border-radius: 999px;
+  padding: 0 14px;
+  border: 1px solid #000;
+  border-radius: 10px;
   font: inherit;
   font-size: 14px;
-  font-weight: 800;
+  font-weight: 600;
   white-space: nowrap;
   cursor: pointer;
 }
@@ -2288,27 +2213,11 @@ body.auth-modal-open {
 }
 
 .building-model-page > .building-model-page-header :is(
-  .building-model-back-button,
   .building-model-header-action
-),
-.formal-result-route .trial-result-toolbar .building-model-back-button {
+) {
   color: #123b6b;
   border-color: #d1d5db;
   background: #fff;
-}
-
-.building-model-page > .building-model-page-header .building-model-back-button,
-.formal-result-route .trial-result-toolbar .building-model-back-button {
-  color: #000;
-}
-
-.building-model-page > .building-model-page-header .building-model-back-button:hover,
-.building-model-page > .building-model-page-header .building-model-back-button:focus-visible,
-.formal-result-route .trial-result-toolbar .building-model-back-button:hover,
-.formal-result-route .trial-result-toolbar .building-model-back-button:focus-visible {
-  color: #000;
-  border-color: #b8b8b8;
-  background: #f2f2f2;
 }
 
 .building-model-page-heading {
@@ -2812,22 +2721,6 @@ body.auth-modal-open {
   to { transform: rotate(360deg); }
 }
 
-.project-list-route .workbench-result-list-panel:not(.project-list-empty-surface)
-  .workbench-result-leading-action-button {
-  color: #dceaff;
-  border-color: rgba(145, 188, 255, 0.42);
-  background: rgba(81, 131, 207, 0.18);
-}
-
-.project-list-route .workbench-result-list-panel:not(.project-list-empty-surface)
-  .workbench-result-leading-action-button:hover,
-.project-list-route .workbench-result-list-panel:not(.project-list-empty-surface)
-  .workbench-result-leading-action-button:focus-visible {
-  color: #fff;
-  border-color: rgba(151, 198, 255, 0.72);
-  background: rgba(83, 139, 225, 0.38);
-}
-
 @media (max-width: 720px) {
   .building-model-viewport-reset-button {
     top: 10px;
@@ -3303,27 +3196,19 @@ body.auth-modal-open {
 }
 
 .trial-detection-modal-footer .button {
-  min-height: 44px;
-  padding: 0 18px;
+  min-height: 40px;
+  height: 40px;
+  padding: 0 14px;
   border-radius: 10px;
   font: inherit;
   font-size: 14px;
-  font-weight: 800;
+  font-weight: 600;
   cursor: pointer;
 }
 
 .trial-detection-modal-footer .button svg {
   width: 17px;
   height: 17px;
-}
-
-.trial-detection-modal-footer .trial-return-list-button:hover:not(:disabled),
-.trial-detection-modal-footer .trial-return-list-button:focus-visible:not(:disabled) {
-  color: #fff;
-  border-color: #245cff;
-  outline: 0;
-  background: #245cff;
-  box-shadow: none;
 }
 
 .trial-detection-progress-body {
@@ -4122,7 +4007,7 @@ body.auth-modal-open {
   height: 40px;
   object-fit: cover;
   border-radius: 8px;
-  box-shadow: 0 0 10px 2px rgba(6, 22, 56, 0.48);
+  box-shadow: none;
 }
 
 .result-folder-thumbnail-placeholder {
@@ -5804,13 +5689,13 @@ body.auth-modal-open {
   gap: 12px;
 }
 
-.account-editor-actions .button {
+.account-editor-actions .button:not(.primary-action-button) {
   min-height: 44px;
   border-radius: 8px;
   font-size: 15px;
 }
 
-.account-editor-actions .button svg {
+.account-editor-actions .button:not(.primary-action-button) svg {
   width: 18px;
   height: 18px;
 }
@@ -6026,11 +5911,11 @@ body.auth-modal-open {
   .project-editor-save-button,
   .start-ai-detection-button
 ) {
-  font-size: 16px;
+  font-size: 14px;
 }
 
 .project-editor-management-page .start-ai-detection-button {
-  border-radius: 999px;
+  border-radius: 10px;
 }
 
 @media (max-width: 720px) {
@@ -6531,16 +6416,13 @@ body.auth-modal-open {
   appearance: none;
 }
 
-.trial-version-modal-footer .button.primary {
-  color: #fff;
-  background: #000;
-}
-
-.trial-version-modal-footer .button.primary:hover,
-.trial-version-modal-footer .button.primary:focus-visible {
-  color: #fff;
-  outline: 0;
-  background: #000;
+.trial-version-modal-footer .primary-action-button {
+  height: 40px;
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
 }
 
 .trial-version-modal-footer .button.secondary {
@@ -6582,7 +6464,7 @@ body.auth-modal-open {
     padding: 0 20px 20px !important;
   }
 
-  .trial-version-modal-footer .button.primary {
+  .trial-version-modal-footer .primary-action-button {
     grid-row: 1;
   }
 }
@@ -8045,12 +7927,12 @@ body.auth-modal-open {
 .trial-result-toolbar .button {
   flex: 0 0 auto;
   min-height: 40px;
-  border-radius: 8px;
+  border-radius: 10px;
   font-size: 14px;
 }
 
 .trial-result-toolbar .button.review-preview-complete-button {
-  border-radius: 999px;
+  border-radius: 10px;
 }
 
 .trial-result-toolbar .button svg {
@@ -8058,52 +7940,95 @@ body.auth-modal-open {
   height: 16px;
 }
 
-.report-back-button,
-.trial-result-toolbar .report-back-button {
+.back-cancel-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   min-height: 40px;
-  padding: 0 16px;
-  border-radius: 999px;
+  padding: 0 14px;
+  color: #000;
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: none;
+  font: inherit;
   font-size: 14px;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 160ms ease, border-color 160ms ease, background-color 160ms ease;
 }
 
-.report-back-button svg,
-.trial-result-toolbar .report-back-button svg {
+.back-cancel-button svg {
   width: 16px;
   height: 16px;
 }
 
-.report-back-button:hover,
-.report-back-button:focus-visible,
-.report-back-button[data-hover="true"],
-.report-back-button[data-focus-visible="true"] {
-  color: #fff;
-  border-color: #245cff;
+.back-cancel-button:hover:not(:disabled),
+.back-cancel-button:focus-visible:not(:disabled),
+.back-cancel-button[data-hover="true"],
+.back-cancel-button[data-focus-visible="true"] {
+  color: #000;
+  border-color: #b8b8b8;
   outline: 0;
-  background: #245cff;
+  background: #f2f2f2;
+  box-shadow: none;
+  text-decoration: none;
 }
 
-.trial-result-toolbar .report-export-button {
-  color: #047857;
-  border-color: rgba(4, 120, 87, 0.45);
-  background: #fff;
-  font-family: inherit;
-  font-weight: 800;
+.back-cancel-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.primary-action-button {
+  display: inline-flex;
+  height: 40px;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 14px;
+  color: #fff;
+  border: 1px solid #000;
+  border-radius: 10px;
+  background: #000;
+  box-shadow: none;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
   cursor: pointer;
+  transition: color 160ms ease, border-color 160ms ease, background-color 160ms ease;
 }
 
-.trial-result-toolbar .report-export-button:hover:not(:disabled),
-.trial-result-toolbar .report-export-button:focus-visible:not(:disabled) {
+.primary-action-button svg {
+  width: 16px;
+  height: 16px;
+}
+
+.primary-action-button:hover:not(:disabled),
+.primary-action-button:focus-visible:not(:disabled),
+.primary-action-button[data-hover="true"],
+.primary-action-button[data-focus-visible="true"] {
   color: #fff;
-  border-color: #047857;
+  border-color: #333;
   outline: 0;
-  background: #047857;
+  background: #333;
+  box-shadow: none;
+  text-decoration: none;
 }
 
-.trial-result-toolbar .report-export-button:disabled {
-  color: #6f7f96;
-  border-color: #d8e1ed;
-  background: #eef3f8;
-  cursor: default;
+.primary-action-button:disabled {
+  color: #fff;
+  border-color: #9ca3af;
+  background: #9ca3af;
+  cursor: not-allowed;
+  opacity: 1;
 }
 
 /* Tighten the result detail table before removing lower-priority columns. */
@@ -8223,8 +8148,13 @@ body.auth-modal-open {
 }
 
 /* Professional results pair the DJI visible-light and thermal captures in one row. */
-.formal-result-detail-page .trial-result-detail-shell {
+.formal-result-detail-page:not(.quick-result-detail-page) .trial-result-detail-shell {
   width: min(calc(100% - clamp(32px, 5vw, 80px)), 1640px);
+}
+
+/* Quick results only need room for the sequence, annotated photo, and description columns. */
+.quick-result-detail-page .trial-result-detail-shell {
+  width: min(calc(100% - clamp(48px, 8.8vw, 128px)), 1100px);
 }
 
 .formal-result-detail-page .formal-report-table--paired-photos.trial-report-table--without-tile {
@@ -8246,7 +8176,7 @@ body.auth-modal-open {
   width: 330px;
 }
 
-.formal-report-table--paired-photos.trial-report-table--without-tile .formal-report-area-col {
+.formal-report-table--paired-photos.trial-report-table--without-tile .formal-report-detail-col {
   width: 160px;
 }
 
@@ -8265,9 +8195,9 @@ body.auth-modal-open {
   max-width: none;
 }
 
-.formal-report-table--paired-photos .formal-report-area-column {
+.formal-report-table--paired-photos td.formal-report-detail-column {
   padding-right: 14px;
-  /* Keep the existing cell inset and add roughly 20px for the area content. */
+  /* Keep the existing cell inset and add roughly 20px for measurement details. */
   padding-left: 34px;
   text-align: left;
 }
@@ -8282,7 +8212,7 @@ body.auth-modal-open {
   object-fit: fill;
 }
 
-.formal-report-area-list {
+.formal-report-detail-list {
   max-height: calc(1.4em * 11);
   overflow: hidden;
   color: #000;
@@ -8291,21 +8221,21 @@ body.auth-modal-open {
   line-height: 1.4;
 }
 
-.formal-report-area-item {
+.formal-report-detail-item {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.formal-report-area-ellipsis {
+.formal-report-detail-ellipsis {
   white-space: nowrap;
 }
 
-.formal-report-area-muted {
+.formal-report-detail-muted {
   color: #64748b;
 }
 
-.formal-report-area-value {
+.formal-report-detail-value {
   color: #000;
 }
 
@@ -8412,7 +8342,7 @@ body.auth-modal-open {
     align-items: flex-start;
   }
 
-.trial-result-toolbar .report-back-button {
+  .trial-result-toolbar .back-cancel-button {
     width: auto;
     min-width: 0;
     padding-right: 14px;
@@ -9995,12 +9925,12 @@ a {
   background: transparent;
 }
 
-/* Projects list + Trial pages: light #F9FAFD background instead of dark hero */
-:is(.project-list-route, .trial-route):is(.site-dark-theme, .theme-hero-page) {
+/* Trial creation uses a light canvas instead of the shared dark hero. */
+.trial-route:is(.site-dark-theme, .theme-hero-page) {
   background: #F9FAFD;
 }
 
-:is(.project-list-route, .trial-route):is(.site-dark-theme, .theme-hero-page)::before {
+.trial-route:is(.site-dark-theme, .theme-hero-page)::before {
   display: none;
 }
 
@@ -10101,6 +10031,8 @@ a {
 }
 
 .home-page .hero-copy {
+  position: relative;
+  z-index: 2;
   display: block;
   align-self: auto;
   width: min(100%, 760px);
@@ -10115,7 +10047,13 @@ a {
   height: 100%;
   object-fit: cover;
   object-position: center;
+  opacity: 0;
   pointer-events: none;
+  transition: opacity 320ms ease;
+}
+
+.hero-background-video.is-active {
+  opacity: 1;
 }
 
 .home-page .hero h1,
@@ -10146,6 +10084,8 @@ a {
 
 .home-page .hero-actions .button.primary {
   color: #fff;
+  border-color: #245cff;
+  background: #245cff;
   opacity: 1;
 }
 
@@ -10244,9 +10184,6 @@ a {
   align-items: center;
   gap: 8px;
   margin-bottom: 18px;
-  color: #2b5f98;
-  font-size: 14px;
-  font-weight: 800;
   text-decoration: none;
 }
 
@@ -10501,65 +10438,9 @@ a {
   gap: 12px;
 }
 
-.new-project-upload-overview {
-  display: grid;
-  width: 190px;
-  min-width: 0;
-  gap: 5px;
-}
-
-.new-project-upload-overview > span:first-child,
-.new-project-upload-summary {
-  color: #49617f;
-  font-size: 12px;
-  font-weight: 800;
-  line-height: 1.25;
-  text-align: right;
-}
-
 .photo-upload-window-warning {
   color: #b54708;
   font-weight: 700;
-}
-
-.new-project-upload-track {
-  display: block;
-  width: 100%;
-  height: 5px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: rgba(36, 92, 255, 0.14);
-}
-
-.new-project-upload-track > i {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: #245cff;
-  transition: width 220ms ease;
-}
-
-.new-project-upload-summary {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.new-project-upload-summary::before {
-  width: 7px;
-  height: 7px;
-  flex: none;
-  border-radius: 50%;
-  background: currentColor;
-  content: "";
-}
-
-.new-project-upload-summary.is-complete {
-  color: #0f7a4d;
-}
-
-.new-project-upload-summary.is-error {
-  color: #b42318;
 }
 
 .detail-photo-upload-retry {
@@ -10866,10 +10747,6 @@ a {
   .new-project-photo-upload-indicator,
   .new-project-photo-upload-ring {
     animation: none;
-  }
-
-  .new-project-upload-track > i {
-    transition: none;
   }
 }
 
@@ -11322,17 +11199,13 @@ a {
   min-width: 104px;
   min-height: 40px;
   border-radius: 10px;
-  font-size: 15px;
+  font-size: 14px;
 }
 
-.start-detection-modal-footer .start-detection-cancel-button {
-  border-radius: 999px;
-}
-
-.start-detection-modal-footer .button.primary {
+.start-detection-modal-footer .button.primary-action-button {
   min-width: 166px;
-  border-radius: 999px;
-  box-shadow: 0 8px 18px rgb(36 92 255 / 18%);
+  border-radius: 10px;
+  box-shadow: 0 8px 18px rgb(0 0 0 / 18%);
 }
 
 .project-photo-error {
@@ -11414,7 +11287,7 @@ a {
   }
 
   .start-detection-modal-footer .button,
-  .start-detection-modal-footer .button.primary {
+  .start-detection-modal-footer .button.primary-action-button {
     width: 100%;
     min-width: 0;
   }
@@ -11535,11 +11408,6 @@ a {
 /* Detection editors keep the facade backdrop clear. */
 .site-dark-theme:is(.new-project-page, .project-detail-page) {
   background: url("/hero-facade.webp") center / cover fixed no-repeat;
-}
-
-/* Professional Detection and Free Trial lists use a neutral light backdrop. */
-.site-dark-theme:is(.project-list-route, .project-list-chrome) {
-  background: #f2f2f7;
 }
 
 /* Project editors continue the detection workbench's facade and liquid-glass surface. */
@@ -11829,10 +11697,6 @@ a {
   background: transparent;
 }
 
-.project-list-route .project-workbench-table tbody tr:only-child td {
-  border-bottom-color: rgba(255, 255, 255, 0.26);
-}
-
 @media (max-width: 560px) {
 
   :is(.project-list-route, .report-list-route, .annotation-management-route) .project-hero {
@@ -11987,7 +11851,7 @@ a {
 .project-list-route .workbench-result-action-button {
   min-height: 36px;
   padding: 0;
-  color: #245cff;
+  color: #000;
   border: 0;
   border-radius: 6px;
   background: transparent;
@@ -11995,22 +11859,16 @@ a {
   font-weight: 400;
   white-space: nowrap;
   cursor: pointer;
-  transition: color 160ms ease, background-color 160ms ease;
-}
-
-.project-list-route .workbench-result-action-button:hover {
-  color: #1748d4;
-  background: #eef3ff;
 }
 
 .project-list-route .workbench-result-action-button:focus-visible {
-  outline: 2px solid rgba(36, 92, 255, 0.45);
+  outline: 2px solid rgba(0, 0, 0, 0.35);
   outline-offset: 2px;
 }
 
 .project-list-route .project-workbench-table.workbench-result-table .workbench-result-description-column {
   width: 250px;
-  padding: 0 12px;
+  padding: 0 22px;
   color: #111827;
   text-align: left;
   white-space: nowrap;
@@ -12038,13 +11896,6 @@ a {
   gap: 1px;
 }
 
-.project-list-route .project-workbench-table.workbench-result-table .workbench-defect-summary.is-compact {
-  flex-direction: row;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
 .project-list-route .project-workbench-table.workbench-result-table .workbench-defect-summary-details {
   max-width: 100%;
   overflow: hidden;
@@ -12055,41 +11906,29 @@ a {
   text-overflow: ellipsis;
 }
 
-.project-list-route .project-workbench-table.workbench-result-table .workbench-defect-summary-detail-pill {
-  display: inline-flex;
-  height: 30px;
-  min-height: 30px;
-  padding: 0 8px;
-  align-items: center;
-  color: #123b6b;
-  border: 1px solid #123b6b;
-  border-radius: 12px;
-  background: transparent;
-  box-shadow: none;
-  font-size: 13px;
-  font-weight: 400;
-  line-height: normal;
-  white-space: nowrap;
-}
-
 .project-list-route .project-workbench-table.workbench-result-table .workbench-defect-summary-empty {
   color: #101828;
   font-size: 13px;
   line-height: 22px;
 }
 
-.project-list-route .project-workbench-table.workbench-result-table .workbench-result-status-column {
-  width: 180px;
-  white-space: nowrap;
-}
-
-.project-list-route .project-workbench-table.workbench-result-table .workbench-result-completion-time-column {
-  width: 250px;
+.project-list-route .project-workbench-table.workbench-result-table :is(
+  .workbench-result-status-column,
+  .workbench-result-completion-time-column
+) {
   color: #475467;
   font-size: 15px;
   font-variant-numeric: tabular-nums;
   text-align: left;
   white-space: nowrap;
+}
+
+.project-list-route .project-workbench-table.workbench-result-table .workbench-result-status-column {
+  width: 180px;
+}
+
+.project-list-route .project-workbench-table.workbench-result-table .workbench-result-completion-time-column {
+  width: 250px;
 }
 
 .project-list-route .project-workbench-table.workbench-result-table tbody tr:not(.report-delete-row) {
@@ -12142,7 +11981,6 @@ a {
   width: 40px;
   height: 40px;
   border-radius: 8px;
-  box-shadow: 0 0 5px 1px rgba(6, 22, 56, 0.24);
 }
 
 .project-list-route .workbench-result-list-page .project-workbench-content-panel :is(
@@ -12235,9 +12073,6 @@ a {
     width: 240px;
   }
 
-  .project-list-route .project-workbench-table.workbench-result-table .workbench-result-status-column {
-    padding-right: 16px;
-  }
 }
 
 @media (max-width: 720px) {
@@ -12261,7 +12096,7 @@ a {
   gap: 4px;
 }
 
-.trial-new-project-layout .trial-project-feedback :is(.create-form-error, .trial-action-hint, .trial-undo-message) {
+.trial-new-project-layout .trial-project-feedback :is(.create-form-error, .trial-action-hint) {
   margin: 0;
 }
 
@@ -12347,7 +12182,7 @@ a {
 .professional-create-steps li:not(:last-child)::after {
   position: absolute;
   z-index: 0;
-  top: 14px;
+  top: 13px;
   left: 50%;
   width: 100%;
   height: 1px;
@@ -12356,7 +12191,7 @@ a {
 }
 
 .professional-create-steps li.is-complete:not(:last-child)::after {
-  background: #123b6b;
+  background: #000;
 }
 
 .professional-create-steps button {
@@ -12380,41 +12215,39 @@ a {
 }
 
 .professional-create-steps button:not(:disabled) {
-  color: #123b6b;
   cursor: pointer;
 }
 
 .professional-create-steps li.is-current button,
 .professional-create-steps li.is-complete button {
-  color: #123b6b;
-  font-weight: 500;
+  color: #000;
 }
 
 .professional-create-step-number {
   display: inline-flex;
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   align-items: center;
   justify-content: center;
-  flex: 0 0 28px;
-  color: #667085;
-  border: 1px solid #d0d5dd;
+  flex: 0 0 26px;
+  color: #fff;
+  border: 1px solid #8a8a8a;
   border-radius: 50%;
-  background: #fff;
-  font-size: 10px;
+  background: #8a8a8a;
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
 
 .professional-create-step-number svg {
-  width: 12px;
-  height: 12px;
+  width: 13px;
+  height: 13px;
 }
 
 .professional-create-steps li.is-current .professional-create-step-number,
 .professional-create-steps li.is-complete .professional-create-step-number {
   color: #fff;
-  border-color: #123b6b;
-  background: #123b6b;
+  border-color: #000;
+  background: #000;
 }
 
 .professional-create-content-heading {
@@ -12779,11 +12612,11 @@ a {
   height: 40px;
   min-width: 80px;
   min-height: 40px;
-  padding: 0 12px;
-  border-radius: 8px;
+  padding: 0 14px;
+  border-radius: 10px;
 }
 
-.professional-create-actions .button.secondary,
+.professional-create-actions .back-cancel-button,
 .professional-create-actions .professional-create-details-action {
   width: 112px;
   min-width: 112px;
@@ -12802,31 +12635,6 @@ a {
 .professional-create-actions .professional-create-result-action {
   width: 136px;
   min-width: 136px;
-}
-
-.professional-create-actions .button.primary {
-  color: #fff;
-  border-color: #123b6b;
-  background: #123b6b;
-}
-
-.professional-create-actions .button.primary:disabled {
-  color: #667085;
-  border-color: #d0d5dd;
-  background: #e4e7ec;
-  cursor: not-allowed;
-}
-
-.professional-create-actions .button.primary:hover:not(:disabled),
-.professional-create-actions .button.primary:focus-visible:not(:disabled) {
-  border-color: #0b2a4d;
-  background: #0b2a4d;
-}
-
-.professional-create-actions .button.secondary {
-  color: #344054;
-  border-color: #98a2b3;
-  background: #fff;
 }
 
 .professional-create-actions .button svg {
@@ -12919,7 +12727,7 @@ a {
 
 @media (max-width: 420px) {
   .professional-create-actions .button {
-    font-size: 13px;
+    font-size: 14px;
   }
 }
 
@@ -13138,8 +12946,6 @@ a {
 }
 
 .new-project-page .trial-new-project-layout .project-photo-workspace :is(
-  .new-project-upload-overview > span:first-child,
-  .new-project-upload-summary,
   .project-photo-upload-status,
   .new-project-photo-upload-indicator small,
   .project-photo-add-button,
@@ -13186,8 +12992,6 @@ a {
   .project-photo-workspace-heading p,
   .project-photo-workspace-heading > span,
   .new-project-photo-count,
-  .new-project-upload-overview > span:first-child,
-  .new-project-upload-summary,
   .project-upload-empty strong,
   .project-upload-empty span,
   .project-photo-thumb figcaption,
@@ -13206,18 +13010,13 @@ a {
 
 .new-project-page .trial-new-project-layout :is(
   .trial-project-feedback .create-form-error,
-  .trial-project-feedback .trial-action-hint,
-  .trial-project-feedback .trial-undo-message
+  .trial-project-feedback .trial-action-hint
 ) {
   font-weight: 600;
 }
 
 .new-project-page .trial-new-project-layout .project-photo-error {
   font-weight: 600;
-}
-
-.new-project-page .trial-new-project-layout .trial-project-feedback .trial-undo-message button {
-  font-weight: 700;
 }
 
 .new-project-page .trial-new-project-layout > .trial-guide-panel {
@@ -13402,15 +13201,20 @@ a {
 }
 
 :is(.project-list-route, .report-list-route) .project-workbench-table.workbench-result-table thead th {
+  position: sticky;
+  z-index: 5;
+  top: 0;
   height: 50px;
-  color: #667085;
+  color: #515151;
   border: 0;
-  border-bottom: 1px solid #E1E5EE;
-  background-color: #F9FAFD;
-  background-image: none;
-  font-size: 12px;
-  font-weight: 400;
+  border-bottom: 1px solid #e1e5ee;
+  background: transparent;
+  box-shadow: none;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
   opacity: 1;
+  text-shadow: none;
 }
 
 :is(.project-list-route, .report-list-route) .project-workbench-table.workbench-result-table :is(
@@ -13578,18 +13382,6 @@ a {
   }
 }
 
-/* List status: align the review-workbench status tag with its column heading. */
-.project-list-route .project-workbench-table.workbench-result-table .workbench-result-status-column {
-  padding-right: 10px;
-  padding-left: 10px;
-  text-align: left;
-}
-
-.project-list-route .project-workbench-table.workbench-result-table .workbench-result-status-heading {
-  padding-right: 10px;
-  padding-left: 10px;
-}
-
 /* Desktop result summaries fill their fixed column without shifting adjacent columns. */
 @media (min-width: 721px) {
   .project-list-route .project-workbench-table.workbench-result-table .workbench-defect-summary {
@@ -13694,23 +13486,10 @@ a {
     grid-template-rows: minmax(28px, auto) minmax(30px, auto) minmax(30px, auto) minmax(44px, auto);
     column-gap: 12px;
     align-items: center;
-    border: 1px solid rgba(133, 190, 235, 0.2);
+    border: 1px solid #e1e5ee;
     border-radius: 14px;
-    background:
-      radial-gradient(110% 140% at 8% -12%, rgba(60, 128, 178, 0.24), transparent 62%),
-      linear-gradient(180deg, rgba(13, 45, 72, 0.94), rgba(5, 26, 46, 0.96));
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.1),
-      0 10px 24px rgba(0, 0, 0, 0.2);
-    -webkit-backdrop-filter: blur(18px) saturate(145%);
-    backdrop-filter: blur(18px) saturate(145%);
-  }
-
-  .project-list-route .project-workbench-content-panel .project-workbench-table.workbench-result-table tbody tr.workbench-result-row:hover {
-    border-color: rgba(133, 190, 235, 0.32);
-    background:
-      radial-gradient(110% 140% at 8% -12%, rgba(73, 145, 197, 0.3), transparent 62%),
-      linear-gradient(180deg, rgba(17, 54, 84, 0.96), rgba(7, 31, 53, 0.98));
+    background: transparent;
+    box-shadow: none;
   }
 
   .project-list-route .project-workbench-table.workbench-result-table tbody tr.workbench-result-row > td {
@@ -13808,9 +13587,10 @@ a {
   .project-list-route .workbench-result-action-button {
     min-height: 44px;
     padding: 0 12px;
-    border: 1px solid #cbd7ff;
+    color: #000;
+    border: 0;
     border-radius: 9px;
-    background: #f5f7ff;
+    background: transparent;
     font-size: 14px;
     font-weight: 400;
   }
@@ -14634,7 +14414,7 @@ a {
 }
 
 /* Public Professional Detection and Free Trial list pages use a clean white shell. */
-:is(.project-list-route, .report-list-route):is(.site-dark-theme, .theme-hero-page),
+:is(.project-list-route, .report-list-route),
 :is(.project-list-route, .report-list-route) .report-list-page {
   background: #FFFFFF;
 }
@@ -14666,15 +14446,6 @@ a {
   isolation: isolate;
 }
 
-:is(.project-list-route, .report-list-route) .workbench-result-list-panel:not(.project-list-empty-surface)
-  .project-workbench-table.workbench-result-table thead th {
-  position: sticky;
-  z-index: 5;
-  top: 0;
-  font-weight: 400;
-  letter-spacing: 0.02em;
-}
-
 /* Keep each desktop result table at its natural row height. */
 @media (min-width: 721px) {
   :is(.project-list-route, .report-list-route) .workbench-result-list-panel:not(.project-list-empty-surface)
@@ -14693,14 +14464,14 @@ a {
 
   .project-list-route .workbench-result-list-panel:not(.project-list-empty-surface)
     .project-workbench-table.workbench-result-table {
-    --workbench-result-columns: 96px minmax(200px, 1fr) 180px 250px 260px 100px;
-    min-width: 1086px;
+    --workbench-result-columns: 96px minmax(200px, 1fr) 300px 300px 320px 80px;
+    min-width: 1296px;
   }
 
   .report-list-route .workbench-result-list-panel:not(.project-list-empty-surface)
     .project-workbench-table.workbench-result-table {
-    --workbench-result-columns: 96px minmax(240px, 1fr) 250px 260px 80px;
-    min-width: 926px;
+    --workbench-result-columns: 96px minmax(240px, 1fr) 350px 360px 80px;
+    min-width: 1126px;
   }
 
   :is(.project-list-route, .report-list-route) .workbench-result-list-panel:not(.project-list-empty-surface)
@@ -14757,68 +14528,24 @@ a {
   }
 }
 
-:is(.project-list-route, .report-list-route) .project-workbench-content-panel
-  .workbench-result-list-panel:not(.project-list-empty-surface)
-  .project-workbench-table.workbench-result-table tbody tr:not(.report-delete-row):hover {
-  background-color: transparent;
-  background-image: linear-gradient(90deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.18));
-  background-position: left bottom;
-  background-repeat: no-repeat;
-  background-size: 100% 1px;
-}
-
-:is(.project-list-route, .report-list-route) .workbench-result-list-panel:not(.project-list-empty-surface)
-  .project-workbench-table .workbench-result-completion-time-column {
-  color: #fff;
-}
-
-/* Dark-glass actions for populated detection lists. */
+/* Populated detection lists use compact black action labels and icons. */
 :is(.project-list-route, .report-list-route) .workbench-result-list-panel:not(.project-list-empty-surface)
   .workbench-result-action-button {
   min-height: 36px;
   padding: 0 12px;
-  border: 1px solid var(--button-primary-background);
+  color: #000;
+  border: 0;
   border-radius: 12px;
+  background: transparent;
+  box-shadow: none;
   font-size: 14px;
   font-weight: 400;
-  transition:
-    color 160ms ease,
-    border-color 160ms ease,
-    background-color 160ms ease,
-    box-shadow 160ms ease;
 }
 
-.project-list-route .workbench-result-list-panel:not(.project-list-empty-surface)
-  .workbench-result-action-button:hover {
-  color: #fff;
-  border-color: var(--button-primary-background-hover);
-  background: var(--button-primary-background-hover);
-  box-shadow:
-    0 7px 18px rgba(0, 0, 0, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.18);
-}
-
-.project-list-route .workbench-result-list-panel:not(.project-list-empty-surface)
+:is(.project-list-route, .report-list-route) .workbench-result-list-panel:not(.project-list-empty-surface)
   .workbench-result-action-button:focus-visible {
-  outline: 2px solid rgba(255, 255, 255, 0.42);
+  outline: 2px solid rgba(0, 0, 0, 0.35);
   outline-offset: 2px;
-}
-
-/* Defect summaries use restrained glass pills on the dark list surface. */
-.project-list-route .workbench-result-list-panel:not(.project-list-empty-surface)
-  .workbench-result-description-column,
-.project-list-route .workbench-result-list-panel:not(.project-list-empty-surface)
-  .workbench-result-description-column p,
-.project-list-route .workbench-result-list-panel:not(.project-list-empty-surface)
-  .workbench-defect-summary,
-.project-list-route .workbench-result-list-panel:not(.project-list-empty-surface)
-  :is(.workbench-defect-summary-total, .workbench-defect-summary-details) {
-  color: #fff;
-}
-
-.project-list-route .workbench-result-list-panel:not(.project-list-empty-surface)
-  .workbench-defect-summary-empty {
-  color: #fff;
 }
 
 @media (max-width: 720px) {
@@ -14838,28 +14565,9 @@ a {
       transform 160ms ease;
   }
 
-  .project-list-route .project-workbench-content-panel
-    .workbench-result-list-panel:not(.project-list-empty-surface)
-    .project-workbench-table.workbench-result-table tbody tr.workbench-result-row:hover {
-    border-color: rgba(133, 190, 235, 0.2);
-    background:
-      radial-gradient(110% 140% at 8% -12%, rgba(60, 128, 178, 0.24), transparent 62%),
-      linear-gradient(180deg, rgba(13, 45, 72, 0.94), rgba(5, 26, 46, 0.96));
-  }
-
   .project-list-route .workbench-result-list-panel:not(.project-list-empty-surface)
     .project-workbench-table.workbench-result-table tbody tr.workbench-result-row:active {
     transform: translateY(1px);
-  }
-
-  .project-list-route .workbench-result-list-panel:not(.project-list-empty-surface)
-    .project-workbench-table.workbench-result-table tbody tr.workbench-result-row:focus-visible {
-    outline: 2px solid rgba(110, 176, 255, 0.88);
-    outline-offset: 2px;
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.12),
-      0 0 0 4px rgba(55, 126, 209, 0.2),
-      0 12px 28px rgba(0, 0, 0, 0.24);
   }
 
   .project-list-route .workbench-result-list-panel:not(.project-list-empty-surface)
@@ -14871,8 +14579,8 @@ a {
     justify-self: end;
     width: 8px;
     height: 8px;
-    border-top: 1.5px solid rgba(216, 237, 255, 0.68);
-    border-right: 1.5px solid rgba(216, 237, 255, 0.68);
+    border-top: 1.5px solid #667085;
+    border-right: 1.5px solid #667085;
     transform: rotate(45deg);
   }
 
@@ -14907,10 +14615,7 @@ a {
     gap: 12px;
     margin-top: 14px;
     padding-top: 13px;
-    border-top: 1px solid rgba(152, 198, 232, 0.14);
-    color: rgba(229, 242, 255, 0.78);
-    font-size: 15px;
-    line-height: 21px;
+    border-top: 1px solid #e1e5ee;
     text-align: right;
   }
 
@@ -14923,7 +14628,6 @@ a {
     align-items: start;
     gap: 12px;
     margin-top: 10px;
-    color: rgba(229, 242, 255, 0.82);
     font-size: 15px;
     line-height: 21px;
   }
@@ -14935,7 +14639,6 @@ a {
     )::before {
     content: attr(data-label);
     display: block;
-    color: rgba(185, 213, 235, 0.62);
     font-size: 12px;
     font-weight: 400;
     line-height: 21px;
@@ -14993,13 +14696,6 @@ a {
 
 }
 
-/* Exact status shown at the upper-right of the photo upload area. */
-.project-photo-workspace-heading .new-project-upload-summary.photo-upload-complete-status {
-  color: #4ade80;
-  font-weight: 700;
-  -webkit-text-fill-color: #4ade80;
-}
-
 .project-detail-title-bar {
   width: min(calc(100% - clamp(24px, 4.4vw, 64px)), 1504px);
   margin: 18px auto 16px;
@@ -15030,6 +14726,11 @@ a {
   box-shadow: none;
 }
 
+.quick-result-detail-page .trial-result-toolbar.workspace-title-bar {
+  width: min(calc(100% - clamp(48px, 8.8vw, 128px)), 1100px);
+  max-width: 1100px;
+}
+
 .formal-result-route .trial-result-toolbar .building-model-back-button {
   position: absolute;
   z-index: 2;
@@ -15058,38 +14759,7 @@ a {
 }
 
 .formal-result-route .trial-result-toolbar .report-export-button {
-  display: inline-flex;
   width: 130px;
-  height: 42px;
-  min-height: 42px;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  padding: 0 12px;
-  color: #fff;
-  border: 1px solid #123b6b;
-  border-radius: 8px;
-  background: #123b6b;
-  box-shadow: none;
-  font-size: 16px;
-  font-weight: 600;
-  line-height: 1;
-  white-space: nowrap;
-}
-
-.formal-result-route .trial-result-toolbar .report-export-button:hover:not(:disabled),
-.formal-result-route .trial-result-toolbar .report-export-button:focus-visible:not(:disabled) {
-  color: #fff;
-  border-color: #0b2a4d;
-  background: #0b2a4d;
-  box-shadow: 0 7px 18px rgba(11, 42, 77, 0.24);
-}
-
-.formal-result-route .trial-result-toolbar .report-export-button:disabled {
-  color: rgba(255, 255, 255, 0.68);
-  border-color: #9aaec5;
-  background: #9aaec5;
-  box-shadow: none;
 }
 
 :is(.formal-result-route .trial-result-detail-shell, .project-detail-page .project-detail-content-shell) {
@@ -15179,13 +14849,13 @@ a {
 .formal-result-route .trial-result-detail-shell :is(.trial-report-table, .project-photo-pair-table) th {
   height: 50px;
   padding: 0 22px;
-  color: #475467;
+  color: #515151;
   border-bottom-color: #e1e5ee;
   background: #fff;
   box-shadow: none;
-  font-size: 12px;
-  font-weight: 400;
-  line-height: 18px;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.5;
   letter-spacing: 0.02em;
   text-align: center;
   text-shadow: none;
@@ -15319,6 +14989,10 @@ a {
   .formal-result-route .trial-result-toolbar.workspace-title-bar {
     width: calc(100% - 64px);
   }
+
+  .quick-result-detail-page .trial-result-toolbar.workspace-title-bar {
+    width: min(calc(100% - clamp(48px, 8.8vw, 128px)), 1100px);
+  }
 }
 
 @media (max-width: 980px) {
@@ -15331,6 +15005,11 @@ a {
     padding: 0;
     border: 0;
     border-radius: 0;
+  }
+
+  .quick-result-detail-page .trial-result-toolbar.workspace-title-bar {
+    width: calc(100% - 32px);
+    max-width: none;
   }
 
   .formal-result-route .trial-result-detail-shell,
@@ -15366,6 +15045,10 @@ a {
     gap: 0;
   }
 
+  .quick-result-detail-page .trial-result-toolbar.workspace-title-bar {
+    width: calc(100% - 32px);
+  }
+
   .project-detail-page .project-detail-content-shell {
     width: calc(100% - 20px);
   }
@@ -15375,65 +15058,18 @@ a {
   .formal-result-route .trial-result-toolbar.workspace-title-bar {
     width: calc(100% - 16px);
   }
-}
 
-/* List actions use compact icon-only controls while retaining accessible labels and tooltips. */
-.project-list-route .workbench-result-list-panel:not(.project-list-empty-surface)
-  .workbench-result-icon-button {
-  display: inline-grid;
-  width: 32px;
-  min-width: 32px;
-  height: 32px;
-  min-height: 32px;
-  padding: 0;
-  place-items: center;
-  border-radius: 10px;
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
-.project-list-route .workbench-result-list-panel:not(.project-list-empty-surface)
-  .workbench-result-icon-button:hover,
-.project-list-route .workbench-result-list-panel:not(.project-list-empty-surface)
-  .workbench-result-icon-button:focus-visible,
-.project-list-route .workbench-result-list-panel:not(.project-list-empty-surface)
-  .workbench-result-icon-button:active {
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
-.project-list-route .workbench-result-list-panel
-  .workbench-result-icon-button svg {
-  width: 16px;
-  height: 16px;
-}
-
-.project-list-route .workbench-result-list-panel:not(.project-list-empty-surface)
-  .workbench-result-danger-action-button {
-  color: #ff8d8d;
-}
-
-.project-list-route .workbench-result-list-panel:not(.project-list-empty-surface)
-  .workbench-result-danger-action-button:hover,
-.project-list-route .workbench-result-list-panel:not(.project-list-empty-surface)
-  .workbench-result-danger-action-button:focus-visible {
-  color: #ffb3b3;
-}
-
-.project-list-route .workbench-result-list-panel:not(.project-list-empty-surface)
-  .workbench-result-icon-button:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
+  .quick-result-detail-page .trial-result-toolbar.workspace-title-bar {
+    width: calc(100% - 32px);
+  }
 }
 
 /* Keep the professional-detection CTA 40px farther to the right than the trial CTA. */
 
-/* Use dark navigation text while the list-page header sits over the white canvas. */
+/* List-page navigation stays dark on the white canvas. */
 :is(.project-list-route, .report-list-route) .site-header.home-site-header:not(.is-scrolled):not(.mobile-nav-open)
   :is(.brand-name, .main-nav > a, .nav-menu-trigger, .account-trigger) {
-  color: #15264b;
+  color: #000;
   text-shadow: none;
 }
 
@@ -15443,16 +15079,7 @@ a {
   text-shadow: none;
 }
 
-/* List headers and row content use the white-page typography system. */
-:is(.project-list-route, .report-list-route) .workbench-result-list-panel:not(.project-list-empty-surface)
-  .project-workbench-table.workbench-result-table thead th {
-  color: #475467;
-  border-bottom-color: #e1e5ee;
-  background: transparent;
-  box-shadow: none;
-  text-shadow: none;
-}
-
+/* List row content uses the white-page typography system. */
 :is(.project-list-route, .report-list-route) .workbench-result-list-panel
   .project-workbench-table.workbench-result-table tbody td,
 :is(.project-list-route, .report-list-route) .workbench-result-list-panel
@@ -15466,8 +15093,25 @@ a {
     .workbench-defect-summary-details,
     .workbench-defect-summary-empty
   ) {
-  color: #101828;
+  color: #000;
   text-shadow: none;
+}
+
+:is(.project-list-route, .report-list-route) .workbench-result-list-panel:not(.project-list-empty-surface)
+  .project-workbench-table :is(.workbench-result-status-column, .workbench-result-completion-time-column) {
+  font-weight: 400;
+}
+
+/* Defect summaries use regular-weight plain text on both result lists. */
+:is(.project-list-route, .report-list-route) .workbench-result-list-panel:not(.project-list-empty-surface)
+  .project-workbench-table :is(
+    .workbench-result-description-column,
+    .workbench-result-description-column p,
+    .workbench-defect-summary,
+    .workbench-defect-summary-details,
+    .workbench-defect-summary-empty
+  ) {
+  font-weight: 400;
 }
 
 :is(.project-list-route, .report-list-route) .workbench-result-list-panel
@@ -15480,39 +15124,7 @@ a {
 
 :is(.project-list-route, .report-list-route) .workbench-result-list-panel:not(.project-list-empty-surface)
   .project-workbench-table.workbench-result-table tbody tr:not(.report-delete-row) {
-  background-image: linear-gradient(90deg, #e1e5ee, #e1e5ee);
-}
-
-@media (max-width: 720px) {
-  .project-list-route .workbench-result-list-panel:not(.project-list-empty-surface)
-    .project-workbench-table.workbench-result-table tbody tr.workbench-result-row {
-    border-color: #e1e5ee;
-    background: transparent;
-    box-shadow: none;
-  }
-
-  .project-list-route .workbench-result-list-panel:not(.project-list-empty-surface)
-    .project-workbench-table.workbench-result-table tbody tr.workbench-result-row:hover {
-    border-color: #cfd6e2;
-    background: #f8fafc;
-    box-shadow: none;
-  }
-
-  .project-list-route .workbench-result-list-panel:not(.project-list-empty-surface)
-    .project-workbench-table.workbench-result-table tbody tr.workbench-result-row::after {
-    border-color: #667085;
-  }
-}
-
-/* Keep list-page actions solid and consistently deep blue. */
-
-
-:is(.project-list-route, .report-list-route) .workbench-result-list-panel:not(.project-list-empty-surface)
-  .workbench-result-action-button {
-  color: #fff;
-  border-color: #123b6b;
-  background: #123b6b;
-  box-shadow: none;
+  background-image: linear-gradient(90deg, #bfbfbf, #bfbfbf);
 }
 
 /* Project-name search follows the compact floating-label field used above data tables. */
@@ -15537,7 +15149,7 @@ a {
   padding: 10px 0 2px;
   color: #101828;
   border: 0;
-  border-bottom: 1px solid #98a2b3;
+  border-bottom: 1px solid var(--floating-line-idle-color, #98a2b3);
   border-radius: 0;
   outline: 0;
   background: transparent;
@@ -15565,7 +15177,7 @@ a {
   position: absolute;
   top: 34px;
   left: 0;
-  color: #667085;
+  color: var(--floating-line-idle-color, #667085);
   font-size: 16px;
   font-weight: 400;
   line-height: 1;
@@ -15599,7 +15211,7 @@ a {
 
 .floating-line-field :is(input, select):focus {
   border: 0;
-  border-bottom: 2px solid #123b6b;
+  border-bottom: 2px solid var(--floating-line-active-color, #123b6b);
   box-shadow: none;
 }
 
@@ -15618,17 +15230,22 @@ a {
 }
 
 .floating-line-field :is(input, select):focus + span {
-  color: #123b6b;
+  color: var(--floating-line-active-color, #123b6b);
 }
 
 .floating-line-field input:not(:focus):not(:placeholder-shown) + span,
 .floating-line-field select:not(:focus):valid + span {
-  color: #475467;
+  color: var(--floating-line-idle-color, #475467);
 }
 
 .floating-line-field :is(input, select)[aria-invalid="true"] + span,
 .floating-line-field :is(input, select)[aria-invalid="true"]:focus + span {
   color: #d92d20;
+}
+
+.project-name-search-field {
+  --floating-line-idle-color: #8a8a8a;
+  --floating-line-active-color: var(--button-primary-background-hover);
 }
 
 :is(.project-list-route, .report-list-route) .project-search-empty-state {
@@ -15649,21 +15266,21 @@ a {
   margin: 0 34px;
   padding: 0;
   flex: none;
-  color: #98a2b3;
+  color: #8a8a8a;
   font-size: 14px;
   line-height: 1.5;
   text-align: center;
 }
 
 :is(.project-list-route, .report-list-route) .list-page-switch-prompt a {
-  color: #667085;
+  color: #707070;
   text-decoration: underline;
   text-underline-offset: 3px;
 }
 
 :is(.project-list-route, .report-list-route) .list-page-switch-prompt a:hover,
 :is(.project-list-route, .report-list-route) .list-page-switch-prompt a:focus-visible {
-  color: #475467;
+  color: #707070;
 }
 
 @media (max-width: 720px) {
@@ -15702,7 +15319,7 @@ a {
 }
 
 :is(.project-list-route, .report-list-route) .site-header.list-page-site-header .brand-name {
-  color: #123b6b;
+  color: #000;
   font-size: 26px;
   font-weight: 400;
   text-shadow: none;
@@ -15719,7 +15336,7 @@ a {
   flex-direction: column;
   align-items: center;
   gap: 8px;
-  color: #123b6b;
+  color: #000;
   text-align: center;
   transform: translate(-50%, -50%);
 }
@@ -15737,41 +15354,7 @@ a {
 
 :is(.project-list-route, .report-list-route) .site-header.list-page-site-header
   .list-page-header-action {
-  display: inline-flex;
   width: 130px;
-  height: 42px;
-  min-height: 42px;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  padding: 0 12px;
-  color: #fff;
-  border: 1px solid #123b6b;
-  border-radius: 8px;
-  background: #123b6b;
-  box-shadow: none;
-  font-size: 16px;
-  font-weight: 600;
-  line-height: 1;
-  white-space: nowrap;
-  transition: background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
-}
-
-:is(.project-list-route, .report-list-route) .site-header.list-page-site-header
-  .list-page-header-action svg {
-  width: 19px;
-  height: 19px;
-  flex: none;
-}
-
-:is(.project-list-route, .report-list-route) .site-header.list-page-site-header
-  .list-page-header-action:hover,
-:is(.project-list-route, .report-list-route) .site-header.list-page-site-header
-  .list-page-header-action:focus-visible {
-  color: #fff;
-  border-color: #0b2a4d;
-  background: #0b2a4d;
-  box-shadow: 0 7px 18px rgba(11, 42, 77, 0.24);
 }
 
 .list-page-header-copy h1,
@@ -15779,7 +15362,7 @@ a {
 .formal-result-route .trial-result-toolbar .building-model-page-heading h1,
 .formal-result-route .trial-result-toolbar .building-model-page-heading .workspace-title-bar-meta {
   margin: 0;
-  color: #123b6b;
+  color: #000;
   text-shadow: none;
 }
 
@@ -15846,6 +15429,14 @@ a {
     transform: translateY(-50%);
   }
 
+  .quick-result-detail-page .trial-result-toolbar .building-model-page-heading {
+    right: auto;
+    left: 50%;
+    width: min(760px, calc(100% - 280px));
+    min-width: 0;
+    transform: translate(-50%, -50%);
+  }
+
   :is(.project-list-route, .report-list-route) .list-page-header-action-slot {
     right: 0;
   }
@@ -15878,6 +15469,15 @@ a {
     gap: 6px;
   }
 
+  .quick-result-detail-page .trial-result-toolbar .building-model-page-heading {
+    right: auto;
+    left: 50%;
+    width: calc(100% - 120px);
+    min-width: 0;
+    gap: 6px;
+    transform: translate(-50%, -50%);
+  }
+
   .list-page-header-copy h1,
   .formal-result-route .trial-result-toolbar .building-model-page-heading h1 {
     font-size: 20px;
@@ -15907,23 +15507,15 @@ a {
 
 
 :is(.project-list-route, .report-list-route) .workbench-result-list-panel:not(.project-list-empty-surface)
-  .workbench-result-action-button:hover,
-:is(.project-list-route, .report-list-route) .workbench-result-list-panel:not(.project-list-empty-surface)
-  .workbench-result-action-button:focus-visible {
-  color: #fff;
-  border-color: #0b2a4d;
-  background: #0b2a4d;
-  box-shadow: 0 7px 18px rgba(11, 42, 77, 0.24);
-}
-
-:is(.project-list-route, .report-list-route) .workbench-result-list-panel:not(.project-list-empty-surface)
   .workbench-result-icon-button {
+  display: inline-grid;
   width: 32px;
   min-width: 32px;
   height: 32px;
   min-height: 32px;
   padding: 0;
-  color: #172987;
+  place-items: center;
+  color: #000;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -15931,33 +15523,18 @@ a {
 }
 
 :is(.project-list-route, .report-list-route) .workbench-result-list-panel:not(.project-list-empty-surface)
-  .workbench-result-icon-button:hover,
-:is(.project-list-route, .report-list-route) .workbench-result-list-panel:not(.project-list-empty-surface)
-  .workbench-result-icon-button:focus-visible {
-  color: #0b2a4d;
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
-:is(.project-list-route, .report-list-route) .workbench-result-list-panel:not(.project-list-empty-surface)
-  .workbench-result-danger-action-button {
-  color: #172987;
-}
-
-:is(.project-list-route, .report-list-route) .workbench-result-list-panel:not(.project-list-empty-surface)
-  .workbench-result-danger-action-button:hover,
-:is(.project-list-route, .report-list-route) .workbench-result-list-panel:not(.project-list-empty-surface)
-  .workbench-result-danger-action-button:focus-visible {
-  color: #0b2a4d;
-}
-
-:is(.project-list-route, .report-list-route) .workbench-result-list-panel:not(.project-list-empty-surface)
   .workbench-solid-action-icon {
   display: block;
   width: 16px;
   height: 16px;
+  filter: brightness(0);
   object-fit: contain;
+}
+
+:is(.project-list-route, .report-list-route) .workbench-result-list-panel:not(.project-list-empty-surface)
+  .workbench-result-icon-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 :is(.project-list-route, .report-list-route) .workbench-result-list-panel:not(.project-list-empty-surface)
@@ -15974,8 +15551,8 @@ a {
 :is(.project-list-route, .report-list-route) .project-workbench-content-panel
   .workbench-result-list-panel:not(.project-list-empty-surface)
   .project-workbench-table.workbench-result-table tbody tr.workbench-result-row:hover {
-  background-color: #f5f6f8;
-  background-image: linear-gradient(90deg, #e1e5ee, #e1e5ee);
+  background-color: #e6e6e6;
+  background-image: linear-gradient(90deg, #bfbfbf, #bfbfbf);
   background-position: left bottom;
   background-repeat: no-repeat;
   background-size: 100% 1px;

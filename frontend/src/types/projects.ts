@@ -66,6 +66,7 @@ export interface ProjectListItem {
   latitude: string | null;
   status: ProjectStatus;
   is_example: boolean;
+  has_building_model: boolean;
   current_report_id: string | null;
   photo_count: number;
   valid_photo_count: number;

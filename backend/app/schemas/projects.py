@@ -62,6 +62,7 @@ class ProjectListItem(ApiSchema):
     latitude: Decimal | None
     status: ProjectStatus
     is_example: bool = False
+    has_building_model: bool = False
     current_report_id: UUID | None
     photo_count: int
     valid_photo_count: int

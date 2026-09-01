@@ -23,7 +23,7 @@ export function WorkspaceTitleBar({
 }) {
   return (
     <header className={`building-model-page-header workspace-title-bar ${className}`.trim()}>
-      <Link className="building-model-back-button" to={backTo}>
+      <Link className="building-model-back-button back-cancel-button" to={backTo}>
         <ArrowLeft aria-hidden="true" />
         <span>{backLabel}</span>
       </Link>

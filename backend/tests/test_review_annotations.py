@@ -131,6 +131,62 @@ def test_review_preview_uses_saved_annotation_edits() -> None:
     assert preview.summary["by_defect_type"] == {"spalling": 1}
 
 
+def test_review_preview_calculates_crack_length_instead_of_area() -> None:
+    result = ReportDetailRead.model_validate(
+        {
+            "id": str(uuid4()),
+            "source_type": "formal",
+            "project_id": str(uuid4()),
+            "detection_task_id": str(uuid4()),
+            "report_no": "RPT-crack-preview",
+            "title": "crack preview",
+            "status": "draft",
+            "report_data_json": {},
+            "project": {},
+            "detection_config": None,
+            "detection_task": None,
+            "summary": {"total_review_results": 0},
+            "defects": [],
+            "photos": [
+                {
+                    "id": "photo-1",
+                    "original_filename": "photo.jpg",
+                    "image_width": 4000,
+                    "image_height": 3000,
+                    "calibrated_focal_length": 3000,
+                    "lrf_target_distance": 6,
+                }
+            ],
+            "docx_bucket": None,
+            "docx_object_key": None,
+            "generated_by": str(uuid4()),
+            "generated_at": "2026-07-13T00:00:00Z",
+            "pushed_at": None,
+            "created_at": "2026-07-13T00:00:00Z",
+            "updated_at": "2026-07-13T00:00:00Z",
+        }
+    )
+    edit = SimpleNamespace(
+        photo_key="photo:photo-1",
+        annotations_json=[
+            {
+                "id": "manual-1",
+                "source_annotation_id": None,
+                "defect_type": "crack",
+                "bbox": {"x": 10, "y": 20, "width": 100, "height": 50},
+                "confidence": None,
+            }
+        ],
+    )
+
+    preview = _review_preview_result(result, [edit])
+
+    assert preview.defects[0]["area"] is None
+    assert preview.defects[0]["area_estimated"] is False
+    assert preview.defects[0]["length"] == "0.223607"
+    assert preview.defects[0]["length_estimated"] is True
+
+
 def test_repeat_review_reuses_existing_manual_annotation(monkeypatch) -> None:
     project_id = uuid4()
     task_id = uuid4()

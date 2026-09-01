@@ -188,12 +188,12 @@ export function SystemSettingsPage() {
             ) : null}
           </div>
           <div className="project-hero-action system-settings-header-actions">
-            <RouterLink className="button secondary report-back-button system-settings-home-link" to="/">
+            <RouterLink className="back-cancel-button system-settings-home-link" to="/">
               <ArrowLeft aria-hidden="true" />
               <span>返回首页</span>
             </RouterLink>
             <button
-              className="button primary report-back-button system-settings-save-button"
+              className="button primary-action-button system-settings-save-button"
               disabled={!form || updateMutation.isPending}
               type="button"
               onClick={save}

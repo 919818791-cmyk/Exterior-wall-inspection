@@ -4,6 +4,7 @@ from zipfile import ZipFile
 import pytest
 from docx import Document
 from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
+from docx.oxml.ns import qn
 from PIL import Image, TiffImagePlugin
 
 from app import models  # noqa: F401
@@ -230,8 +231,30 @@ def test_formal_docx_adds_facade_orientation_and_capture_height_column() -> None
 
 def _report_jpeg() -> bytes:
     output = BytesIO()
-    Image.new("RGB", (1600, 1000), "#D8C7A7").save(output, format="JPEG", quality=95)
+    Image.new("RGB", (1600, 1200), "#D8C7A7").save(output, format="JPEG", quality=95)
     return output.getvalue()
+
+
+def _has_red_box(image: Image.Image) -> bool:
+    return any(
+        red > 150 and red > green * 1.5 and red > blue * 1.3
+        for red, green, blue in image.convert("RGB").getdata()
+    )
+
+
+def _has_blue_box(image: Image.Image) -> bool:
+    return any(
+        blue > 140 and blue > red * 1.5 and blue > green * 1.2
+        for red, green, blue in image.convert("RGB").getdata()
+    )
+
+
+def _has_white_label_text(image: Image.Image) -> bool:
+    return sum(
+        1
+        for red, green, blue in image.convert("RGB").getdata()
+        if red > 235 and green > 235 and blue > 235
+    ) > 20
 
 
 def test_formal_docx_uses_reference_layout_and_pairs_four_by_three_photos() -> None:
@@ -268,8 +291,27 @@ def test_formal_docx_uses_reference_layout_and_pairs_four_by_three_photos() -> N
                 },
             ],
             "defects": [
-                {"photo_id": "visible-1", "defect_type": "crack"},
-                {"photo_id": "thermal-1", "defect_type": "hollow"},
+                {
+                    "photo_id": "visible-1",
+                    "defect_type": "crack",
+                    "bbox_json": {"x": 0.2, "y": 0.25, "width": 0.3, "height": 0.3},
+                    "area": "0.777",
+                    "area_estimated": True,
+                    "length": "0.248",
+                    "length_estimated": True,
+                },
+                {
+                    "photo_id": "thermal-1",
+                    "defect_type": "hollow",
+                    "bbox_json": {"x": 800, "y": 300, "width": 480, "height": 360},
+                    "area": "1.2",
+                    "area_estimated": False,
+                },
+                {
+                    "photo_id": "thermal-1",
+                    "defect_type": "hollow",
+                    "bbox_json": {"x": 0.1, "y": 0.6, "width": 0.2, "height": 0.2},
+                },
             ],
         },
         read_object=read_object,
@@ -292,9 +334,14 @@ def test_formal_docx_uses_reference_layout_and_pairs_four_by_three_photos() -> N
         "序号",
         "可见光图像",
         "热红外图像",
-        "说明",
         "立面朝向\n拍摄高度",
+        "说明",
+        "缺陷详情",
     ]
+    assert [
+        int(column.get(qn("w:w")))
+        for column in table._tbl.tblGrid.gridCol_lst
+    ] == [526, 2548, 2546, 1090, 1864, 1459]
     assert len(table.rows) == 2
     assert all(
         cell.vertical_alignment == WD_CELL_VERTICAL_ALIGNMENT.CENTER
@@ -303,8 +350,19 @@ def test_formal_docx_uses_reference_layout_and_pairs_four_by_three_photos() -> N
     )
     assert table.rows[1].cells[1].text.endswith("DJI_0165_V.JPG")
     assert table.rows[1].cells[2].text.endswith("DJI_0165_T.JPG")
-    assert table.rows[1].cells[3].text == "裂缝-001\n空鼓-001"
-    assert table.rows[1].cells[4].text == "西立面\n38.6 m"
+    assert table.rows[1].cells[3].text == "西立面\n38.6 m"
+    assert table.rows[1].cells[4].text == "疑似裂缝: 1处\n疑似空鼓: 2处"
+    assert table.rows[1].cells[5].text == (
+        "裂缝-001≈0.248m\n"
+        "空鼓-001 1.200m²\n"
+        "参数不足"
+    )
+    assert "0.777" not in table.rows[1].cells[5].text
+    detail_runs = table.rows[1].cells[5].paragraphs[0].runs
+    assert detail_runs[3].text == "m\n"
+    assert detail_runs[3].font.name == "微软雅黑"
+    assert detail_runs[3].font.size.pt == pytest.approx(9)
+    assert str(detail_runs[3].font.color.rgb) == "475467"
     assert reads == [
         ("inspection", "photos/0165-v.jpg"),
         ("inspection", "photos/0165-t.jpg"),
@@ -314,11 +372,54 @@ def test_formal_docx_uses_reference_layout_and_pairs_four_by_three_photos() -> N
     logo, *table_images = document.inline_shapes
     assert logo.width == 1_463_040
     assert logo.height == 448_310
+    embedded_images = []
     for shape in table_images:
-        assert shape.width == 1_617_980
-        assert shape.height == 1_212_850
+        assert shape.width == 1_440_000
+        assert shape.height == 1_080_000
         relationship_id = shape._inline.graphic.graphicData.pic.blipFill.blip.embed
         image_part = document.part.related_parts[relationship_id]
         with Image.open(BytesIO(image_part.blob)) as image:
             assert image.format == "JPEG"
             assert image.size == (1200, 900)
+            embedded_images.append(image.copy())
+
+    assert _has_red_box(embedded_images[0])
+    assert _has_blue_box(embedded_images[1])
+    assert all(_has_white_label_text(image) for image in embedded_images)
+
+
+def test_formal_docx_shows_one_parameter_warning_when_measurements_are_missing() -> None:
+    content = build_report_docx(
+        "参数不足报告",
+        "RPT-NO-MEASUREMENTS",
+        {
+            "project": {"name": "参数不足项目"},
+            "photos": [
+                {
+                    "id": "visible-1",
+                    "original_filename": "facade.jpg",
+                    "photo_type": "visible",
+                    "facade_orientation": "东立面",
+                    "relative_altitude": "12.3",
+                }
+            ],
+            "defects": [
+                {
+                    "photo_id": "visible-1",
+                    "defect_type": "crack",
+                    "bbox_json": {"x": 10, "y": 20, "width": 100, "height": 50},
+                },
+                {
+                    "photo_id": "visible-1",
+                    "defect_type": "hollow",
+                    "bbox_json": {"x": 200, "y": 100, "width": 80, "height": 60},
+                },
+            ],
+        },
+    )
+
+    document = Document(BytesIO(content))
+    table = document.tables[0]
+    assert all(len(row._tr.tc_lst) == 6 for row in table.rows)
+    assert table.rows[0].cells[5].text == "缺陷详情"
+    assert table.rows[1].cells[5].text == "参数不足"

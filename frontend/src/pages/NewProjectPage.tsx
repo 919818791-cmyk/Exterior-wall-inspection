@@ -38,6 +38,7 @@ import { createClientId } from "@/utils/id";
 import {
   MAX_PROJECT_PHOTO_COUNT,
   MAX_PROJECT_PHOTO_SIZE_BYTES,
+  PROFESSIONAL_PHOTO_UPLOAD_HINT,
   PHOTO_UPLOAD_WINDOW_WARNING,
   validatePhotoUpload
 } from "@/utils/photoUpload";
@@ -668,7 +669,7 @@ export function NewProjectPage() {
             {getErrorMessage(projectQuery.error ?? storedPhotosQuery.error)}
           </p>
           <footer className="professional-create-actions">
-            <button className="button secondary" type="button" onClick={() => navigate("/detections")}>返回列表</button>
+            <button className="back-cancel-button" type="button" onClick={() => navigate("/detections")}>返回列表</button>
           </footer>
         </main>
       </ProjectWorkbenchShell>
@@ -685,7 +686,8 @@ export function NewProjectPage() {
         <ol className="professional-create-steps" aria-label="项目设置步骤">
           {WIZARD_STEPS.map((item) => {
             const isCurrent = item.step === step;
-            const isComplete = item.step < furthestAccessibleStep;
+            const isComplete = item.step < step;
+            const isReached = item.step <= step;
             return (
               <li
                 className={`${isCurrent ? "is-current" : ""} ${isComplete ? "is-complete" : ""}`.trim()}
@@ -698,7 +700,7 @@ export function NewProjectPage() {
                   onClick={() => void navigateToWizardStep(item.step)}
                 >
                   <span aria-hidden="true" className="professional-create-step-number">
-                    {isComplete ? <Check /> : item.step}
+                    {isReached ? <Check /> : item.step}
                   </span>
                   <span>{item.label}</span>
                 </button>
@@ -775,7 +777,7 @@ export function NewProjectPage() {
                 disabled={!isEditable || busy}
                 emptyHint={(
                   <span className="professional-drone-upload-hint">
-                    仅支持专业无人机拍摄的原始照片
+                    {PROFESSIONAL_PHOTO_UPLOAD_HINT}
                     {counts.uploading ? (
                       <>
                         <br />
@@ -876,7 +878,7 @@ export function NewProjectPage() {
 
         <footer className="professional-create-actions">
           <button
-            className="button secondary"
+            className="back-cancel-button"
             disabled={busy}
             type="button"
             onClick={leaveWizard}
@@ -885,7 +887,7 @@ export function NewProjectPage() {
           </button>
           {step === 1 ? (
             <button
-              className={`button primary professional-create-details-action${project && detailsChanged ? " is-save" : ""}`}
+              className={`button primary-action-button professional-create-details-action${project && detailsChanged ? " is-save" : ""}`}
               disabled={busy || !isEditable || !canContinueFromDetails}
               type="button"
               onClick={() => void continueFromDetails()}
@@ -897,7 +899,7 @@ export function NewProjectPage() {
           ) : null}
           {step === 2 && isEditable ? (
             <button
-              className="button primary"
+              className="button primary-action-button"
               disabled={busy || !isEditable || !canOpenSummary}
               type="button"
               onClick={() => void continueToSummary()}
@@ -907,7 +909,7 @@ export function NewProjectPage() {
           ) : null}
           {step === 3 && hasResult && project?.current_report_id ? (
             <button
-              className="button primary professional-create-submit professional-create-result-action"
+              className="button primary-action-button professional-create-submit professional-create-result-action"
               type="button"
               onClick={() => navigate(`/detections/results/${project.current_report_id}`)}
             >
@@ -917,7 +919,7 @@ export function NewProjectPage() {
           ) : null}
           {step === 3 && !hasResult ? (
             <button
-              className="button primary professional-create-submit"
+              className="button primary-action-button professional-create-submit"
               disabled={busy || !isEditable || !canOpenSummary}
               type="button"
               onClick={() => setDetectionModalOpen(true)}

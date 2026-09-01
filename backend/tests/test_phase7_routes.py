@@ -567,6 +567,7 @@ def test_trial_result_defaults_title_to_project_number() -> None:
 
 def test_trial_result_title_can_be_updated_after_archiving() -> None:
     now = datetime.now(UTC)
+    created_at = datetime(2026, 7, 15, 9, 58, tzinfo=UTC)
     result = TrialDetectionResult(
         id=UUID("00000000-0000-0000-0000-000000000401"),
         result_no="TRY-202607150001",
@@ -584,7 +585,7 @@ def test_trial_result_title_can_be_updated_after_archiving() -> None:
         thermal_available_photo_count=0,
         generated_by=_trial_customer().id,
         generated_at=now,
-        created_at=now,
+        created_at=created_at,
         updated_at=now,
     )
     app.dependency_overrides[get_current_user] = _trial_customer
@@ -600,6 +601,7 @@ def test_trial_result_title_can_be_updated_after_archiving() -> None:
     assert response.status_code == 200
     assert response.json()["title"] == "修改后的报告名称"
     assert result.title == "修改后的报告名称"
+    assert reports._trial_list_item(result).created_at == created_at
 
 
 def test_report_list_item_accepts_docx_phase_contract() -> None:
@@ -619,6 +621,7 @@ def test_report_list_item_accepts_docx_phase_contract() -> None:
             "photo_count": 8,
             "generated_at": "2026-06-26T10:00:00Z",
             "pushed_at": "2026-06-26T10:30:00Z",
+            "created_at": "2026-06-26T09:55:00Z",
             "updated_at": "2026-06-26T10:30:00Z",
         }
     )
@@ -627,6 +630,7 @@ def test_report_list_item_accepts_docx_phase_contract() -> None:
     assert payload.total_defects == 3
     assert payload.photo_count == 8
     assert payload.source_type == "formal"
+    assert payload.created_at.isoformat() == "2026-06-26T09:55:00+00:00"
 
 
 def test_report_list_item_accepts_trial_result_contract() -> None:
@@ -646,6 +650,7 @@ def test_report_list_item_accepts_trial_result_contract() -> None:
             "photo_count": 2,
             "generated_at": "2026-06-30T10:00:00Z",
             "pushed_at": None,
+            "created_at": "2026-06-30T09:58:00Z",
             "updated_at": "2026-06-30T10:00:00Z",
         }
     )
@@ -653,6 +658,7 @@ def test_report_list_item_accepts_trial_result_contract() -> None:
     assert payload.source_type == "trial"
     assert payload.project_id is None
     assert payload.photo_count == 2
+    assert payload.created_at.isoformat() == "2026-06-30T09:58:00+00:00"
 
 
 def test_customer_trial_report_list_includes_own_and_shared_example_results() -> None:
@@ -1509,6 +1515,10 @@ def test_docx_report_builder_creates_valid_package() -> None:
                     "status": "confirmed",
                     "photo_filename": "facade-001.jpg",
                     "bbox_json": {"x": 10, "y": 20, "width": 100, "height": 80},
+                    "area": "0.248",
+                    "area_estimated": True,
+                    "length": "0.320",
+                    "length_estimated": True,
                 }
             ],
         },
@@ -1527,8 +1537,46 @@ def test_docx_report_builder_creates_valid_package() -> None:
     assert "与面积" not in document
     assert "可见光图像" in document
     assert "热红外图像" in document
+    assert "缺陷" in document
+    assert "详情" in document
     assert "facade-001.jpg" in document
+    assert "疑似裂缝: 1处" in document
     assert "裂缝-001" in document
+    assert "0.320" in document
+    assert "0.248" not in document
+    assert "m²" not in document
+
+
+def test_formal_report_enrichment_replaces_legacy_crack_area_with_length() -> None:
+    source = {
+        "photos": [
+            {
+                "id": "photo-1",
+                "image_width": 4000,
+                "image_height": 3000,
+                "calibrated_focal_length": 3000,
+                "lrf_target_distance": 6,
+            }
+        ],
+        "defects": [
+            {
+                "id": "defect-1",
+                "photo_id": "photo-1",
+                "defect_type": "crack",
+                "bbox_json": {"x": 10, "y": 20, "width": 100, "height": 50},
+                "area": "0.020000",
+                "area_estimated": True,
+            }
+        ],
+    }
+
+    enriched = reports._data_with_photo_urls(source)
+
+    assert source["defects"][0]["area"] == "0.020000"
+    assert enriched["defects"][0]["area"] is None
+    assert enriched["defects"][0]["area_estimated"] is False
+    assert enriched["defects"][0]["length"] == "0.223607"
+    assert enriched["defects"][0]["length_estimated"] is True
 
 
 def _jpeg_with_metadata(*, image_source: str, image_description: str) -> bytes:

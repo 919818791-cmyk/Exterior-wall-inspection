@@ -19,6 +19,7 @@ export interface ReportListItem {
   first_photo_url: string | null;
   generated_at: string;
   pushed_at: string | null;
+  created_at: string;
   updated_at: string;
 }
 
@@ -84,7 +85,8 @@ export interface ReportDefectSnapshot {
   severity?: string | null;
   area?: number | string | null;
   area_estimated?: boolean;
-  length?: string | null;
+  length?: number | string | null;
+  length_estimated?: boolean;
   status?: string;
   confidence?: string | null;
   model_version?: string | null;

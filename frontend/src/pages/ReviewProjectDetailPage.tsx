@@ -35,7 +35,7 @@ export function ReviewProjectDetailPage() {
             </p>
             <Button
               as={RouterLink}
-              className="w-fit rounded-lg border border-slate-300 bg-white font-bold text-slate-700 shadow-none"
+              className="back-cancel-button w-fit"
               startContent={<ArrowLeft className="h-4 w-4" aria-hidden="true" />}
               to="/review"
               variant="flat"
@@ -63,7 +63,7 @@ export function ReviewProjectDetailPage() {
             </p>
             <Button
               as={RouterLink}
-              className="rounded-lg border border-slate-300 bg-white font-bold text-slate-700 shadow-none"
+              className="back-cancel-button"
               to="/review"
               variant="flat"
             >

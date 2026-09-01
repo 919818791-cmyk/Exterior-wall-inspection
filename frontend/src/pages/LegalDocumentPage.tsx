@@ -20,7 +20,7 @@ function LegalDocumentShell({
   return (
     <div className="legal-page">
       <div className="legal-page-shell">
-        <Link className="legal-back-link" to="/">
+        <Link className="legal-back-link back-cancel-button" to="/">
           <ArrowLeft aria-hidden="true" />
           返回平台首页
         </Link>

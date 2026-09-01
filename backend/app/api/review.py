@@ -51,7 +51,7 @@ from app.schemas.phase6 import (
 )
 from app.schemas.projects import DeleteResponse
 from app.schemas.phase7 import ReportDetailRead
-from app.services.defect_area import approximate_bbox_area_m2
+from app.services.defect_area import approximate_bbox_area_m2, approximate_bbox_length_m
 from app.services.defect_numbering import number_defects
 from app.services.object_storage import presigned_get_url
 from app.services.report_data import build_report_data
@@ -501,12 +501,28 @@ def _review_preview_result(
                     "status": "preview",
                 }
             )
-            estimated_area = approximate_bbox_area_m2(
-                photo,
-                preview_defect["bbox_json"],
-            )
-            preview_defect["area"] = str(estimated_area) if estimated_area is not None else None
-            preview_defect["area_estimated"] = estimated_area is not None
+            if preview_defect["defect_type"] == "crack":
+                estimated_length = approximate_bbox_length_m(
+                    photo,
+                    preview_defect["bbox_json"],
+                )
+                preview_defect["area"] = None
+                preview_defect["area_estimated"] = False
+                preview_defect["length"] = (
+                    str(estimated_length)
+                    if estimated_length is not None
+                    else None
+                )
+                preview_defect["length_estimated"] = estimated_length is not None
+            else:
+                estimated_area = approximate_bbox_area_m2(
+                    photo,
+                    preview_defect["bbox_json"],
+                )
+                preview_defect["area"] = str(estimated_area) if estimated_area is not None else None
+                preview_defect["area_estimated"] = estimated_area is not None
+                preview_defect["length"] = None
+                preview_defect["length_estimated"] = False
             defects.append(preview_defect)
 
     by_defect_type: dict[str, int] = {}
@@ -1085,6 +1101,9 @@ def _apply_review_annotation_edits(
                 )
                 existing.defect_type = defect_type
                 existing.bbox_json = bbox
+                if changed:
+                    existing.area = None
+                    existing.length = None
                 existing.status = (
                     ReviewResultStatus.ADDED.value
                     if existing.ai_result_id is None

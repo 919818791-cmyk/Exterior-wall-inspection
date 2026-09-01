@@ -89,7 +89,7 @@ export function DataManagementPage() {
               <h1>数据管理</h1>
             </div>
             <div className="project-hero-action standalone-management-actions">
-              <RouterLink className="button secondary report-back-button standalone-management-home-link" to="/">
+              <RouterLink className="back-cancel-button standalone-management-home-link" to="/">
                 <ArrowLeft aria-hidden="true" />
                 <span>返回首页</span>
               </RouterLink>

@@ -16,7 +16,7 @@ interface WorkbenchResultTableProps<T extends WorkbenchResultListItem> {
   columnLabel?: string;
   completionTimeLabel?: string;
   getDeleteDisabledReason?: (item: T) => string;
-  getLeadingActionLabel?: (item: T) => string;
+  getLeadingActionLabel?: (item: T) => string | undefined;
   getKey: (item: T) => string;
   items: T[];
   onDelete?: (item: T) => void;
@@ -229,11 +229,7 @@ export function WorkbenchDefectSummary({
     className={`workbench-defect-summary is-${variant}`}
   >
     {variant === "compact" && visibleEntries.length
-      ? visibleEntries.map((entry) => (
-          <span className="workbench-defect-summary-detail-pill" key={entry.label}>
-            {entry.label}·{entry.count}
-          </span>
-        ))
+      ? visibleEntries.map((entry) => `${entry.label}·${entry.count}`).join("、")
       : variant === "compact" ? <span className="workbench-defect-summary-empty">--</span>
       : details ? <span className="workbench-defect-summary-details">{details}</span> : null}
   </p>;

@@ -43,11 +43,51 @@ const defects = [
   }
 ];
 
+const heroVideos = ["/videos/MZ.mp4", "/videos/M2.mp4", "/videos/M3.mp4"];
+
+type NetworkInformation = {
+  effectiveType?: string;
+  saveData?: boolean;
+};
+
 export function DashboardPage() {
   const pageRef = useRef<HTMLDivElement>(null);
   const heroRef = useRef<HTMLElement>(null);
+  const heroVideoRefs = useRef<Array<HTMLVideoElement | null>>([]);
+  const [heroVideoIndex, setHeroVideoIndex] = useState(0);
   const [timeRecommendationOpenSignal, setTimeRecommendationOpenSignal] = useState(0);
   usePublicHeroAnimation(heroRef, undefined, pageRef);
+
+  const prepareNextHeroVideo = (currentIndex: number) => {
+    const connection = (navigator as Navigator & { connection?: NetworkInformation }).connection;
+    const shouldLimitPreload = connection?.saveData || ["slow-2g", "2g"].includes(connection?.effectiveType ?? "");
+    const nextVideo = heroVideoRefs.current[(currentIndex + 1) % heroVideos.length];
+
+    if (!nextVideo || nextVideo.preload !== "none") return;
+    nextVideo.preload = shouldLimitPreload ? "metadata" : "auto";
+    nextVideo.load();
+  };
+
+  const playNextHeroVideo = (currentIndex: number) => {
+    if (currentIndex !== heroVideoIndex) return;
+
+    const nextIndex = (currentIndex + 1) % heroVideos.length;
+    const nextVideo = heroVideoRefs.current[nextIndex];
+    if (!nextVideo) {
+      setHeroVideoIndex(nextIndex);
+      return;
+    }
+
+    if (nextVideo.ended) nextVideo.currentTime = 0;
+    const activateNextVideo = () => {
+      setHeroVideoIndex(nextIndex);
+      prepareNextHeroVideo(nextIndex);
+    };
+    void nextVideo.play().then(
+      activateNextVideo,
+      activateNextVideo
+    );
+  };
 
   useEffect(() => {
     const page = pageRef.current;
@@ -210,17 +250,24 @@ export function DashboardPage() {
     <>
       <div ref={pageRef} className="home-page">
       <section ref={heroRef} className="hero" data-home-panel aria-labelledby="home-hero-title">
-        <video
-          className="hero-background-video"
-          autoPlay
-          loop
-          muted
-          playsInline
-          preload="auto"
-          aria-hidden="true"
-        >
-          <source src="/videos/MZ.mp4" type="video/mp4" />
-        </video>
+        {heroVideos.map((video, index) => (
+          <video
+            key={video}
+            ref={(element) => { heroVideoRefs.current[index] = element; }}
+            className={`hero-background-video${index === heroVideoIndex ? " is-active" : ""}`}
+            autoPlay={index === 0}
+            muted
+            playsInline
+            preload={index === 0 ? "auto" : "none"}
+            aria-hidden="true"
+            onEnded={() => playNextHeroVideo(index)}
+            onPlaying={() => {
+              if (index === heroVideoIndex) prepareNextHeroVideo(index);
+            }}
+          >
+            <source src={video} type="video/mp4" />
+          </video>
+        ))}
         <div className="hero-copy">
           <h1 id="home-hero-title">发现问题，更早一步。</h1>
           <div className="hero-copy-footer">

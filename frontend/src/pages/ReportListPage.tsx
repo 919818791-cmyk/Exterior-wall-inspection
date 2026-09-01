@@ -54,7 +54,7 @@ export function ReportListPage() {
   const reports = useMemo(
     () => [...(reportsQuery.data ?? [])].sort((a, b) => (
       Number(b.is_example) - Number(a.is_example)
-      || b.generated_at.localeCompare(a.generated_at)
+      || b.created_at.localeCompare(a.created_at)
     )),
     [reportsQuery.data]
   );
@@ -105,8 +105,9 @@ export function ReportListPage() {
             onOpen={(report) => navigate(`/trials/${report.id}`)}
             onRename={handleRenameReport}
             openOnRowClick
+            completionTimeLabel="创建时间"
             renderCompletionTime={(report) => (
-              <time dateTime={report.generated_at}>{formatDateTime(report.generated_at)}</time>
+              <time dateTime={report.created_at}>{formatDateTime(report.created_at)}</time>
             )}
             renderDetectionDescription={(report) => <WorkbenchDefectSummary counts={report.by_defect_type} variant="compact" />}
           /> : reports.length ? <div className="project-empty project-search-empty-state">

@@ -139,6 +139,7 @@ def _project_list_item(
     total_defects: int | None = None,
     by_defect_type: dict[str, int] | None = None,
     model_types: list[str] | None = None,
+    has_building_model: bool | None = None,
 ) -> ProjectListItem:
     if model_types is None:
         model_types = list(
@@ -149,6 +150,10 @@ def _project_list_item(
             )
             or []
         )
+    if has_building_model is None:
+        has_building_model = bool(getattr(project, "is_example", False)) or db.scalar(
+            select(BuildingModel.id).where(BuildingModel.project_id == project.id)
+        ) is not None
     return ProjectListItem(
         id=project.id,
         created_by=project.created_by,
@@ -166,6 +171,7 @@ def _project_list_item(
         latitude=project.latitude,
         status=project.status,
         is_example=bool(getattr(project, "is_example", False)),
+        has_building_model=has_building_model,
         current_report_id=project.current_report_id,
         photo_count=_count_photos(db, project.id) if photo_count is None else photo_count,
         valid_photo_count=_count_valid_photos(db, project.id),
@@ -303,6 +309,11 @@ def list_projects(
             )
         ).all()
     }
+    building_model_project_ids = set(
+        db.scalars(
+            select(BuildingModel.project_id).where(BuildingModel.project_id.in_(project_ids))
+        )
+    )
     defect_counts: dict[UUID, dict[str, int]] = {}
     for task_id, defect_type, count in db.execute(
             select(AiDetectionResult.detection_task_id, AiDetectionResult.defect_type, func.count())
@@ -341,6 +352,10 @@ def list_projects(
                 total_defects=sum(defect_counts.get(project.current_task_id, {}).values()),
                 by_defect_type=defect_counts.get(project.current_task_id, {}),
                 model_types=model_types_by_project.get(project.id, []),
+                has_building_model=(
+                    bool(getattr(project, "is_example", False))
+                    or project.id in building_model_project_ids
+                ),
             ).model_copy(update={"first_photo_url": first_photo_url})
         )
     return items

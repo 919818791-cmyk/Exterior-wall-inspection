@@ -17,7 +17,7 @@ from app.models.tables import (
     Project,
     ReviewResult,
 )
-from app.services.defect_area import approximate_bbox_area_m2
+from app.services.defect_area import approximate_bbox_area_m2, approximate_bbox_length_m
 from app.services.defect_numbering import number_defects
 from app.services.photo_metadata import facade_orientation_from_yaw
 
@@ -123,11 +123,14 @@ def build_report_data(
 
         photo = photo_by_id.get(result.photo_id)
         ai_result = ai_by_id.get(result.ai_result_id) if result.ai_result_id is not None else None
-        estimated_area = (
-            approximate_bbox_area_m2(photo, result.bbox_json)
-            if photo is not None
-            else None
-        )
+        is_crack = result.defect_type == "crack"
+        estimated_area = None
+        estimated_length = None
+        if photo is not None:
+            if is_crack:
+                estimated_length = approximate_bbox_length_m(photo, result.bbox_json)
+            else:
+                estimated_area = approximate_bbox_area_m2(photo, result.bbox_json)
         defect_items.append(
             {
                 "id": str(result.id),
@@ -138,9 +141,22 @@ def build_report_data(
                 "bbox_json": result.bbox_json,
                 "polygon_json": result.polygon_json,
                 "severity": result.severity,
-                "area": result.area if result.area is not None else estimated_area,
-                "area_estimated": result.area is None and estimated_area is not None,
-                "length": result.length,
+                "area": (
+                    None
+                    if is_crack
+                    else result.area if result.area is not None else estimated_area
+                ),
+                "area_estimated": (
+                    not is_crack
+                    and result.area is None
+                    and estimated_area is not None
+                ),
+                "length": (
+                    estimated_length
+                    if estimated_length is not None
+                    else result.length
+                ) if is_crack else result.length,
+                "length_estimated": is_crack and estimated_length is not None,
                 "status": result.status,
                 "confidence": ai_result.confidence if ai_result else None,
                 "model_version": ai_result.model_version if ai_result else None,

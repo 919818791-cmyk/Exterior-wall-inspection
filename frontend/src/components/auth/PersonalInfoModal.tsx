@@ -193,8 +193,8 @@ export function PersonalInfoModal({
           <div className="personal-info-actions">
             {isEditing ? (
               <>
-                <button className="personal-info-action secondary" disabled={isSaving} type="button" onClick={cancelEditing}>取消</button>
-                <button className="personal-info-action primary" disabled={isSaving} type="submit">
+                <button className="personal-info-action back-cancel-button" disabled={isSaving} type="button" onClick={cancelEditing}>取消</button>
+                <button className="personal-info-action primary primary-action-button" disabled={isSaving} type="submit">
                   <Save aria-hidden="true" />{isSaving ? "保存中…" : "保存"}
                 </button>
               </>

@@ -7,6 +7,7 @@ from typing import Any, Mapping
 
 FULL_FRAME_DIAGONAL_MM = hypot(36.0, 24.0)
 AREA_PRECISION_M2 = Decimal("0.000001")
+LENGTH_PRECISION_M = Decimal("0.000001")
 
 # Diagonal fields of view used only when a photo has neither calibrated nor
 # 35 mm-equivalent focal length metadata.
@@ -62,17 +63,38 @@ def focal_length_pixels(photo: object) -> Decimal | None:
     return None
 
 
+def meters_per_pixel(photo: object) -> Decimal | None:
+    distance_m = _positive_decimal(_value(photo, "lrf_target_distance"))
+    focal_pixels = focal_length_pixels(photo)
+    if distance_m is None or focal_pixels is None:
+        return None
+    return distance_m / focal_pixels
+
+
 def approximate_bbox_area_m2(photo: object, bbox: object) -> Decimal | None:
     """Estimate a fronto-parallel bounding rectangle's physical area in m²."""
     if not isinstance(bbox, Mapping):
         return None
     width = _positive_decimal(bbox.get("width"))
     height = _positive_decimal(bbox.get("height"))
-    distance_m = _positive_decimal(_value(photo, "lrf_target_distance"))
-    focal_pixels = focal_length_pixels(photo)
-    if width is None or height is None or distance_m is None or focal_pixels is None:
+    pixel_length_m = meters_per_pixel(photo)
+    if width is None or height is None or pixel_length_m is None:
         return None
 
-    meters_per_pixel = distance_m / focal_pixels
-    area = width * height * meters_per_pixel * meters_per_pixel
+    area = width * height * pixel_length_m * pixel_length_m
     return area.quantize(AREA_PRECISION_M2, rounding=ROUND_HALF_UP)
+
+
+def approximate_bbox_length_m(photo: object, bbox: object) -> Decimal | None:
+    """Estimate a crack's length from its bounding-box diagonal in metres."""
+    if not isinstance(bbox, Mapping):
+        return None
+    width = _positive_decimal(bbox.get("width"))
+    height = _positive_decimal(bbox.get("height"))
+    pixel_length_m = meters_per_pixel(photo)
+    if width is None or height is None or pixel_length_m is None:
+        return None
+
+    diagonal_pixels = (width * width + height * height).sqrt()
+    length = diagonal_pixels * pixel_length_m
+    return length.quantize(LENGTH_PRECISION_M, rounding=ROUND_HALF_UP)

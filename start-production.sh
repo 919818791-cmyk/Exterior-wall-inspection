@@ -343,6 +343,15 @@ server {
         add_header X-Frame-Options "SAMEORIGIN" always;
     }
 
+    location ^~ /videos/ {
+        try_files \$uri =404;
+        expires 30d;
+        add_header Cache-Control "public, max-age=2592000" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header X-Frame-Options "SAMEORIGIN" always;
+    }
+
     location ~* \.(?:png|jpe?g|webp|gif|svg|ico)\$ {
         try_files \$uri =404;
         expires 7d;

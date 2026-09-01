@@ -55,7 +55,11 @@ import { useAuthStore } from "@/stores/useAuthStore";
 import type { StartDetectionPayload } from "@/types/projects";
 import { createAsyncLimiter } from "@/utils/asyncLimiter";
 import { createClientId } from "@/utils/id";
-import { PHOTO_UPLOAD_WINDOW_WARNING, validatePhotoUpload } from "@/utils/photoUpload";
+import {
+  PROFESSIONAL_PHOTO_UPLOAD_HINT,
+  PHOTO_UPLOAD_WINDOW_WARNING,
+  validatePhotoUpload
+} from "@/utils/photoUpload";
 import { trialDefectBoxLabel, trialDefectDisplayFromModel } from "@/utils/trialDefectDisplay";
 import { readTrialPhotoMetadata, type TrialPhotoMetadata } from "@/utils/photoMetadata";
 
@@ -69,7 +73,6 @@ const PHOTO_PREVIEW_MIN_ZOOM = 1;
 const PHOTO_PREVIEW_MAX_ZOOM = 4;
 const PHOTO_PREVIEW_ZOOM_STEP = 0.25;
 const runTrialPhotoUpload = createAsyncLimiter(6);
-const UPLOAD_LIMIT_TIP = "支持 JPG、PNG 图片，单张最大 5MB；单次最多 30 张";
 const GENERATION_STEP_MESSAGES = [
   "正在读取照片信息",
   "正在调用视觉检测服务",
@@ -77,7 +80,6 @@ const GENERATION_STEP_MESSAGES = [
   "正在生成标注结果"
 ] as const;
 const TRIAL_REQUEST_STORAGE_PREFIX = "exterior-wall:active-trial-request:";
-const PHOTO_DELETE_UNDO_MILLISECONDS = 6000;
 const EMPTY_TRIAL_PHOTO_METADATA: TrialPhotoMetadata = {
   xmpDroneDjiImageSource: null,
   ifd0ImageDescription: null,
@@ -92,7 +94,6 @@ interface SelectedTrialPhoto {
   file: File;
   metadata: TrialPhotoMetadata;
   uploadStatus: TrialPhotoUploadStatus;
-  uploadProgress: number;
   uploadError?: string;
   unsupportedFormat?: boolean;
   uploadedPhoto?: TrialUploadedPhoto;
@@ -113,11 +114,6 @@ interface TrialAnnotatedPreview {
   filename: string;
   previewUrl: string;
   findings: TrialGeneratedResult["findings"];
-}
-
-interface RemovedTrialPhoto {
-  index: number;
-  photo: SelectedTrialPhoto;
 }
 
 type TrialDetectionDialogStage = "confirmation" | "progress" | "completed" | "error";
@@ -142,8 +138,6 @@ export function TrialExperiencePage() {
   const previewDragRef = useRef<{ pointerId: number; x: number; y: number; distance: number } | null>(null);
   const previewDragMovedRef = useRef(false);
   const allowNavigationRef = useRef(false);
-  const removedPhotoRef = useRef<RemovedTrialPhoto | null>(null);
-  const photoDeleteTimerRef = useRef<number | null>(null);
   const handledTrialRequestIdsRef = useRef(new Set<string>());
   const [selectedPhotos, setSelectedPhotos] = useState<SelectedTrialPhoto[]>([]);
   const [selectedModels, setSelectedModels] = useState<Array<(typeof MODEL_OPTIONS)[number]>>([...MODEL_OPTIONS]);
@@ -168,7 +162,6 @@ export function TrialExperiencePage() {
   const [preparedDetection, setPreparedDetection] = useState<PreparedTrialDetection | null>(null);
   const [isVersionNoticeOpen, setIsVersionNoticeOpen] = useState(true);
   const [guideExampleTab, setGuideExampleTab] = useState<"original" | "annotated">("original");
-  const [recentlyRemovedPhoto, setRecentlyRemovedPhoto] = useState<RemovedTrialPhoto | null>(null);
   const [activeTrialRequestId, setActiveTrialRequestId] = useState<string | null>(() => {
     if (!user) return null;
     try {
@@ -363,16 +356,6 @@ export function TrialExperiencePage() {
     void confirmAndLeave();
   }, [navigationBlocker.state]);
 
-  useEffect(() => () => {
-    if (photoDeleteTimerRef.current !== null) {
-      window.clearTimeout(photoDeleteTimerRef.current);
-    }
-    const removed = removedPhotoRef.current;
-    if (removed?.photo.uploadedPhoto) {
-      void deleteTrialPhoto(removed.photo.uploadedPhoto.id);
-    }
-  }, []);
-
   useEffect(() => {
     if (previewIndex === null && !annotatedPreview) return;
 
@@ -528,63 +511,27 @@ export function TrialExperiencePage() {
     closePhotoPreview();
   }
 
-  function removePhoto(index: number) {
+  async function removePhoto(index: number) {
     if (isPhotoEditingLocked) return;
     const photo = selectedPhotos[index];
     if (!photo || photo.isArchived) return;
-    void finalizePendingPhotoRemoval();
-    const removal = { index, photo };
-    removedPhotoRef.current = removal;
-    setRecentlyRemovedPhoto(removal);
     setSelectedPhotos((current) => current.filter((_, photoIndex) => photoIndex !== index));
     setPreviewIndex((current) => (
       current === null ? null : current === index ? null : current > index ? current - 1 : current
     ));
     setError("");
-    photoDeleteTimerRef.current = window.setTimeout(() => {
-      void finalizePendingPhotoRemoval();
-    }, PHOTO_DELETE_UNDO_MILLISECONDS);
-  }
-
-  async function finalizePendingPhotoRemoval() {
-    const removal = removedPhotoRef.current;
-    if (!removal) return;
-    if (photoDeleteTimerRef.current !== null) {
-      window.clearTimeout(photoDeleteTimerRef.current);
-      photoDeleteTimerRef.current = null;
-    }
-    removedPhotoRef.current = null;
-    setRecentlyRemovedPhoto(null);
-    if (!removal.photo.uploadedPhoto) return;
+    if (!photo.uploadedPhoto) return;
     try {
-      await deleteTrialPhoto(removal.photo.uploadedPhoto.id);
+      await deleteTrialPhoto(photo.uploadedPhoto.id);
     } catch (deleteError) {
       setSelectedPhotos((current) => {
-        if (current.some((photo) => photo.id === removal.photo.id)) return current;
+        if (current.some((currentPhoto) => currentPhoto.id === photo.id)) return current;
         const next = [...current];
-        next.splice(Math.min(removal.index, next.length), 0, removal.photo);
+        next.splice(Math.min(index, next.length), 0, photo);
         return next;
       });
       setError(deleteError instanceof Error ? `${deleteError.message}，照片已恢复。` : "删除照片失败，照片已恢复。");
     }
-  }
-
-  function undoPhotoRemoval() {
-    const removal = removedPhotoRef.current;
-    if (!removal) return;
-    if (photoDeleteTimerRef.current !== null) {
-      window.clearTimeout(photoDeleteTimerRef.current);
-      photoDeleteTimerRef.current = null;
-    }
-    removedPhotoRef.current = null;
-    setRecentlyRemovedPhoto(null);
-    setSelectedPhotos((current) => {
-      if (current.some((photo) => photo.id === removal.photo.id)) return current;
-      const next = [...current];
-      next.splice(Math.min(removal.index, next.length), 0, removal.photo);
-      return next;
-    });
-    setActionHint("已撤销删除。");
   }
 
   function closePhotoPreview() {
@@ -657,7 +604,6 @@ export function TrialExperiencePage() {
   }
 
   async function discardPendingUploads() {
-    await finalizePendingPhotoRemoval();
     const unarchivedPhotos = selectedPhotos.filter((photo) => !photo.isArchived);
     await Promise.allSettled(unarchivedPhotos.map((photo) => (
       photo.uploadedPhoto ? deleteTrialPhoto(photo.uploadedPhoto.id) : Promise.resolve()
@@ -825,19 +771,13 @@ export function TrialExperiencePage() {
   ): Promise<TrialPhotoUploadSuccess | null> {
     setSelectedPhotos((current) => current.map((currentPhoto) => (
       currentPhoto.id === photo.id
-        ? { ...resetTrialPhotoUpload(currentPhoto), uploadStatus: "uploading", uploadProgress: 0 }
+        ? { ...resetTrialPhotoUpload(currentPhoto), uploadStatus: "uploading" }
         : currentPhoto
     )));
 
     try {
       const uploadedPhoto = await runTrialPhotoUpload(() => (
-        uploadTrialPhotoFile(photo.file, (progress) => {
-          setSelectedPhotos((current) => current.map((currentPhoto) => (
-            currentPhoto.id === photo.id
-              ? { ...currentPhoto, uploadProgress: progress.percent }
-              : currentPhoto
-          )));
-        })
+        uploadTrialPhotoFile(photo.file)
       ));
 
       const generatedFile = {
@@ -918,16 +858,9 @@ export function TrialExperiencePage() {
     return photoPreviews.slice(startIndex, startIndex + TRIAL_PHOTO_PAGE_SIZE);
   }, [photoPreviews, visiblePhotoPage]);
   const detectionProgress = [18, 42, 68, 88][generationStepIndex] ?? 88;
-  const totalPhotoCount = pendingPhotos.length;
-  const uploadedPhotoCount = pendingPhotos.filter((photo) => photo.uploadStatus === "uploaded").length;
-  const failedPhotoCount = pendingPhotos.filter((photo) => photo.uploadStatus === "failed").length;
   const activePhotoUploadCount = pendingPhotos.filter(
     (photo) => photo.uploadStatus === "ready" || photo.uploadStatus === "uploading"
   ).length;
-  const photoUploadProgress = totalPhotoCount
-    ? Math.round(uploadedPhotoCount / totalPhotoCount * 100)
-    : 0;
-  const allPhotosUploaded = totalPhotoCount > 0 && uploadedPhotoCount === totalPhotoCount;
 
   function openProfessionalDetection() {
     allowNavigationRef.current = true;
@@ -960,38 +893,23 @@ export function TrialExperiencePage() {
 
             <div className="project-editor-photo-block">
               <section className="project-photo-workspace professional-create-photos" aria-label="检测照片">
-                {activePhotoUploadCount || failedPhotoCount || allPhotosUploaded ? (
-                  <header className="project-photo-workspace-heading">
-                    <div className="new-project-photo-heading-status">
-                      {activePhotoUploadCount ? (
-                        <div className="new-project-upload-overview" role="status" aria-live="polite">
-                          <span>
-                            正在上传，已完成 {uploadedPhotoCount}/{totalPhotoCount}<br />
-                            <span className="photo-upload-window-warning">{PHOTO_UPLOAD_WINDOW_WARNING}</span>
-                          </span>
-                          <span
-                            aria-label={`照片上传进度 ${photoUploadProgress}%`}
-                            aria-valuemax={100}
-                            aria-valuemin={0}
-                            aria-valuenow={photoUploadProgress}
-                            className="new-project-upload-track"
-                            role="progressbar"
-                          >
-                            <i style={{ width: `${photoUploadProgress}%` }} />
-                          </span>
-                        </div>
-                      ) : failedPhotoCount ? (
-                        <span className="new-project-upload-summary is-error">{failedPhotoCount} 张上传失败</span>
-                      ) : (
-                        <span className="new-project-upload-summary is-complete photo-upload-complete-status">上传完成</span>
-                      )}
-                    </div>
-                  </header>
-                ) : null}
                 <ProjectPhotoUploader
                   addDisabled={isPhotoEditingLocked}
                   disabled={isPhotoEditingLocked}
-                  emptyHint={<span className="professional-drone-upload-hint">{UPLOAD_LIMIT_TIP}</span>}
+                  emptyHint={(
+                    <span className="professional-drone-upload-hint">
+                      {PROFESSIONAL_PHOTO_UPLOAD_HINT}
+                      {activePhotoUploadCount ? (
+                        <>
+                          <br />
+                          <span role="status">
+                            正在上传 {activePhotoUploadCount} 张，
+                            <span className="photo-upload-window-warning">{PHOTO_UPLOAD_WINDOW_WARNING}</span>
+                          </span>
+                        </>
+                      ) : null}
+                    </span>
+                  )}
                   hasPhotos={Boolean(photoPreviews.length)}
                   onFilesSelected={(files) => void applyFiles(files)}
                   presentation="line"
@@ -1056,7 +974,7 @@ export function TrialExperiencePage() {
                 />
                 <footer className="professional-create-actions">
                   <button
-                    className="button secondary"
+                    className="back-cancel-button"
                     disabled={isPhotoEditingLocked || isReportNameSaving}
                     type="button"
                     onClick={() => navigate("/trials")}
@@ -1064,7 +982,7 @@ export function TrialExperiencePage() {
                     取消
                   </button>
                   <button
-                    className="button primary professional-create-submit"
+                    className="button primary-action-button professional-create-submit"
                     disabled={isPhotoEditingLocked || isReportNameSaving}
                     type="button"
                     onClick={generateReport}
@@ -1078,12 +996,6 @@ export function TrialExperiencePage() {
             <section className="trial-project-feedback" aria-live="polite">
               {error ? <p className="create-form-error">{error}</p> : null}
               {actionHint ? <p className="trial-action-hint">{actionHint}</p> : null}
-              {recentlyRemovedPhoto ? (
-                <p className="trial-undo-message" role="status">
-                  已移除“{recentlyRemovedPhoto.photo.file.name}”
-                  <button type="button" onClick={undoPhotoRemoval}>撤销</button>
-                </p>
-              ) : null}
             </section>
         </section>
         </form>
@@ -1280,7 +1192,7 @@ export function TrialExperiencePage() {
               </ModalBody>
               <ModalFooter className="trial-detection-modal-footer">
                 <button
-                  className="button secondary trial-return-list-button"
+                  className="back-cancel-button"
                   disabled={!archivedReportId || isArchiving}
                   type="button"
                   onClick={returnToTrialList}
@@ -1289,7 +1201,7 @@ export function TrialExperiencePage() {
                   返回列表
                 </button>
                 <button
-                  className="button primary trial-view-result-button"
+                  className="button primary-action-button trial-view-result-button"
                   disabled={!archivedReportId || isArchiving}
                   type="button"
                   onClick={viewDetectionResult}
@@ -1311,7 +1223,7 @@ export function TrialExperiencePage() {
                 <p>{detectionDialogMessage || "检测任务未能完成，请返回调整后重新发起。"}</p>
               </ModalBody>
               <ModalFooter className="trial-detection-modal-footer trial-detection-error-footer">
-                <button className="button primary" type="button" onClick={() => setDetectionDialogStage(null)}>
+                <button className="button primary-action-button" type="button" onClick={() => setDetectionDialogStage(null)}>
                   确认
                 </button>
               </ModalFooter>
@@ -1347,14 +1259,14 @@ export function TrialExperiencePage() {
           </ModalBody>
           <ModalFooter className="trial-version-modal-footer">
             <button
-              className="button secondary"
+              className="back-cancel-button"
               type="button"
               onClick={openProfessionalDetection}
             >
               前往专业版检测
             </button>
             <button
-              className="button primary"
+              className="button primary-action-button"
               type="button"
               onClick={() => setIsVersionNoticeOpen(false)}
             >
@@ -1380,8 +1292,7 @@ async function createSelectedTrialPhoto(file: File): Promise<SelectedTrialPhoto>
     id: createTrialPhotoId(file),
     file,
     metadata: await readMetadataSafely(file),
-    uploadStatus: "ready",
-    uploadProgress: 0
+    uploadStatus: "ready"
   };
 }
 
@@ -1394,7 +1305,6 @@ function resetTrialPhotoUpload(photo: SelectedTrialPhoto): SelectedTrialPhoto {
   return {
     ...photo,
     uploadStatus: "ready",
-    uploadProgress: 0,
     uploadError: undefined,
     unsupportedFormat: undefined,
     uploadedPhoto: undefined,
@@ -1410,7 +1320,6 @@ function photoWithUploadResult(
     ...photo,
     metadata: metadataFromUploadedPhoto(result.uploadedPhoto, photo.metadata),
     uploadStatus: "uploaded",
-    uploadProgress: 100,
     uploadError: undefined,
     unsupportedFormat: undefined,
     uploadedPhoto: result.uploadedPhoto,

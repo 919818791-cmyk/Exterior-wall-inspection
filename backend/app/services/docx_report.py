@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 from copy import deepcopy
 from io import BytesIO
 from pathlib import Path
@@ -11,26 +12,24 @@ from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Emu, RGBColor
+from docx.text.run import Run
 from PIL import Image, ImageOps, UnidentifiedImageError
 
+from app.services.defect_annotation import (
+    DefectAnnotationError,
+    defect_label,
+    draw_defect_annotations,
+    finite_number,
+)
 from app.services.defect_numbering import number_defects
 
-
-DEFECT_LABELS = {
-    "crack": "裂缝",
-    "missing": "剥落",
-    "spalling": "剥落",
-    "moisture": "潮湿",
-    "corrosion": "锈蚀",
-    "hollow": "空鼓",
-}
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 REPORT_TEMPLATE_DIR = BACKEND_ROOT / "templates" / "reports"
 FORMAL_TEMPLATE = REPORT_TEMPLATE_DIR / "正式报告示例.docx"
 
-TABLE_IMAGE_WIDTH_EMU = 1_617_980
-TABLE_IMAGE_HEIGHT_EMU = 1_212_850
+TABLE_IMAGE_WIDTH_EMU = 1_440_000
+TABLE_IMAGE_HEIGHT_EMU = 1_080_000
 TABLE_IMAGE_MAX_WIDTH = 1_200
 TABLE_IMAGE_MAX_HEIGHT = 900
 TABLE_IMAGE_JPEG_QUALITY = 82
@@ -191,11 +190,16 @@ def _paired_photo_rows(data: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _defect_description(defects: list[dict[str, Any]]) -> str:
-    if not defects:
+    labels = [
+        defect_label(defect.get("defect_type"))
+        for defect in defects
+    ]
+    counts = Counter(labels)
+    if not counts:
         return "未检出明显缺陷"
     return "\n".join(
-        f"{defect.get('defect_no') or DEFECT_LABELS.get(str(defect.get('defect_type') or ''), _text(defect.get('defect_type')))}"
-        for defect in defects
+        f"疑似{label}: {count}处"
+        for label, count in counts.items()
     )
 
 
@@ -211,7 +215,80 @@ def _metadata_text(photo: dict[str, Any] | None) -> str:
     return f"{orientation}\n{altitude_text}"
 
 
-def _compressed_table_image(original_bytes: bytes) -> BytesIO:
+def _defect_measurement_text(value: Any) -> str | None:
+    measurement = finite_number(value)
+    if measurement is None or measurement < 0:
+        return None
+    return f"{measurement:.3f}"
+
+
+def _append_prototype_run(paragraph, prototype: Any | None, value: str) -> Run:
+    if prototype is None:
+        return paragraph.add_run(value)
+    run_element = deepcopy(prototype)
+    paragraph._p.append(run_element)
+    run = Run(run_element, paragraph)
+    run.text = value
+    return run
+
+
+def _set_defect_details(
+    paragraph,
+    defects: list[dict[str, Any]],
+    run_prototypes: list[Any],
+) -> None:
+    _clear_paragraph_content(paragraph)
+    prototype = lambda index: (
+        run_prototypes[min(index, len(run_prototypes) - 1)]
+        if run_prototypes
+        else None
+    )
+    if not defects:
+        _append_prototype_run(paragraph, prototype(0), "—")
+        return
+
+    detail_items: list[tuple[dict[str, Any], bool, str] | None] = []
+    has_missing_parameters = False
+    for defect in defects:
+        is_crack = defect.get("defect_type") == "crack"
+        measurement_text = _defect_measurement_text(
+            defect.get("length") if is_crack else defect.get("area")
+        )
+        if measurement_text is None:
+            has_missing_parameters = True
+        else:
+            detail_items.append((defect, is_crack, measurement_text))
+    if has_missing_parameters:
+        detail_items.append(None)
+
+    for index, detail_item in enumerate(detail_items):
+        if detail_item is None:
+            last_run = _append_prototype_run(paragraph, prototype(0), "参数不足")
+            if index < len(detail_items) - 1:
+                last_run.add_break()
+            continue
+
+        defect, is_crack, measurement_text = detail_item
+        defect_no = _text(defect.get("defect_no"), fallback="缺陷")
+        _append_prototype_run(paragraph, prototype(0), defect_no)
+        estimated = defect.get(
+            "length_estimated" if is_crack else "area_estimated"
+        ) is True
+        _append_prototype_run(paragraph, prototype(1), "≈" if estimated else " ")
+        _append_prototype_run(paragraph, prototype(2), measurement_text)
+        last_run = _append_prototype_run(
+            paragraph,
+            prototype(3),
+            "m" if is_crack else "m²",
+        )
+        if index < len(detail_items) - 1:
+            last_run.add_break()
+
+
+def _compressed_table_image(
+    original_bytes: bytes,
+    defects: list[dict[str, Any]] | None = None,
+) -> BytesIO:
     try:
         with Image.open(BytesIO(original_bytes)) as source:
             image = ImageOps.exif_transpose(source)
@@ -222,6 +299,17 @@ def _compressed_table_image(original_bytes: bytes) -> BytesIO:
                 image = flattened
             else:
                 image = image.convert("RGB")
+
+            draw_defect_annotations(
+                image,
+                defects or [],
+                numbered_labels=True,
+                line_width_ratio=0.006,
+                min_line_width=5,
+                font_size_ratio=0.055,
+                min_font_size=32,
+                max_font_size=96,
+            )
 
             available_width = min(
                 image.width,
@@ -250,6 +338,8 @@ def _compressed_table_image(original_bytes: bytes) -> BytesIO:
             )
             output.seek(0)
             return output
+    except DefectAnnotationError as exc:
+        raise DocxReportExportError(f"{exc} DOCX 导出已终止。") from exc
     except (UnidentifiedImageError, OSError, ValueError) as exc:
         raise DocxReportExportError("检测照片无法读取或格式不受支持，DOCX 导出已终止。") from exc
 
@@ -283,7 +373,11 @@ def _set_paragraph_text(paragraph, value: str, *, blue: bool = False) -> None:
         run.font.color.rgb = RGBColor(0x00, 0x00, 0xFF)
 
 
-def _read_photo_image(photo: dict[str, Any], read_object: ObjectReader | None) -> BytesIO | None:
+def _read_photo_image(
+    photo: dict[str, Any],
+    defects: list[dict[str, Any]],
+    read_object: ObjectReader | None,
+) -> BytesIO | None:
     bucket = photo.get("storage_bucket")
     object_key = photo.get("storage_object_key")
     if read_object is None or not bucket or not object_key:
@@ -293,7 +387,7 @@ def _read_photo_image(photo: dict[str, Any], read_object: ObjectReader | None) -
     except Exception as exc:
         filename = _text(photo.get("original_filename"), fallback="检测照片")
         raise DocxReportExportError(f"{filename} 原图读取失败，DOCX 导出已终止。") from exc
-    return _compressed_table_image(original_bytes)
+    return _compressed_table_image(original_bytes, defects)
 
 
 def _set_photo_cell(
@@ -310,7 +404,7 @@ def _set_photo_cell(
 
     _replace_cell_paragraphs(cell, populated_prototypes)
     photo = row["photo"]
-    image_stream = _read_photo_image(photo, read_object)
+    image_stream = _read_photo_image(photo, row["defects"], read_object)
     image_paragraph = cell.paragraphs[0]
     _clear_paragraph_content(image_paragraph)
     if image_stream is not None:
@@ -353,13 +447,18 @@ def _populate_result_table(
     if not document.tables or len(document.tables[0].rows) < 2:
         raise DocxReportExportError("DOCX 模板缺少结果表格数据行原型。")
     table = document.tables[0]
+    if len(table.rows[0].cells) < 6 or len(table.rows[1].cells) < 6:
+        raise DocxReportExportError("DOCX 模板缺少“缺陷详情”列。")
     header_properties = table.rows[0]._tr.get_or_add_trPr()
     if header_properties.find(qn("w:tblHeader")) is None:
         header_properties.append(OxmlElement("w:tblHeader"))
     prototype_row = deepcopy(table.rows[1]._tr)
     populated_photo_prototypes = [deepcopy(paragraph._p) for paragraph in table.rows[1].cells[1].paragraphs]
     empty_photo_prototypes = [deepcopy(paragraph._p) for paragraph in table.rows[1].cells[2].paragraphs]
-
+    detail_run_prototypes = [
+        deepcopy(run._r)
+        for run in table.rows[1].cells[5].paragraphs[0].runs
+    ]
     for row_element in list(table._tbl.tr_lst[1:]):
         table._tbl.remove(row_element)
 
@@ -390,11 +489,16 @@ def _populate_result_table(
             *(pair["visible"]["defects"] if pair["visible"] else []),
             *(pair["thermal"]["defects"] if pair["thermal"] else []),
         ]
-        _set_paragraph_text(row.cells[3].paragraphs[0], _defect_description(defects), blue=True)
         primary = pair["visible"] or pair["thermal"]
         _set_paragraph_text(
-            row.cells[4].paragraphs[0],
+            row.cells[3].paragraphs[0],
             _metadata_text(primary["photo"] if primary else None),
+        )
+        _set_paragraph_text(row.cells[4].paragraphs[0], _defect_description(defects), blue=True)
+        _set_defect_details(
+            row.cells[5].paragraphs[0],
+            defects,
+            detail_run_prototypes,
         )
 
     for row in table.rows:

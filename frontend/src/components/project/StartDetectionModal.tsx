@@ -205,7 +205,7 @@ export function StartDetectionModal({
             </ModalBody>
             <ModalFooter className="start-detection-modal-footer">
               <button
-                className="button secondary report-back-button start-detection-cancel-button"
+                className="back-cancel-button"
                 disabled={isPending}
                 type="button"
                 onClick={onClose}
@@ -213,7 +213,7 @@ export function StartDetectionModal({
                 取消
               </button>
               <button
-                className="button primary"
+                className="button primary-action-button"
                 disabled={isPending}
                 type="button"
                 onClick={submit}

@@ -94,7 +94,7 @@ export function ReviewProjectListPage() {
             <h1>审核工作台</h1>
           </div>
           <div className="project-hero-action standalone-management-actions">
-            <Link className="button secondary report-back-button standalone-management-home-link" to="/">
+            <Link className="back-cancel-button standalone-management-home-link" to="/">
               <ArrowLeft aria-hidden="true" />
               <span>返回首页</span>
             </Link>

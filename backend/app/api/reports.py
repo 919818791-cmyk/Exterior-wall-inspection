@@ -55,6 +55,7 @@ from app.schemas.phase7 import (
 )
 from app.schemas.projects import DeleteResponse
 from app.services.docx_report import DocxReportExportError, build_report_docx
+from app.services.defect_area import approximate_bbox_length_m
 from app.services.defect_numbering import number_defects
 from app.services.inference_scheduling import (
     InferenceUsageReservation,
@@ -413,6 +414,7 @@ def _data_with_photo_urls(data: dict[str, Any], request: Request | None = None) 
         defect for defect in enriched.get("defects") or [] if isinstance(defect, dict)
     )
     photo_urls: dict[str, dict[str, str | None]] = {}
+    photos_by_id: dict[str, dict[str, Any]] = {}
 
     for photo in enriched.get("photos") or []:
         if not isinstance(photo, dict):
@@ -422,10 +424,12 @@ def _data_with_photo_urls(data: dict[str, Any], request: Request | None = None) 
         photo["preview_url"] = preview_url
         photo["thumbnail_url"] = thumbnail_url
         if photo.get("id"):
-            photo_urls[str(photo["id"])] = {
+            photo_id = str(photo["id"])
+            photo_urls[photo_id] = {
                 "preview_url": preview_url,
                 "thumbnail_url": thumbnail_url,
             }
+            photos_by_id[photo_id] = photo
 
     for defect in enriched.get("defects") or []:
         if not isinstance(defect, dict):
@@ -434,6 +438,21 @@ def _data_with_photo_urls(data: dict[str, Any], request: Request | None = None) 
         if urls:
             defect["photo_preview_url"] = urls["preview_url"]
             defect["photo_thumbnail_url"] = urls["thumbnail_url"]
+        if defect.get("defect_type") != "crack":
+            continue
+        photo = photos_by_id.get(str(defect.get("photo_id")))
+        calculated_length = (
+            approximate_bbox_length_m(photo, defect.get("bbox_json"))
+            if photo is not None
+            else None
+        )
+        if calculated_length is not None:
+            defect["length"] = str(calculated_length)
+            defect["length_estimated"] = True
+        else:
+            defect.setdefault("length_estimated", False)
+        defect["area"] = None
+        defect["area_estimated"] = False
 
     return enriched
 
@@ -580,6 +599,7 @@ def _list_item(
         first_photo_url=_first_photo_url(data, request),
         generated_at=report.generated_at,
         pushed_at=report.pushed_at,
+        created_at=report.created_at,
         updated_at=report.updated_at,
     )
 
@@ -611,6 +631,7 @@ def _trial_list_item(
         first_photo_url=_first_photo_url(data, request),
         generated_at=result.generated_at,
         pushed_at=None,
+        created_at=result.created_at,
         updated_at=result.updated_at,
     )
 
@@ -691,7 +712,6 @@ def list_reports(
         )
         .order_by(
             TrialDetectionResult.is_example.desc(),
-            TrialDetectionResult.generated_at.desc(),
             TrialDetectionResult.created_at.desc(),
         )
     )

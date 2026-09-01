@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
-import { deleteProject, projectsQueryOptions, updateProject } from "@/api/projects";
+import { deleteProject, projectsQueryOptions } from "@/api/projects";
 import { ListPagination } from "@/components/ListPagination";
 import { WorkbenchDefectSummary, WorkbenchResultTable } from "@/components/WorkbenchResultTable";
 import { useAuthStore } from "@/stores/useAuthStore";
@@ -11,15 +11,8 @@ import {
   formatDateTime,
   formatEstimatedRemainingTime,
   getProfessionalDisplayState,
-  getProfessionalEstimatedCompletionAt,
-  type ProfessionalDisplayStatus
+  getProfessionalEstimatedCompletionAt
 } from "@/utils/projectDisplay";
-
-const projectStatusClasses: Record<ProfessionalDisplayStatus, "detecting" | "ready" | "reviewed" | "neutral"> = {
-  draft: "neutral",
-  detecting: "detecting",
-  completed: "ready"
-};
 
 const PAGE_SIZE = 10;
 
@@ -31,12 +24,6 @@ export function ProjectListPage() {
   const [projectNameSearch, setProjectNameSearch] = useState("");
   const projectsQuery = useQuery(projectsQueryOptions(user));
 
-  const renameProjectMutation = useMutation({
-    mutationFn: ({ projectId, name }: { projectId: string; name: string }) => updateProject(projectId, { name }),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["projects"] });
-    }
-  });
   const deleteProjectMutation = useMutation({
     mutationFn: deleteProject,
     onSuccess: async (_, projectId) => {
@@ -44,18 +31,6 @@ export function ProjectListPage() {
       await queryClient.invalidateQueries({ queryKey: ["projects"] });
     }
   });
-
-  const handleRenameProject = (project: ProjectListItem) => {
-    const nextName = window.prompt("请输入新的检测名称", project.name);
-    if (nextName === null) return;
-    const name = nextName.trim();
-    if (!name) {
-      window.alert("检测名称不能为空。");
-      return;
-    }
-    if (name === project.name) return;
-    renameProjectMutation.mutate({ projectId: project.id, name });
-  };
 
   const handleDeleteProject = (project: ProjectListItem) => {
     if (!["draft", "reviewed", "completed"].includes(project.status)) return;
@@ -95,7 +70,7 @@ export function ProjectListPage() {
     <div className="project-workbench-layout">
       <div className="project-workbench-content-panel">
         {projectsQuery.isError ? <p className="project-list-error">项目列表加载失败，请稍后重试。</p> : null}
-        {renameProjectMutation.isError || deleteProjectMutation.isError ? <p className="project-list-error" role="alert">操作失败，请稍后重试。</p> : null}
+        {deleteProjectMutation.isError ? <p className="project-list-error" role="alert">操作失败，请稍后重试。</p> : null}
         <section
           className="project-list-panel workbench-result-list-panel"
           aria-label="项目列表"
@@ -119,13 +94,12 @@ export function ProjectListPage() {
           <div className="project-table-wrap project-workbench-table-wrap">
           {projectsQuery.isLoading ? <div className="project-empty"><strong>正在加载项目…</strong></div> : visibleProjects.length && workbenchProjects.length ? <WorkbenchResultTable
             canDelete={(project) => canManageProject(project) && ["draft", "reviewed", "completed"].includes(project.status)}
-            canRename={(project) => canManageProject(project) && project.status === "draft"}
             columnLabel="检测名称"
             completionTimeLabel="完成时间"
             getDeleteDisabledReason={(project) => project.is_example
               ? "示例项目为所有账号共享，无法删除"
               : canManageProject(project) ? "检测进行中，无法删除" : "仅项目所有者或管理员可以删除"}
-            getLeadingActionLabel={() => "3D模型"}
+            getLeadingActionLabel={(project) => project.has_building_model ? "3D模型" : undefined}
             getKey={(project) => project.id}
             items={paginatedProjects}
             onDelete={handleDeleteProject}
@@ -134,9 +108,8 @@ export function ProjectListPage() {
             })}
             onOpen={(project) => navigate(`/detections/${project.id}`)}
             openOnRowClick
-            onRename={handleRenameProject}
             renderCompletionTime={(project) => {
-              if (project.professionalState.status === "draft") return "--";
+              if (project.professionalState.status === "draft") return "未开始检测";
               if (project.professionalState.status === "completed") {
                 if (!project.completed_at) return "--";
                 return <time dateTime={project.completed_at ?? undefined}>
@@ -152,14 +125,10 @@ export function ProjectListPage() {
               placeholder={project.professionalState.status === "completed" ? undefined : "--"}
               variant="compact"
             />}
-            renderTitleAccessory={(project) => <span
-              aria-label={`当前状态：${project.professionalState.statusLabel}`}
-              className={`status-tag ${projectStatusClasses[project.professionalState.status]}`}
-              title={project.professionalState.statusLabel}
-            >
-              {project.professionalState.statusLabel}
-            </span>}
-            titleAccessoryLabel="检测进度"
+            renderTitleAccessory={(project) => (
+              <time dateTime={project.created_at}>{formatDateTime(project.created_at)}</time>
+            )}
+            titleAccessoryLabel="创建时间"
           /> : visibleProjects.length ? <div className="project-empty project-search-empty-state">
             <strong>未找到匹配的检测项目</strong>
             <span>请尝试其他项目名称。</span>

@@ -83,7 +83,7 @@ export function ReportDetailPage() {
               {isReviewPreview ? (
                 <Button
                   as={RouterLink}
-                  className="report-back-button w-fit rounded-lg border border-slate-300 bg-white font-bold text-slate-700 shadow-none"
+                  className="back-cancel-button w-fit"
                   to={`/review/detections/${reviewTaskId}`}
                   variant="flat"
                 >
@@ -206,7 +206,7 @@ function TrialResultDetail({
         actions={reviewTaskId ? (
             <button
               aria-busy={completeReviewMutation.isPending}
-              className="button primary review-preview-complete-button"
+              className="button primary-action-button review-preview-complete-button"
               disabled={completeReviewMutation.isPending}
               type="button"
               onClick={() => {
@@ -223,7 +223,7 @@ function TrialResultDetail({
           ) : canExport ? (
             <button
               aria-busy={exportMutation.isPending}
-              className="button secondary report-back-button report-export-button"
+              className="button primary-action-button report-export-button"
               disabled={exportMutation.isPending}
               type="button"
               onClick={() => {
@@ -291,7 +291,7 @@ function TrialResultDetail({
                               <th className="trial-photo-column formal-visible-photo-column">可见光图像</th>
                               <th className="trial-photo-column formal-thermal-photo-column">热红外图像</th>
                               <th className="trial-report-description">检测说明</th>
-                              <th className="formal-report-area-column">缺陷面积（m²）</th>
+                              <th className="formal-report-detail-column">缺陷详情</th>
                               <th className="formal-report-metadata-column">立面朝向<br />拍摄高度（m）</th>
                             </tr>
                           </thead>
@@ -462,7 +462,7 @@ function FormalResultColumns() {
       <col className="formal-visible-photo-col" />
       <col className="formal-thermal-photo-col" />
       <col className="trial-description-col" />
-      <col className="formal-report-area-col" />
+      <col className="formal-report-detail-col" />
       <col className="formal-report-metadata-col" />
     </colgroup>
   );
@@ -518,7 +518,7 @@ function FormalResultRow({
       <ResultPhotoCell row={row.visiblePhoto} onPreview={onPreview} />
       <ResultPhotoCell row={row.thermalPhoto} onPreview={onPreview} />
       <ResultDescriptionCell summary={summary} />
-      <ResultAreaCell defects={defects} />
+      <ResultDetailCell defects={defects} />
       <td className="formal-report-metadata-column">
         <strong>{primaryPhoto?.facadeOrientation || "未知立面"}</strong>
         <span>{formatRelativeAltitude(primaryPhoto?.relativeAltitude)}</span>
@@ -623,63 +623,65 @@ function ResultDescriptionCell({
   );
 }
 
-function formatDefectAreaParts(defect: ReportDefectSnapshot) {
-  if (defect.area === null || defect.area === undefined || defect.area === "") {
-    return { available: false, value: "", estimated: false };
+function formatDefectMeasurement(defect: ReportDefectSnapshot) {
+  const isCrack = defect.defect_type === "crack";
+  const rawValue = isCrack ? defect.length : defect.area;
+  if (rawValue === null || rawValue === undefined || rawValue === "") {
+    return { available: false, value: "", estimated: false, unit: isCrack ? "m" : "m²" };
   }
-  const area = Number(defect.area);
-  if (!Number.isFinite(area) || area < 0) return { available: false, value: "", estimated: false };
-  const digits = area >= 1 ? 2 : area >= 0.1 ? 3 : 4;
+  const value = Number(rawValue);
+  if (!Number.isFinite(value) || value < 0) {
+    return { available: false, value: "", estimated: false, unit: isCrack ? "m" : "m²" };
+  }
   return {
     available: true,
-    value: area.toFixed(digits),
-    estimated: Boolean(defect.area_estimated)
+    value: value.toFixed(3),
+    estimated: Boolean(isCrack ? defect.length_estimated : defect.area_estimated),
+    unit: isCrack ? "m" : "m²"
   };
 }
 
-const MAX_VISIBLE_AREA_ITEMS = 10;
+const MAX_VISIBLE_DETAIL_ITEMS = 10;
 
-function ResultAreaCell({ defects }: { defects: ReportDefectSnapshot[] }) {
-  const formattedAreaItems = defects.map((defect, index) => {
+function ResultDetailCell({ defects }: { defects: ReportDefectSnapshot[] }) {
+  const formattedDetailItems = defects.map((defect, index) => {
     const defectNumber = defect.defect_no || formatDefectNumber(defect.defect_type, index + 1);
-    const area = formatDefectAreaParts(defect);
+    const measurement = formatDefectMeasurement(defect);
     return {
       key: `${defect.id || defectNumber}-${index}`,
       defectNumber,
-      available: area.available,
-      areaValue: area.value,
-      estimated: area.estimated,
-      text: area.available
-        ? `${defectNumber}${area.estimated ? " ≈" : ""} ${area.value}`
+      ...measurement,
+      text: measurement.available
+        ? `${defectNumber}${measurement.estimated ? " ≈" : ""} ${measurement.value} ${measurement.unit}`
         : "参数不足"
     };
   });
-  const missingAreaItem = formattedAreaItems.find((item) => !item.available);
-  const areaItems = [
-    ...formattedAreaItems.filter((item) => item.available),
-    ...(missingAreaItem ? [missingAreaItem] : [])
+  const missingDetailItem = formattedDetailItems.find((item) => !item.available);
+  const detailItems = [
+    ...formattedDetailItems.filter((item) => item.available),
+    ...(missingDetailItem ? [missingDetailItem] : [])
   ];
-  const areaSummary = areaItems.map((item) => item.text).join("、");
-  const hasOverflow = areaItems.length > MAX_VISIBLE_AREA_ITEMS;
-  const visibleAreaItems = areaItems.slice(0, MAX_VISIBLE_AREA_ITEMS);
+  const detailSummary = detailItems.map((item) => item.text).join("、");
+  const hasOverflow = detailItems.length > MAX_VISIBLE_DETAIL_ITEMS;
+  const visibleDetailItems = detailItems.slice(0, MAX_VISIBLE_DETAIL_ITEMS);
 
   return (
-    <td className="formal-report-area-column">
-      {areaItems.length ? (
-        <div className="formal-report-area-list" title={areaSummary} aria-label={areaSummary}>
-          {visibleAreaItems.map((item) => (
-            <div key={item.key} className="formal-report-area-item">
+    <td className="formal-report-detail-column">
+      {detailItems.length ? (
+        <div className="formal-report-detail-list" title={detailSummary} aria-label={detailSummary}>
+          {visibleDetailItems.map((item) => (
+            <div key={item.key} className="formal-report-detail-item">
               {item.available ? (
                 <>
-                  <span className="formal-report-area-muted">
+                  <span className="formal-report-detail-muted">
                     {item.defectNumber}{item.estimated ? " ≈" : ""}
                   </span>
-                  <span className="formal-report-area-value"> {item.areaValue}</span>
+                  <span className="formal-report-detail-value"> {item.value} {item.unit}</span>
                 </>
-              ) : "参数不足"}
+              ) : item.text}
             </div>
           ))}
-          {hasOverflow ? <div className="formal-report-area-ellipsis" aria-hidden="true">......</div> : null}
+          {hasOverflow ? <div className="formal-report-detail-ellipsis" aria-hidden="true">......</div> : null}
         </div>
       ) : "—"}
     </td>

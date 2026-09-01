@@ -126,14 +126,14 @@ export function ProjectDetailPage() {
   const canAddPhoto = isEditable && photos.length < MAX_PROJECT_PHOTO_COUNT;
   const primaryActionLabel = project.status === "draft" ? "开始检测" : "检测中";
   const detailActions = hasResult && project.current_report_id ? (
-    <RouterLink className="button primary" to={`/detections/results/${project.current_report_id}`}>
+    <RouterLink className="button primary-action-button" to={`/detections/results/${project.current_report_id}`}>
       <FileText aria-hidden="true" />
       <span className="workspace-title-bar-action-label">查看结果</span>
     </RouterLink>
   ) : (
     <>
       <button
-        className="button primary start-ai-detection-button"
+        className="button primary-action-button start-ai-detection-button"
         disabled={!isEditable || startDetectionMutation.isPending}
         type="button"
         onClick={() => setDetectionModalOpen(true)}

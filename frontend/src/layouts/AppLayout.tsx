@@ -121,7 +121,7 @@ export function AppLayout() {
     && !isLegacyReportDetailRoute;
   const isThemeHeroRoute = (
     isTrialSectionRoute || isDetectionRoute || isManagementRoute || (isReviewRoute && !isReviewBuildingModelRoute)
-  ) && !isProfessionalWizardRoute;
+  ) && !isProfessionalWizardRoute && !listPageHeader;
   const usesPermanentDarkShell = isCapabilityDetailRoute || isThemeHeroRoute;
   const usesDarkShell = usesPermanentDarkShell;
   const canAccessAdmin = user?.role === "admin";
@@ -384,7 +384,7 @@ export function AppLayout() {
         </div> : null}
 
         {listPageHeader ? <div className="list-page-header-action-slot">
-          <Link className="list-page-header-action" to={listPageHeader.actionTo}>
+          <Link className="list-page-header-action primary-action-button" to={listPageHeader.actionTo}>
             <Plus aria-hidden="true" />{listPageHeader.actionLabel}
           </Link>
         </div> : null}

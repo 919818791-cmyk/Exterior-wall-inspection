@@ -32,6 +32,7 @@ class ReportListItem(ApiSchema):
     first_photo_url: str | None = None
     generated_at: datetime
     pushed_at: datetime | None
+    created_at: datetime
     updated_at: datetime
 
 

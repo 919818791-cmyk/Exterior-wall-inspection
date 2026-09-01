@@ -225,11 +225,11 @@ export function AccountManagementPage() {
             <h1>账号管理</h1>
           </div>
           <div className="project-hero-action standalone-management-actions">
-            <RouterLink className="button secondary report-back-button standalone-management-home-link" to="/">
+            <RouterLink className="back-cancel-button standalone-management-home-link" to="/">
               <ArrowLeft aria-hidden="true" />
               <span>返回首页</span>
             </RouterLink>
-            <button className="button primary report-back-button" type="button" onClick={openCreateEditor}>
+            <button className="button primary-action-button" type="button" onClick={openCreateEditor}>
               <UserPlus aria-hidden="true" />新建账号
             </button>
           </div>
@@ -582,8 +582,8 @@ function AccountEditorModal({
               </button>
             ) : null}
             <div className="account-editor-primary-actions">
-              <button className="button secondary" disabled={isPending || isResetting} type="button" onClick={handleClose}>取消</button>
-              <button className="button primary" disabled={isPending || isResetting} type="submit">
+              <button className="back-cancel-button" disabled={isPending || isResetting} type="button" onClick={handleClose}>取消</button>
+              <button className="button primary-action-button" disabled={isPending || isResetting} type="submit">
                 <Save aria-hidden="true" />{isPending ? "正在保存…" : "保存账号"}
               </button>
             </div>

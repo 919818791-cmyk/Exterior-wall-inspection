@@ -4,6 +4,7 @@ const ACCEPTED_PHOTO_TYPES = new Set(["image/jpeg", "image/png"]);
 
 export const MAX_PROJECT_PHOTO_COUNT = 30;
 export const MAX_PROJECT_PHOTO_SIZE_BYTES = 10 * 1024 * 1024;
+export const PROFESSIONAL_PHOTO_UPLOAD_HINT = "仅支持专业无人机拍摄的原始照片";
 export const PHOTO_UPLOAD_WINDOW_WARNING = "上传过程中请勿关闭此窗口";
 
 export function hasPhotoPrecheckIssue(status?: PhotoPrecheckStatus | null) {

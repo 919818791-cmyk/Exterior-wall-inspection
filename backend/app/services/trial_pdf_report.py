@@ -18,17 +18,14 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
+from app.services.defect_annotation import (
+    DEFECT_DISPLAY,
+    DefectAnnotationError,
+    draw_defect_annotations,
+)
+
 
 WATERMARK_TEXT = "外墙智能巡检平台（试用版本）"
-
-DEFECT_DISPLAY = {
-    "crack": ("裂缝", "#DC2626"),
-    "missing": ("剥落", "#F97316"),
-    "spalling": ("剥落", "#F97316"),
-    "moisture": ("潮湿", "#0EA5E9"),
-    "corrosion": ("锈蚀", "#A16207"),
-    "hollow": ("空鼓", "#245CFF"),
-}
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 FONT_CANDIDATES = (
@@ -71,14 +68,6 @@ def _pil_font(size: int, *, bold: bool = False) -> ImageFont.FreeTypeFont:
     )
 
 
-def _number(value: Any) -> float | None:
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        return None
-    return number if number == number else None
-
-
 def _photo_key(item: dict[str, Any]) -> str:
     if item.get("photo_id"):
         return f"photo:{item['photo_id']}"
@@ -115,34 +104,6 @@ def _photo_rows(data: dict[str, Any]) -> list[tuple[dict[str, Any], list[dict[st
     return [(photo, defects_by_photo.get(_photo_key(photo), [])) for photo in photos]
 
 
-def _bbox_pixels(defect: dict[str, Any], image_size: tuple[int, int]) -> tuple[int, int, int, int] | None:
-    bbox = defect.get("bbox_json") or {}
-    x = _number(bbox.get("x"))
-    y = _number(bbox.get("y"))
-    width = _number(bbox.get("width"))
-    height = _number(bbox.get("height"))
-    if None in (x, y, width, height) or width <= 0 or height <= 0:
-        return None
-
-    image_width, image_height = image_size
-    if x <= 1 and y <= 1 and width <= 1 and height <= 1:
-        x, width = x * image_width, width * image_width
-        y, height = y * image_height, height * image_height
-    else:
-        finding = (defect.get("raw_result_json") or {}).get("finding") or {}
-        source_width = _number(finding.get("image_width"))
-        source_height = _number(finding.get("image_height"))
-        if source_width and source_height:
-            x, width = x * image_width / source_width, width * image_width / source_width
-            y, height = y * image_height / source_height, height * image_height / source_height
-
-    left = max(0, min(image_width - 1, round(x)))
-    top = max(0, min(image_height - 1, round(y)))
-    right = max(left + 1, min(image_width, round(x + width)))
-    bottom = max(top + 1, min(image_height, round(y + height)))
-    return left, top, right, bottom
-
-
 def _annotated_original(original_bytes: bytes, defects: list[dict[str, Any]]) -> BytesIO:
     try:
         with PilImage.open(BytesIO(original_bytes)) as source:
@@ -150,36 +111,13 @@ def _annotated_original(original_bytes: bytes, defects: list[dict[str, Any]]) ->
     except Exception as exc:
         raise TrialPdfExportError("原始照片无法读取，PDF 导出已终止。") from exc
 
+    try:
+        draw_defect_annotations(image, defects)
+    except DefectAnnotationError as exc:
+        raise TrialPdfExportError(str(exc)) from exc
+
     draw = ImageDraw.Draw(image, "RGBA")
     short_edge = min(image.size)
-    line_width = max(3, round(short_edge * 0.004))
-    label_font_size = max(22, min(72, round(short_edge * 0.026)))
-    label_font = _pil_font(label_font_size, bold=True)
-
-    for defect in defects:
-        box = _bbox_pixels(defect, image.size)
-        if box is None:
-            continue
-        label, color = DEFECT_DISPLAY.get(str(defect.get("defect_type") or ""), ("缺陷", "#245CFF"))
-        rgb = tuple(bytes.fromhex(color.removeprefix("#")))
-        draw.rectangle(box, outline=(*rgb, 255), width=line_width)
-        text_box = draw.textbbox((0, 0), label, font=label_font)
-        text_width = text_box[2] - text_box[0]
-        text_height = text_box[3] - text_box[1]
-        padding_x = max(8, label_font_size // 3)
-        padding_y = max(5, label_font_size // 6)
-        label_height = text_height + padding_y * 2
-        label_left = box[0]
-        label_top = box[1] - label_height if box[1] >= label_height else box[1]
-        label_right = min(image.width, label_left + text_width + padding_x * 2)
-        draw.rectangle((label_left, label_top, label_right, label_top + label_height), fill=(*rgb, 235))
-        draw.text(
-            (label_left + padding_x, label_top + padding_y - text_box[1]),
-            label,
-            font=label_font,
-            fill=(255, 255, 255, 255),
-        )
-
     watermark_font_size = max(28, min(104, round(short_edge * 0.032)))
     watermark_font = _pil_font(watermark_font_size, bold=True)
     watermark_box = draw.textbbox((0, 0), WATERMARK_TEXT, font=watermark_font)
