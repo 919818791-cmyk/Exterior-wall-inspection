@@ -32,6 +32,10 @@ from app.services.photo_metadata import (
     infer_drone_type,
 )
 from app.services.photo_precheck import run_stored_photo_precheck
+from app.services.photo_upload_quota import (
+    refund_photo_upload_quota,
+    reserve_photo_upload_quota,
+)
 from app.services.photo_thumbnails import build_thumbnail, store_thumbnail
 from app.services.usage_tracking import add_photo_upload_event
 
@@ -292,7 +296,22 @@ def upload_photo(
         getattr(project, "setup_completed_at", None) or uploaded_at
     )
     project.updated_at = uploaded_at
-    db.commit()
+    try:
+        quota_reservation = reserve_photo_upload_quota(current_user.id, source="formal", db=db)
+    except Exception:
+        db.rollback()
+        remove_object(bucket, object_key)
+        if thumbnail_bucket is not None and thumbnail is not None:
+            remove_object(thumbnail_bucket, thumbnail.object_key)
+        raise
+    try:
+        db.commit()
+    except Exception:
+        refund_photo_upload_quota(quota_reservation)
+        remove_object(bucket, object_key)
+        if thumbnail_bucket is not None and thumbnail is not None:
+            remove_object(thumbnail_bucket, thumbnail.object_key)
+        raise
     db.refresh(photo)
     if metadata["professional_drone_photo"]:
         run_stored_photo_precheck(db, photo)

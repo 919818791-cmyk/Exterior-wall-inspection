@@ -1,12 +1,12 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 
-import { deleteProject, projectsQueryOptions } from "@/api/projects";
+import { projectsQueryOptions } from "@/api/projects";
 import { ListPagination } from "@/components/ListPagination";
+import { WorkbenchNameSearch } from "@/components/WorkbenchNameSearch";
 import { WorkbenchDefectSummary, WorkbenchResultTable } from "@/components/WorkbenchResultTable";
 import { useAuthStore } from "@/stores/useAuthStore";
-import type { ProjectListItem } from "@/types/projects";
 import {
   formatDateTime,
   formatEstimatedRemainingTime,
@@ -18,29 +18,10 @@ const PAGE_SIZE = 10;
 
 export function ProjectListPage() {
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
   const user = useAuthStore((state) => state.user);
   const [currentPage, setCurrentPage] = useState(1);
   const [projectNameSearch, setProjectNameSearch] = useState("");
   const projectsQuery = useQuery(projectsQueryOptions(user));
-
-  const deleteProjectMutation = useMutation({
-    mutationFn: deleteProject,
-    onSuccess: async (_, projectId) => {
-      queryClient.removeQueries({ queryKey: ["projects", projectId] });
-      await queryClient.invalidateQueries({ queryKey: ["projects"] });
-    }
-  });
-
-  const handleDeleteProject = (project: ProjectListItem) => {
-    if (!["draft", "reviewed", "completed"].includes(project.status)) return;
-    if (!window.confirm(`确认删除检测“${project.name}”？删除后将无法恢复。`)) return;
-    deleteProjectMutation.mutate(project.id);
-  };
-
-  const canManageProject = (project: ProjectListItem) => (
-    !project.is_example && (user?.role === "admin" || project.created_by === user?.id)
-  );
 
   const visibleProjects = useMemo(() => {
     return [...(projectsQuery.data ?? [])]
@@ -70,42 +51,23 @@ export function ProjectListPage() {
     <div className="project-workbench-layout">
       <div className="project-workbench-content-panel">
         {projectsQuery.isError ? <p className="project-list-error">项目列表加载失败，请稍后重试。</p> : null}
-        {deleteProjectMutation.isError ? <p className="project-list-error" role="alert">操作失败，请稍后重试。</p> : null}
         <section
           className="project-list-panel workbench-result-list-panel"
           aria-label="项目列表"
         >
-          {visibleProjects.length ? <div className="project-name-search-toolbar">
-            <label className="project-name-search-field floating-line-field">
-              <input
-                aria-label="搜索检测项目"
-                autoComplete="off"
-                placeholder=" "
-                type="search"
-                value={projectNameSearch}
-                onChange={(event) => {
-                  setProjectNameSearch(event.target.value);
-                  setCurrentPage(1);
-                }}
-              />
-              <span>搜索检测项目</span>
-            </label>
-          </div> : null}
+          {visibleProjects.length ? <WorkbenchNameSearch
+            value={projectNameSearch}
+            onChange={(value) => {
+              setProjectNameSearch(value);
+              setCurrentPage(1);
+            }}
+          /> : null}
           <div className="project-table-wrap project-workbench-table-wrap">
           {projectsQuery.isLoading ? <div className="project-empty"><strong>正在加载项目…</strong></div> : visibleProjects.length && workbenchProjects.length ? <WorkbenchResultTable
-            canDelete={(project) => canManageProject(project) && ["draft", "reviewed", "completed"].includes(project.status)}
             columnLabel="检测名称"
             completionTimeLabel="完成时间"
-            getDeleteDisabledReason={(project) => project.is_example
-              ? "示例项目为所有账号共享，无法删除"
-              : canManageProject(project) ? "检测进行中，无法删除" : "仅项目所有者或管理员可以删除"}
-            getLeadingActionLabel={(project) => project.has_building_model ? "3D模型" : undefined}
             getKey={(project) => project.id}
             items={paginatedProjects}
-            onDelete={handleDeleteProject}
-            onLeadingAction={(project) => navigate(`/detections/${project.id}/model`, {
-              state: { projectTitle: project.title }
-            })}
             onOpen={(project) => navigate(`/detections/${project.id}`)}
             openOnRowClick
             renderCompletionTime={(project) => {
@@ -125,6 +87,9 @@ export function ProjectListPage() {
               placeholder={project.professionalState.status === "completed" ? undefined : "--"}
               variant="compact"
             />}
+            renderTrailingIndicator={(project) => project.generate_building_model ? (
+              <img alt="" aria-hidden="true" src="/icons/action-cube.png" />
+            ) : null}
             renderTitleAccessory={(project) => (
               <time dateTime={project.created_at}>{formatDateTime(project.created_at)}</time>
             )}
@@ -141,9 +106,6 @@ export function ProjectListPage() {
           totalItems={workbenchProjects.length}
         />
         </section>
-        <p className="list-page-switch-prompt">
-          提示：想要快速体验检测流程？可前往<Link to="/trials">快速体验页面</Link>。
-        </p>
       </div>
     </div>
   </div></div>;

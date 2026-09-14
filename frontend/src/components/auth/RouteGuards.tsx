@@ -7,7 +7,7 @@ import type { UserRole } from "@/types/auth";
 function LoadingScreen() {
   return (
     <div className="grid min-h-screen place-items-center bg-slate-50 text-slate-600">
-      <div className="flex items-center gap-3 text-sm font-bold">
+      <div className="flex items-center gap-3 text-sm font-normal">
         <Spinner color="primary" size="sm" />
         正在恢复登录状态…
       </div>

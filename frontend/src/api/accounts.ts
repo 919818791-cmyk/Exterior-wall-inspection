@@ -1,17 +1,12 @@
 import { queryOptions } from "@tanstack/react-query";
 
 import { apiRequest } from "@/api/client";
-import type { AccountUsageDetailResponse, AccountUsagePeriod, AccountUsageSummaryItem, CurrentAccountUsageResponse } from "@/types/accountUsage";
+import type { AccountUsageDetailResponse, AccountUsagePeriod, CurrentAccountUsageResponse } from "@/types/accountUsage";
 import type { AccountCreatePayload, AccountPasswordResetResponse, AccountUpdatePayload, AccountUser } from "@/types/auth";
 
 export const accountsQueryOptions = queryOptions({
   queryKey: ["accounts"],
   queryFn: () => apiRequest<AccountUser[]>("/accounts")
-});
-
-export const accountUsageSummaryQueryOptions = queryOptions({
-  queryKey: ["account-usage-summary"],
-  queryFn: () => apiRequest<AccountUsageSummaryItem[]>("/accounts/usage-summary")
 });
 
 export const currentAccountUsageQueryOptions = queryOptions({

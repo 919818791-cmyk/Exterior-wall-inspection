@@ -1,4 +1,14 @@
-import { Button, Card, CardBody, Skeleton } from "@heroui/react";
+import {
+  Button,
+  Card,
+  CardBody,
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalFooter,
+  ModalHeader,
+  Skeleton
+} from "@heroui/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CheckCircle2,
@@ -7,14 +17,20 @@ import {
   Minus,
   Plus,
   RotateCcw,
+  Trash2,
   ZoomIn
 } from "lucide-react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { useMemo, useRef, useState } from "react";
 import { Link as RouterLink, Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
 
-import { downloadReportDocx, downloadTrialReportPdf, reportQueryOptions } from "@/api/reports";
-import { completeDetectionReview, reviewDetectionPreviewQueryOptions } from "@/api/review";
+import { deleteReport, downloadReportDocx, downloadTrialReportPdf, reportQueryOptions } from "@/api/reports";
+import { ApiError } from "@/api/client";
+import {
+  completeDetectionReview,
+  reviewDetectionPreviewQueryOptions,
+  reviewDetectionQueryOptions
+} from "@/api/review";
 import { ReportDefectBox } from "@/components/ReportDefectBox";
 import { WorkspaceTitleBar } from "@/components/WorkspaceTitleBar";
 import type {
@@ -33,6 +49,12 @@ function confirmReportExport() {
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "操作失败，请稍后重试。";
+}
+
+function isBuildingModelRequiredError(error: unknown) {
+  return error instanceof ApiError
+    && error.status === 409
+    && error.message.includes("导入三维模型");
 }
 
 export function ReportDetailPage() {
@@ -70,7 +92,7 @@ export function ReportDetailPage() {
         <Card className="w-full max-w-2xl rounded-lg border border-red-200 shadow-none">
           <CardBody className="gap-4 p-6">
             <h1 className="text-xl font-black text-ink">结果加载失败</h1>
-            <p className="text-sm font-bold text-red-700">
+            <p className="text-sm font-normal text-red-700">
               {getErrorMessage(activeQuery.error)}
             </p>
             <div className="flex flex-wrap gap-3">
@@ -127,12 +149,17 @@ function TrialResultDetail({
   const [annotatedPreview, setAnnotatedPreview] = useState<TrialReportAnnotatedPreview | null>(null);
   const [previewScale, setPreviewScale] = useState(1);
   const [previewOffset, setPreviewOffset] = useState({ x: 0, y: 0 });
+  const [isBuildingModelPromptOpen, setIsBuildingModelPromptOpen] = useState(false);
   const previewViewportRef = useRef<HTMLDivElement | null>(null);
   const formalTableHeaderRef = useRef<HTMLDivElement | null>(null);
   const previewDrag = useRef<{ pointerId: number; x: number; y: number; originX: number; originY: number } | null>(null);
   const previewDragMoved = useRef(false);
   const isTrialResult = report.source_type === "trial";
   const exportFormat = isTrialResult ? "PDF" : "DOCX";
+  const reviewDetectionQuery = useQuery({
+    ...reviewDetectionQueryOptions(reviewTaskId ?? ""),
+    enabled: Boolean(reviewTaskId)
+  });
   const exportMutation = useMutation({
     mutationFn: () => isTrialResult
       ? downloadTrialReportPdf(report.id)
@@ -151,6 +178,19 @@ function TrialResultDetail({
         queryClient.invalidateQueries({ queryKey: ["reports"] })
       ]);
       navigate("/review", { replace: true });
+    },
+    onError: (error) => {
+      if (isBuildingModelRequiredError(error)) setIsBuildingModelPromptOpen(true);
+    }
+  });
+  const deleteReportMutation = useMutation({
+    mutationFn: () => deleteReport(report.id),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["reports"] }),
+        queryClient.invalidateQueries({ queryKey: ["projects"] })
+      ]);
+      navigate("/trials", { replace: true });
     }
   });
   const resultRows = useMemo(() => buildTrialResultRows(report), [report]);
@@ -195,6 +235,32 @@ function TrialResultDetail({
     closeAnnotatedPreview();
   }
 
+  async function requestCompleteReview() {
+    let detection = reviewDetectionQuery.data;
+    if (!detection && reviewTaskId) {
+      detection = (await reviewDetectionQuery.refetch()).data;
+    }
+    if (detection?.generate_building_model && !detection.has_building_model) {
+      setIsBuildingModelPromptOpen(true);
+      return;
+    }
+    if (window.confirm("确认当前预览结果无误并完成审核？完成后将推送正式结果并返回工作台。")) {
+      completeReviewMutation.mutate();
+    }
+  }
+
+  function openBuildingModelUpload() {
+    if (!reviewTaskId) return;
+    setIsBuildingModelPromptOpen(false);
+    navigate(`/review/detections/${report.project.id}/model`, {
+      state: {
+        backLabel: "返回审核预览",
+        backTo: `/detections/results/${report.id}?reviewTaskId=${encodeURIComponent(reviewTaskId)}`,
+        projectTitle: report.project.name || report.title
+      }
+    });
+  }
+
   return (
     <div className={`trial-result-detail-page formal-result-detail-page${isTrialResult ? " quick-result-detail-page" : ""}`}>
       <WorkspaceTitleBar
@@ -209,39 +275,92 @@ function TrialResultDetail({
               className="button primary-action-button review-preview-complete-button"
               disabled={completeReviewMutation.isPending}
               type="button"
-              onClick={() => {
-                if (window.confirm("确认当前预览结果无误并完成审核？完成后将推送正式结果并返回审核工作台。")) {
-                  completeReviewMutation.mutate();
-                }
-              }}
+              onClick={() => void requestCompleteReview()}
             >
               <CheckCircle2 aria-hidden="true" />
               <span className="workspace-title-bar-action-label">
                 {completeReviewMutation.isPending ? "正在完成审核…" : "完成审核"}
               </span>
             </button>
-          ) : canExport ? (
-            <button
-              aria-busy={exportMutation.isPending}
-              className="button primary-action-button report-export-button"
-              disabled={exportMutation.isPending}
-              type="button"
-              onClick={() => {
-                if (confirmReportExport()) exportMutation.mutate();
-              }}
-            >
-              <Download aria-hidden="true" />
-              <span className="workspace-title-bar-action-label">
-                {exportMutation.isPending ? "正在导出" : `导出 ${exportFormat}`}
-              </span>
-            </button>
-          ) : undefined}
+          ) : (
+            <>
+              {canExport ? (
+                <button
+                  aria-busy={exportMutation.isPending}
+                  className="button primary-action-button report-export-button"
+                  disabled={exportMutation.isPending || deleteReportMutation.isPending}
+                  type="button"
+                  onClick={() => {
+                    if (confirmReportExport()) exportMutation.mutate();
+                  }}
+                >
+                  <Download aria-hidden="true" />
+                  <span className="workspace-title-bar-action-label">
+                    {exportMutation.isPending ? "正在导出" : `导出 ${exportFormat}`}
+                  </span>
+                </button>
+              ) : null}
+              {isTrialResult ? (
+                <button
+                  aria-busy={deleteReportMutation.isPending}
+                  className="button destructive-action-button report-delete-button"
+                  disabled={report.is_example || exportMutation.isPending || deleteReportMutation.isPending}
+                  title={report.is_example ? "示例项目为所有账号共享，无法删除" : `删除：${report.title}`}
+                  type="button"
+                  onClick={() => {
+                    if (window.confirm(`确认删除试用结果“${report.title}”？删除后将无法恢复。`)) {
+                      deleteReportMutation.mutate();
+                    }
+                  }}
+                >
+                  <Trash2 aria-hidden="true" />
+                  <span className="workspace-title-bar-action-label">
+                    {deleteReportMutation.isPending ? "正在删除" : "删除"}
+                  </span>
+                </button>
+              ) : null}
+            </>
+          )}
       />
       {exportMutation.isError ? (
         <p className="project-list-error">{exportFormat} 导出失败：{getErrorMessage(exportMutation.error)}<button className="inline-retry-button" type="button" onClick={() => exportMutation.mutate()}>重试</button></p>
       ) : null}
-      {completeReviewMutation.isError ? (
+      {completeReviewMutation.isError && !isBuildingModelRequiredError(completeReviewMutation.error) ? (
         <p className="project-list-error">完成审核失败：{getErrorMessage(completeReviewMutation.error)}<button className="inline-retry-button" type="button" onClick={() => completeReviewMutation.mutate()}>重试</button></p>
+      ) : null}
+      <Modal
+        classNames={{
+          backdrop: "trial-version-modal-backdrop",
+          base: "trial-version-modal-content",
+          wrapper: "trial-version-modal-wrapper"
+        }}
+        hideCloseButton
+        isDismissable={false}
+        isOpen={isBuildingModelPromptOpen}
+        placement="center"
+        onOpenChange={setIsBuildingModelPromptOpen}
+      >
+        <ModalContent>
+          {(onClose) => (
+            <>
+              <ModalHeader className="trial-version-modal-header">
+                <div className="trial-version-modal-heading">
+                  <h2>请先上传三维模型</h2>
+                </div>
+              </ModalHeader>
+              <ModalBody className="trial-version-modal-body">
+                <p>该项目已勾选“生成三维模型”，上传三维模型后才能完成审核。</p>
+              </ModalBody>
+              <ModalFooter className="trial-version-modal-footer">
+                <button className="back-cancel-button" type="button" onClick={onClose}>稍后</button>
+                <button className="button primary-action-button" type="button" onClick={openBuildingModelUpload}>上传三维模型</button>
+              </ModalFooter>
+            </>
+          )}
+        </ModalContent>
+      </Modal>
+      {deleteReportMutation.isError ? (
+        <p className="project-list-error">删除失败：{getErrorMessage(deleteReportMutation.error)}<button className="inline-retry-button" type="button" onClick={() => deleteReportMutation.mutate()}>重试</button></p>
       ) : null}
       <div className="trial-experience-shell trial-experience-content-shell trial-result-detail-shell">
         <section className="trial-experience-grid">

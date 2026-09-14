@@ -74,11 +74,11 @@ def _settings() -> SimpleNamespace:
         trial_global_job_concurrency=4,
         trial_request_timeout_seconds=300,
         trial_request_concurrency=5,
-        trial_daily_api_request_limit=800,
+        trial_daily_photo_upload_limit=10,
+        trial_monthly_photo_upload_limit=50,
+        formal_monthly_photo_upload_limit=50,
         trial_generate_limit_per_user=5,
         trial_generate_window_seconds=600,
-        trial_upload_limit_per_user=30,
-        trial_upload_window_seconds=600,
         trial_job_lock_seconds=900,
         auth_secret_key="test-auth-secret-key-that-is-long-enough",
     )
@@ -297,7 +297,9 @@ def test_admin_updates_runtime_limits_and_prompts(monkeypatch) -> None:
                 "provider": "zhipu",
                 "global_job_concurrency": 7,
                 "request_concurrency": 3,
-                "daily_api_request_limit": 1200,
+                "daily_photo_upload_limit": 10,
+                "monthly_photo_upload_limit": 50,
+                "formal_monthly_photo_upload_limit": 50,
                 "generate_limit_per_user": 8,
                 "visible_prompt": "可见光检测提示词，必须只输出符合约定的 JSON 数组。",
                 "crack_prompt": "裂缝单独检测提示词，必须只输出符合约定的 JSON 数组。",
@@ -316,14 +318,18 @@ def test_admin_updates_runtime_limits_and_prompts(monkeypatch) -> None:
     body = response.json()
     assert body["global_job_concurrency"] == 7
     assert body["request_concurrency"] == 3
-    assert body["daily_api_request_limit"] == 1200
+    assert body["daily_photo_upload_limit"] == 10
+    assert body["monthly_photo_upload_limit"] == 50
+    assert body["formal_monthly_photo_upload_limit"] == 50
     assert body["generate_limit_per_user"] == 8
     assert body["visible_prompt"].startswith("可见光检测提示词")
     assert body["crack_prompt"].startswith("裂缝单独检测提示词")
     assert body["spalling_prompt"].startswith("剥落单独检测提示词")
     assert body["photo_guard_prompt"].startswith("建筑照片相关性判断提示词")
     assert body["formal_prompts"]["tile_crack_prompt"].startswith("自定义面砖裂缝")
-    assert fake_db.settings["trial_daily_api_request_limit"].value == "1200"
+    assert fake_db.settings["trial_daily_photo_upload_limit"].value == "10"
+    assert fake_db.settings["trial_monthly_photo_upload_limit"].value == "50"
+    assert fake_db.settings["formal_monthly_photo_upload_limit"].value == "50"
     assert fake_db.settings["trial_generate_limit_per_user"].value == "8"
     assert fake_db.settings["trial_crack_prompt"].value.startswith("裂缝单独检测提示词")
     assert fake_db.settings["trial_spalling_prompt"].value.startswith("剥落单独检测提示词")

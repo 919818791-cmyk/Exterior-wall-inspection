@@ -1,10 +1,17 @@
 from types import SimpleNamespace
 from uuid import uuid4
+from zipfile import ZipFile
 
 import pytest
 from fastapi import HTTPException
 
-from app.api.review import _detection_review_status, _ensure_report_reviewable
+from app.api.review import (
+    _building_model_requested,
+    _build_original_photo_archive,
+    _detection_review_status,
+    _ensure_required_building_model,
+    _ensure_report_reviewable,
+)
 from app.enums.status import DetectionTaskStatus, InspectionReportStatus
 from app.main import app
 from app.schemas.phase6 import ReviewResultCreateRequest, ReviewResultUpdateRequest
@@ -23,8 +30,35 @@ def test_phase6_review_routes_are_registered() -> None:
     assert "/api/review/detections/{task_id}" in paths
     assert "/api/review/detections/{task_id}/annotations" in paths
     assert "/api/review/detections/{task_id}/annotations/photos" in paths
+    assert "/api/review/detections/{task_id}/photos/archive" in paths
     assert "/api/review/detections/{task_id}/preview" in paths
     assert "/api/review/detections/{task_id}/complete" in paths
+
+
+def test_original_photo_archive_contains_all_photos_with_unique_safe_names() -> None:
+    photos = [
+        SimpleNamespace(
+            original_filename="east/facade.jpg",
+            storage_bucket="photos",
+            storage_object_key="one",
+        ),
+        SimpleNamespace(
+            original_filename="facade.jpg",
+            storage_bucket="photos",
+            storage_object_key="two",
+        ),
+    ]
+    payloads = {"one": b"first", "two": b"second"}
+
+    archive = _build_original_photo_archive(
+        photos,
+        read_object=lambda _bucket, object_key: payloads[object_key],
+    )
+
+    with archive, ZipFile(archive) as zip_file:
+        assert zip_file.namelist() == ["facade.jpg", "facade (2).jpg"]
+        assert zip_file.read("facade.jpg") == b"first"
+        assert zip_file.read("facade (2).jpg") == b"second"
 
 
 def test_generated_review_result_is_immediately_complete() -> None:
@@ -32,6 +66,26 @@ def test_generated_review_result_is_immediately_complete() -> None:
     report = SimpleNamespace(status=InspectionReportStatus.GENERATED.value)
 
     assert _detection_review_status(task, report) == "completed"
+
+
+def test_review_detection_exposes_building_model_request_from_task_snapshot() -> None:
+    legacy_config = SimpleNamespace(config_json={"generate_building_model": True})
+
+    assert _building_model_requested({"generate_building_model": True}, None) is True
+    assert _building_model_requested({"generate_building_model": False}, legacy_config) is False
+    assert _building_model_requested({}, legacy_config) is True
+    assert _building_model_requested({}, None) is False
+
+
+def test_required_building_model_blocks_review_completion_until_imported() -> None:
+    with pytest.raises(HTTPException) as exc_info:
+        _ensure_required_building_model(requested=True, model_exists=False)
+
+    assert exc_info.value.status_code == 409
+    assert "导入三维模型" in exc_info.value.detail
+
+    _ensure_required_building_model(requested=True, model_exists=True)
+    _ensure_required_building_model(requested=False, model_exists=False)
 
 
 @pytest.mark.parametrize(

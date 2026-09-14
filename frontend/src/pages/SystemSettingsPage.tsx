@@ -17,7 +17,9 @@ interface SettingsForm extends FormalDetectionPromptSettings {
   provider: TrialInferenceProvider;
   global_job_concurrency: number;
   request_concurrency: number;
-  daily_api_request_limit: number;
+  daily_photo_upload_limit: number;
+  monthly_photo_upload_limit: number;
+  formal_monthly_photo_upload_limit: number;
   generate_limit_per_user: number;
   visible_prompt: string;
   crack_prompt: string;
@@ -81,7 +83,9 @@ function formFromSetting(setting: TrialInferenceSetting): SettingsForm {
     provider: setting.provider,
     global_job_concurrency: setting.global_job_concurrency,
     request_concurrency: setting.request_concurrency,
-    daily_api_request_limit: setting.daily_api_request_limit ?? 800,
+    daily_photo_upload_limit: setting.daily_photo_upload_limit ?? 10,
+    monthly_photo_upload_limit: setting.monthly_photo_upload_limit ?? 50,
+    formal_monthly_photo_upload_limit: setting.formal_monthly_photo_upload_limit ?? 50,
     generate_limit_per_user: setting.generate_limit_per_user ?? 5,
     visible_prompt: setting.visible_prompt,
     crack_prompt: setting.crack_prompt,
@@ -97,7 +101,9 @@ function updatePayload(form: SettingsForm): TrialInferenceSettingUpdate {
     provider: form.provider,
     global_job_concurrency: Number(form.global_job_concurrency),
     request_concurrency: Number(form.request_concurrency),
-    daily_api_request_limit: Number(form.daily_api_request_limit),
+    daily_photo_upload_limit: Number(form.daily_photo_upload_limit),
+    monthly_photo_upload_limit: Number(form.monthly_photo_upload_limit),
+    formal_monthly_photo_upload_limit: Number(form.formal_monthly_photo_upload_limit),
     generate_limit_per_user: Number(form.generate_limit_per_user),
     visible_prompt: form.visible_prompt,
     crack_prompt: form.crack_prompt,
@@ -248,7 +254,9 @@ export function SystemSettingsPage() {
                 <div className="scheduler-setting-grid">
                   <label className="system-setting-field"><span>全局并发任务数<small>所有账号同时执行的检测任务上限，范围 1–10。</small></span><input min="1" max="10" type="number" value={form.global_job_concurrency} onChange={(event) => setForm({ ...form, global_job_concurrency: Number(event.target.value) })} /></label>
                   <label className="system-setting-field"><span>单任务并发请求数<small>一个检测任务同时发往模型服务的请求数，范围 1–10；本地模型还会受服务端显存安全上限约束。</small></span><input min="1" max="10" type="number" value={form.request_concurrency} onChange={(event) => setForm({ ...form, request_concurrency: Number(event.target.value) })} /></label>
-                  <label className="system-setting-field"><span>每账号每日模型请求额度<small>按北京时间每天 00:00 重置，按图片切片实际请求数计费。</small></span><input min="1" max="1000000" type="number" value={form.daily_api_request_limit} onChange={(event) => setForm({ ...form, daily_api_request_limit: Number(event.target.value) })} /></label>
+                  <label className="system-setting-field"><span>快速体验每日上传上限<small>每账号按北京时间每天 00:00 重置，默认 10 张。</small></span><input min="1" max="100000" type="number" value={form.daily_photo_upload_limit} onChange={(event) => setForm({ ...form, daily_photo_upload_limit: Number(event.target.value) })} /></label>
+                  <label className="system-setting-field"><span>快速体验每月上传上限<small>每账号按北京时间每月 1 日 00:00 重置，默认 50 张。</small></span><input min="1" max="100000" type="number" value={form.monthly_photo_upload_limit} onChange={(event) => setForm({ ...form, monthly_photo_upload_limit: Number(event.target.value) })} /></label>
+                  <label className="system-setting-field"><span>专业检测每月上传上限<small>每账号按北京时间每月 1 日 00:00 重置，默认 50 张。</small></span><input min="1" max="100000" type="number" value={form.formal_monthly_photo_upload_limit} onChange={(event) => setForm({ ...form, formal_monthly_photo_upload_limit: Number(event.target.value) })} /></label>
                   <label className="system-setting-field"><span>每账号检测次数上限<small>每 10 分钟允许发起的检测任务数。</small></span><input min="1" max="10000" type="number" value={form.generate_limit_per_user} onChange={(event) => setForm({ ...form, generate_limit_per_user: Number(event.target.value) })} /></label>
                 </div>
               </div>

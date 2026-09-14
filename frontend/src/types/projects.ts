@@ -66,6 +66,7 @@ export interface ProjectListItem {
   latitude: string | null;
   status: ProjectStatus;
   is_example: boolean;
+  generate_building_model: boolean;
   has_building_model: boolean;
   current_report_id: string | null;
   photo_count: number;
@@ -199,6 +200,7 @@ export interface DetectionTask {
 }
 
 export interface StartDetectionPayload {
+  generate_building_model: boolean;
   model_types: Array<"crack" | "spalling" | "hollow">;
 }
 

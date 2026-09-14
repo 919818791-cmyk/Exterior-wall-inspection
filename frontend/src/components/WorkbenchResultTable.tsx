@@ -11,81 +11,87 @@ interface WorkbenchResultListItem {
 }
 
 interface WorkbenchResultTableProps<T extends WorkbenchResultListItem> {
-  canDelete?: (item: T) => boolean;
-  canRename?: (item: T) => boolean;
   columnLabel?: string;
   completionTimeLabel?: string;
-  getDeleteDisabledReason?: (item: T) => string;
-  getLeadingActionLabel?: (item: T) => string | undefined;
+  detectionTypeLabel?: string;
   getKey: (item: T) => string;
   items: T[];
-  onDelete?: (item: T) => void;
-  onLeadingAction?: (item: T) => void;
   onOpen: (item: T) => void;
   openOnRowClick?: boolean;
-  onRename?: (item: T) => void;
   renderCompletionTime?: (item: T) => ReactNode;
   renderDetectionDescription?: (item: T) => ReactNode;
   renderDetectionType?: (item: T) => ReactNode;
+  renderLeadingIndicator?: (item: T) => ReactNode;
+  renderTrailingIndicator?: (item: T) => ReactNode;
   renderTitleAccessory?: (item: T) => ReactNode;
+  showThumbnail?: boolean;
+  indicatorLabel?: string;
   titleAccessoryLabel?: string;
 }
 
 export function WorkbenchResultTable<T extends WorkbenchResultListItem>({
-  canDelete,
-  canRename,
   columnLabel = "检测名称",
   completionTimeLabel = "完成时间",
-  getDeleteDisabledReason,
-  getLeadingActionLabel,
+  detectionTypeLabel = "检测类型",
   getKey,
   items,
-  onDelete,
-  onLeadingAction,
   onOpen,
   openOnRowClick = false,
-  onRename,
   renderCompletionTime,
   renderDetectionDescription,
   renderDetectionType,
+  renderLeadingIndicator,
+  renderTrailingIndicator,
   renderTitleAccessory,
+  showThumbnail = true,
+  indicatorLabel = "三维模型",
   titleAccessoryLabel = "状态"
 }: WorkbenchResultTableProps<T>) {
-  const hasActions = Boolean((getLeadingActionLabel && onLeadingAction) || onRename || onDelete);
+  const hasLeadingContent = showThumbnail;
+  const hasLeadingIndicator = Boolean(renderLeadingIndicator);
+  const hasTrailingIndicator = Boolean(renderTrailingIndicator);
   const rowsOpenOnClick = openOnRowClick;
 
   return (
     <table className="project-table project-workbench-table workbench-result-table">
       <colgroup>
-        <col className="project-folder-col" />
+        {hasLeadingContent ? <col className="project-folder-col" /> : null}
+        {hasLeadingIndicator ? <col className="workbench-result-indicator-col" /> : null}
         <col className="workbench-result-name-col" />
         {renderTitleAccessory ? <col className="workbench-result-status-col" /> : null}
         {renderDetectionType ? <col className="workbench-result-detection-type-col" /> : null}
         {renderCompletionTime ? <col className="workbench-result-completion-time-col" /> : null}
         {renderDetectionDescription ? <col className="workbench-result-description-col" /> : null}
-        {hasActions ? <col className="workbench-result-action-col" /> : null}
+        {hasTrailingIndicator ? <col className="workbench-result-indicator-col" /> : null}
       </colgroup>
       <thead>
         <tr>
-          <th aria-label="照片" scope="col" />
+          {hasLeadingContent ? (
+            <th aria-label="照片" scope="col" />
+          ) : null}
+          {hasLeadingIndicator ? (
+            <th
+              aria-label={indicatorLabel}
+              className="workbench-result-indicator-heading"
+              scope="col"
+            />
+          ) : null}
           <th className="workbench-result-name-heading" scope="col">{columnLabel}</th>
           {renderTitleAccessory ? <th className="workbench-result-status-heading" scope="col">{titleAccessoryLabel}</th> : null}
-          {renderDetectionType ? <th className="workbench-result-detection-type-heading" scope="col">检测类型</th> : null}
+          {renderDetectionType ? <th className="workbench-result-detection-type-heading" scope="col">{detectionTypeLabel}</th> : null}
           {renderCompletionTime ? <th className="workbench-result-completion-time-heading" scope="col">{completionTimeLabel}</th> : null}
           {renderDetectionDescription ? <th className="workbench-result-description-heading" scope="col">缺陷摘要</th> : null}
-          {hasActions ? <th className="workbench-result-action-heading" scope="col">操作</th> : null}
+          {hasTrailingIndicator ? (
+            <th
+              aria-label={indicatorLabel}
+              className="workbench-result-indicator-heading"
+              scope="col"
+            />
+          ) : null}
         </tr>
       </thead>
       <tbody>
         {items.map((item) => {
-          const leadingActionLabel = getLeadingActionLabel?.(item);
-          const leadingActionIcon = leadingActionLabel === "3D模型"
-            ? <img alt="" aria-hidden="true" className="workbench-solid-action-icon" src="/icons/action-cube.png" />
-            : null;
-          const deleteEnabled = canDelete?.(item) ?? true;
-          const renameEnabled = canRename?.(item) ?? true;
-          const deleteDisabledReason = deleteEnabled ? undefined : getDeleteDisabledReason?.(item);
-
           return <tr
             aria-label={rowsOpenOnClick ? `打开：${item.title}` : undefined}
             className={`workbench-result-row${rowsOpenOnClick ? " is-row-openable" : ""}`}
@@ -104,13 +110,20 @@ export function WorkbenchResultTable<T extends WorkbenchResultListItem>({
               onOpen(item);
             } : undefined}
           >
-            <td className="result-folder-column">
-              <ResultFolderThumbnail
-                firstPhotoUrl={item.first_photo_url}
-                photoCount={item.photo_count}
-                title={item.title}
-              />
-            </td>
+            {hasLeadingContent ? (
+              <td className="result-folder-column">
+                <ResultFolderThumbnail
+                  firstPhotoUrl={item.first_photo_url}
+                  photoCount={item.photo_count}
+                  title={item.title}
+                />
+              </td>
+            ) : null}
+            {hasLeadingIndicator ? (
+              <td className="workbench-result-indicator-column">
+                {renderLeadingIndicator?.(item)}
+              </td>
+            ) : null}
             <td className="report-name-column list-primary-column" data-label={columnLabel}>
               <span className="result-name-content workbench-list-copy">
                 <span className="project-name-line workbench-list-title-line">
@@ -124,7 +137,7 @@ export function WorkbenchResultTable<T extends WorkbenchResultListItem>({
               </td>
             ) : null}
             {renderDetectionType ? (
-              <td className="workbench-result-detection-type-column" data-label="检测类型">
+              <td className="workbench-result-detection-type-column" data-label={detectionTypeLabel}>
                 {renderDetectionType(item)}
               </td>
             ) : null}
@@ -138,44 +151,9 @@ export function WorkbenchResultTable<T extends WorkbenchResultListItem>({
                 {renderDetectionDescription(item)}
               </td>
             ) : null}
-            {hasActions ? (
-              <td className="workbench-result-action-column" data-label="操作">
-                <div className="workbench-result-actions">
-                  {leadingActionLabel && onLeadingAction ? (
-                    <button
-                      aria-label={`${leadingActionLabel}：${item.title}`}
-                      className={`workbench-result-action-button workbench-result-leading-action-button${leadingActionIcon ? " workbench-result-icon-button" : ""}`}
-                      title={`${leadingActionLabel}：${item.title}`}
-                      type="button"
-                      onClick={() => onLeadingAction(item)}
-                    >
-                      {leadingActionIcon ?? leadingActionLabel}
-                    </button>
-                  ) : null}
-                  {onRename && renameEnabled ? (
-                    <button
-                      aria-label={`重命名：${item.title}`}
-                      className="workbench-result-action-button workbench-result-icon-button"
-                      title={`重命名：${item.title}`}
-                      type="button"
-                      onClick={() => onRename(item)}
-                    >
-                      <img alt="" aria-hidden="true" className="workbench-solid-action-icon" src="/icons/action-pencil.png" />
-                    </button>
-                  ) : null}
-                  {onDelete ? (
-                    <button
-                      aria-label={`删除：${item.title}`}
-                      className="workbench-result-action-button workbench-result-icon-button workbench-result-danger-action-button"
-                      disabled={!deleteEnabled}
-                      title={deleteEnabled ? `删除：${item.title}` : deleteDisabledReason}
-                      type="button"
-                      onClick={() => onDelete(item)}
-                    >
-                      <img alt="" aria-hidden="true" className="workbench-solid-action-icon" src="/icons/action-trash.png" />
-                    </button>
-                  ) : null}
-                </div>
+            {hasTrailingIndicator ? (
+              <td className="workbench-result-indicator-column">
+                {renderTrailingIndicator?.(item)}
               </td>
             ) : null}
           </tr>;

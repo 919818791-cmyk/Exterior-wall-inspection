@@ -1,16 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDownToLine, ArrowLeft, ArrowUpFromLine, BarChart3, Bot, Database, KeyRound, Pencil, RefreshCw, Save, ShieldCheck, UserPlus, UsersRound, X } from "lucide-react";
+import { ArrowDownToLine, ArrowUpFromLine, BarChart3, Bot, Database, KeyRound, RefreshCw, Save, X } from "lucide-react";
 import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
-import { Link as RouterLink } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 
 import {
   accountsQueryOptions,
   accountUsageDetailQueryOptions,
-  accountUsageSummaryQueryOptions,
   createAccount,
   resetAccountPassword,
   updateAccount
 } from "@/api/accounts";
+import { WorkbenchNameSearch } from "@/components/WorkbenchNameSearch";
 import type { AccountUsagePeriod, AccountUsageTotals } from "@/types/accountUsage";
 import type { AccountCreatePayload, AccountUpdatePayload, AccountUser, UserRole, UserStatus } from "@/types/auth";
 import { formatDateTime } from "@/utils/projectDisplay";
@@ -80,14 +80,16 @@ function formFromAccount(account: AccountUser): AccountFormState {
 }
 
 export function AccountManagementPage() {
+  const location = useLocation();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const accountsQuery = useQuery(accountsQueryOptions);
-  const usageSummaryQuery = useQuery(accountUsageSummaryQueryOptions);
   const [editingAccount, setEditingAccount] = useState<AccountUser | null>(null);
   const [usageAccount, setUsageAccount] = useState<AccountUser | null>(null);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [formError, setFormError] = useState("");
   const [formNotice, setFormNotice] = useState("");
+  const [accountSearch, setAccountSearch] = useState("");
 
   const createMutation = useMutation({
     mutationFn: createAccount,
@@ -114,10 +116,14 @@ export function AccountManagementPage() {
   });
 
   const accounts = accountsQuery.data ?? [];
-  const usageByAccount = useMemo(
-    () => new Map((usageSummaryQuery.data ?? []).map((item) => [item.account_id, item])),
-    [usageSummaryQuery.data]
-  );
+  const matchingAccounts = useMemo(() => {
+    const search = accountSearch.trim().toLocaleLowerCase();
+    if (!search) return accounts;
+    return accounts.filter((account) => (
+      [account.real_name, account.username, account.organization, account.phone]
+        .some((value) => value?.toLocaleLowerCase().includes(search))
+    ));
+  }, [accountSearch, accounts]);
 
   const activeMutationError = createMutation.error ?? updateMutation.error ?? resetPasswordMutation.error;
   const isSaving = createMutation.isPending || updateMutation.isPending;
@@ -131,6 +137,12 @@ export function AccountManagementPage() {
     resetPasswordMutation.reset();
     setIsEditorOpen(true);
   }
+
+  useEffect(() => {
+    if (new URLSearchParams(location.search).get("create") !== "1") return;
+    openCreateEditor();
+    navigate("/accounts", { replace: true });
+  }, [location.search, navigate]);
 
   function openEditEditor(account: AccountUser) {
     setEditingAccount(account);
@@ -219,28 +231,17 @@ export function AccountManagementPage() {
   return (
     <div className="account-management-page management-list-page">
       <div className="project-workspace">
-        <section className="project-hero">
-          <div className="management-page-title">
-            <UsersRound aria-hidden="true" className="management-page-title-icon" />
-            <h1>账号管理</h1>
-          </div>
-          <div className="project-hero-action standalone-management-actions">
-            <RouterLink className="back-cancel-button standalone-management-home-link" to="/">
-              <ArrowLeft aria-hidden="true" />
-              <span>返回首页</span>
-            </RouterLink>
-            <button className="button primary-action-button" type="button" onClick={openCreateEditor}>
-              <UserPlus aria-hidden="true" />新建账号
-            </button>
-          </div>
-        </section>
-
         {accountsQuery.isError ? <p className="project-list-error">账号列表加载失败，请稍后重试。</p> : null}
-        <section className="project-list-panel" aria-label="账号列表">
-          <div className="project-table-wrap">
+        <section className="project-list-panel workbench-result-list-panel" aria-label="账号列表">
+          {accounts.length ? <WorkbenchNameSearch
+            label="搜索账号"
+            value={accountSearch}
+            onChange={setAccountSearch}
+          /> : null}
+          <div className="project-table-wrap project-workbench-table-wrap">
             {accountsQuery.isLoading ? (
               <div className="project-empty"><strong>正在加载账号…</strong></div>
-            ) : accounts.length ? (
+            ) : accounts.length && matchingAccounts.length ? (
               <table className="project-table account-table">
                 <thead>
                   <tr>
@@ -248,60 +249,38 @@ export function AccountManagementPage() {
                     <th className="account-role-column">权限</th>
                     <th className="account-secondary-column">状态</th>
                     <th className="account-secondary-column">最近登录</th>
-                    <th className="account-usage-column">累计任务数</th>
-                    <th className="account-usage-column">累计模型 API 请求</th>
-                    <th className="account-usage-column">累计 Token 消耗</th>
-                    <th className="account-action-column">操作</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {accounts.map((account) => (
-                    <tr key={account.id}>
+                  {matchingAccounts.map((account) => (
+                    <tr
+                      key={account.id}
+                      aria-label={`编辑账号 ${account.real_name || account.username}`}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => openEditEditor(account)}
+                      onKeyDown={(event) => {
+                        if (event.key !== "Enter" && event.key !== " ") return;
+                        event.preventDefault();
+                        openEditEditor(account);
+                      }}
+                    >
                       <td data-label="账号">
                         <strong>{account.real_name || account.username}</strong>
                         <small>{account.username}</small>
                       </td>
-                      <td className="account-role-column" data-label="权限"><span className="account-role"><ShieldCheck aria-hidden="true" />{roleLabels[account.role]}</span></td>
+                      <td className="account-role-column" data-label="权限"><span className="account-role">{roleLabels[account.role]}</span></td>
                       <td className="account-secondary-column" data-label="状态"><span className={`status-tag ${statusClass[account.status]}`}>{statusLabels[account.status]}</span></td>
                       <td className="account-secondary-column" data-label="最近登录">{formatDateTime(account.last_login_at)}</td>
-                      <td className="account-usage-column" data-label="累计任务数">
-                        <AccountUsageValue
-                          isError={usageSummaryQuery.isError}
-                          isLoading={usageSummaryQuery.isLoading}
-                          suffix="次"
-                          value={usageByAccount.get(account.id)?.task_count}
-                        />
-                      </td>
-                      <td className="account-usage-column" data-label="累计模型 API 请求">
-                        <AccountUsageValue
-                          isError={usageSummaryQuery.isError}
-                          isLoading={usageSummaryQuery.isLoading}
-                          suffix="次"
-                          value={usageByAccount.get(account.id)?.api_request_count}
-                        />
-                      </td>
-                      <td className="account-usage-column" data-label="累计 Token 消耗">
-                        <AccountUsageValue
-                          isError={usageSummaryQuery.isError}
-                          isLoading={usageSummaryQuery.isLoading}
-                          suffix="Token"
-                          value={usageByAccount.get(account.id)?.token_count}
-                        />
-                      </td>
-                      <td className="account-action-column" data-label="操作">
-                        <div className="table-actions">
-                          <button className="table-action account-usage-action" type="button" onClick={() => setUsageAccount(account)}>
-                            <BarChart3 aria-hidden="true" />用量
-                          </button>
-                          <button className="table-action table-action-result" type="button" onClick={() => openEditEditor(account)}>
-                            <Pencil aria-hidden="true" />编辑
-                          </button>
-                        </div>
-                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+            ) : accounts.length ? (
+              <div className="project-empty project-search-empty-state">
+                <strong>未找到匹配的账号</strong>
+                <span>请尝试其他姓名、用户名、单位或手机号。</span>
+              </div>
             ) : (
               <div className="project-empty"><strong>暂无账号</strong><span>点击“新建账号”创建第一个账号</span></div>
             )}
@@ -318,32 +297,13 @@ export function AccountManagementPage() {
           mode={editorMode}
           notice={formNotice}
           onClose={closeEditor}
+          onOpenUsage={editingAccount ? () => setUsageAccount(editingAccount) : undefined}
           onResetPassword={resetPassword}
           onSubmit={submitAccount}
         />
       ) : null}
       {usageAccount ? <AccountUsageModal account={usageAccount} onClose={() => setUsageAccount(null)} /> : null}
     </div>
-  );
-}
-
-function AccountUsageValue({
-  isError,
-  isLoading,
-  suffix,
-  value
-}: {
-  isError: boolean;
-  isLoading: boolean;
-  suffix: string;
-  value?: number;
-}) {
-  if (isLoading) return <span className="account-usage-state">统计中…</span>;
-  if (isError) return <span className="account-usage-state error">暂不可用</span>;
-  return (
-    <span className="account-usage-value">
-      <strong>{integerFormatter.format(value ?? 0)}</strong> {suffix}
-    </span>
   );
 }
 
@@ -451,6 +411,7 @@ interface AccountEditorModalProps {
   mode: "create" | "edit";
   notice: string;
   onClose: () => void;
+  onOpenUsage?: () => void;
   onResetPassword: () => void;
   onSubmit: (form: AccountFormState) => void;
 }
@@ -463,6 +424,7 @@ function AccountEditorModal({
   mode,
   notice,
   onClose,
+  onOpenUsage,
   onResetPassword,
   onSubmit
 }: AccountEditorModalProps) {
@@ -577,11 +539,16 @@ function AccountEditorModal({
           {error ? <p className="auth-status auth-status-error" role="alert">{error}</p> : null}
           <div className="account-editor-actions">
             {mode === "edit" ? (
-              <button className="button secondary account-reset-password-button" disabled={isPending || isResetting} type="button" onClick={onResetPassword}>
+              <button className="button primary-action-button" disabled={isPending || isResetting} type="button" onClick={onResetPassword}>
                 <KeyRound aria-hidden="true" />{isResetting ? "正在重置…" : "重置密码"}
               </button>
             ) : null}
-            <div className="account-editor-primary-actions">
+            <div className={`account-editor-primary-actions${mode === "edit" ? " is-editing" : ""}`}>
+              {mode === "edit" && onOpenUsage ? (
+                <button className="back-cancel-button account-editor-usage-button" disabled={isPending || isResetting} type="button" onClick={onOpenUsage}>
+                  <BarChart3 aria-hidden="true" />用量
+                </button>
+              ) : null}
               <button className="back-cancel-button" disabled={isPending || isResetting} type="button" onClick={handleClose}>取消</button>
               <button className="button primary-action-button" disabled={isPending || isResetting} type="submit">
                 <Save aria-hidden="true" />{isPending ? "正在保存…" : "保存账号"}

@@ -58,6 +58,8 @@ export interface ReviewDetectionListItem {
   review_status: ReviewDetectionStatus;
   report_id: string | null;
   report_status: InspectionReportStatus | null;
+  generate_building_model: boolean;
+  has_building_model: boolean;
   model_types: DefectType[];
   photo_count: number;
   ai_result_count: number;

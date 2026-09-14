@@ -5,7 +5,6 @@ import {
   type PointerEvent as ReactPointerEvent,
   type WheelEvent as ReactWheelEvent,
   useEffect,
-  useMemo,
   useRef,
   useState
 } from "react";
@@ -13,106 +12,231 @@ import { useLocation, useParams } from "react-router-dom";
 import {
   ACESFilmicToneMapping,
   Box3,
-  BufferGeometry,
   Color,
   DirectionalLight,
-  DoubleSide,
   GridHelper,
   HemisphereLight,
   LineSegments,
-  Matrix4,
   MathUtils,
   Mesh,
-  MeshBasicMaterial,
   type Object3D,
+  OrthographicCamera,
   PerspectiveCamera,
-  PlaneGeometry,
   Quaternion,
-  Raycaster,
   Scene,
   SRGBColorSpace,
   Texture,
-  Vector2,
   Vector3,
+  WebGLRenderTarget,
   WebGLRenderer
 } from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { acceleratedRaycast, computeBoundsTree, disposeBoundsTree } from "three-mesh-bvh";
 
 import {
   buildingModelQueryKey,
   buildingModelQueryOptions,
   deleteBuildingModel,
-  projectPhotosQueryOptions,
   projectQueryOptions,
-  projectReviewedResultQueryOptions,
   uploadBuildingModel
 } from "@/api/projects";
-import { reviewProjectResultsQueryOptions } from "@/api/review";
-import { ReportDefectBox } from "@/components/ReportDefectBox";
 import { WorkspaceTitleBar } from "@/components/WorkspaceTitleBar";
 import {
-  buildDefectTags,
-  buildMetashapeCameraIndex,
-  buildReviewedReportDefectTags,
-  createTagTexture,
-  type DefectTag,
   EARTH_RADIUS_METERS,
-  findMetashapeCamera,
   type GeographicModelOrigin,
-  metashapeProjectionRay,
-  type MetashapeProjectionCamera,
-  parseMetashapeProjectionPackage,
-  type ProjectablePhoto,
-  photoProjectionRay
+  parseMetashapeProjectionPackage
 } from "@/utils/buildingModelTags";
 
 const MAX_BUILDING_MODEL_BYTES = 1024 * 1024 * 1024;
 const EXAMPLE_BUILDING_MODEL_URL = "/models/tower_residential__modern_apartment_building_metalrough.glb";
 const MODEL_UP = new Vector3(0, 1, 0);
-const MODEL_FORWARD = new Vector3(0, 0, 1);
-const MIN_FACADE_HORIZONTAL_NORMAL_SQ = 0.25;
+const ELEVATION_PREVIEW_WIDTH = 2048;
+const ELEVATION_PREVIEW_HEIGHT = 1536;
 
-function stabilizeFacadeNormal(surfaceNormal: Vector3) {
-  const normal = surfaceNormal.clone().normalize();
-  const horizontalNormal = new Vector3(normal.x, 0, normal.z);
+const ELEVATION_VIEWS = [
+  { id: "east", label: "东立面" },
+  { id: "west", label: "西立面" },
+  { id: "south", label: "南立面" },
+  { id: "north", label: "北立面" }
+] as const;
 
-  // Photogrammetry meshes retain small ledges and uneven triangles on otherwise
-  // vertical façades. Keep roof/floor normals intact, but prevent wall labels
-  // from inheriting that local vertical tilt.
-  if (horizontalNormal.lengthSq() >= MIN_FACADE_HORIZONTAL_NORMAL_SQ) {
-    return horizontalNormal.normalize();
+type ElevationId = (typeof ELEVATION_VIEWS)[number]["id"];
+type ElevationImages = Partial<Record<ElevationId, string>>;
+type ElevationDirections = Record<ElevationId, Vector3>;
+
+function getElevationDirections(model: Object3D): ElevationDirections {
+  model.updateWorldMatrix(true, true);
+
+  let vertexCount = 0;
+  model.traverse((object) => {
+    if (object instanceof Mesh) {
+      vertexCount += object.geometry.getAttribute("position")?.count ?? 0;
+    }
+  });
+
+  if (vertexCount < 3) {
+    return {
+      east: new Vector3(1, 0, 0),
+      west: new Vector3(-1, 0, 0),
+      south: new Vector3(0, 0, 1),
+      north: new Vector3(0, 0, -1)
+    };
   }
-  return normal;
+
+  const stride = Math.max(1, Math.floor(vertexCount / 50_000));
+  const sample = new Vector3();
+  let count = 0;
+  let meanX = 0;
+  let meanZ = 0;
+  let xx = 0;
+  let xz = 0;
+  let zz = 0;
+
+  model.traverse((object) => {
+    if (!(object instanceof Mesh)) return;
+    const position = object.geometry.getAttribute("position");
+    if (!position) return;
+
+    for (let index = 0; index < position.count; index += stride) {
+      sample.fromBufferAttribute(position, index).applyMatrix4(object.matrixWorld);
+      count += 1;
+      const deltaX = sample.x - meanX;
+      const deltaZ = sample.z - meanZ;
+      meanX += deltaX / count;
+      meanZ += deltaZ / count;
+      xx += deltaX * (sample.x - meanX);
+      xz += deltaX * (sample.z - meanZ);
+      zz += deltaZ * (sample.z - meanZ);
+    }
+  });
+
+  const covarianceSpan = Math.hypot(xx - zz, 2 * xz);
+  const eigenvalue = (xx + zz + covarianceSpan) / 2;
+  const east = Math.abs(xz) > Number.EPSILON
+    ? new Vector3(eigenvalue - zz, 0, xz).normalize()
+    : xx >= zz
+      ? new Vector3(1, 0, 0)
+      : new Vector3(0, 0, 1);
+  if (east.x < 0 || (Math.abs(east.x) <= Number.EPSILON && east.z < 0)) east.negate();
+
+  const south = new Vector3(-east.z, 0, east.x);
+  if (south.z < 0 || (Math.abs(south.z) <= Number.EPSILON && south.x < 0)) south.negate();
+
+  return {
+    east,
+    west: east.clone().negate(),
+    south,
+    north: south.clone().negate()
+  };
 }
 
-function metashapeFacadeNormal(camera: MetashapeProjectionCamera) {
-  const values = camera.cameraToGlbYUp;
-  const normal = new Vector3(-values[2], 0, -values[10]);
-  return normal.lengthSq() >= Number.EPSILON ? normal.normalize() : null;
-}
-
-function orientMarkerToSurface(marker: Object3D, surfaceNormal: Vector3) {
-  const normal = surfaceNormal.clone().normalize();
-  const up = MODEL_UP.clone().addScaledVector(normal, -MODEL_UP.dot(normal));
-
-  // On roofs/floors world-up is parallel to the normal, so use model-forward
-  // as a stable in-plane fallback. Façade labels keep their text upright.
-  if (up.lengthSq() < 1e-8) {
-    up.copy(MODEL_FORWARD).addScaledVector(normal, -MODEL_FORWARD.dot(normal));
+function renderElevationImages(
+  renderer: WebGLRenderer,
+  scene: Scene,
+  grid: GridHelper,
+  model: Object3D,
+  maxDimension: number
+): ElevationImages {
+  const originalBackground = scene.background;
+  const originalGridVisibility = grid.visible;
+  const originalRenderTarget = renderer.getRenderTarget();
+  const originalAutoClear = renderer.autoClear;
+  const originalClearColor = renderer.getClearColor(new Color());
+  const originalClearAlpha = renderer.getClearAlpha();
+  const aspect = ELEVATION_PREVIEW_WIDTH / ELEVATION_PREVIEW_HEIGHT;
+  const pixels = new Uint8Array(
+    ELEVATION_PREVIEW_WIDTH * ELEVATION_PREVIEW_HEIGHT * 4
+  );
+  const canvas = document.createElement("canvas");
+  canvas.width = ELEVATION_PREVIEW_WIDTH;
+  canvas.height = ELEVATION_PREVIEW_HEIGHT;
+  const context = canvas.getContext("2d");
+  if (!context) {
+    return {};
   }
-  up.normalize();
 
-  const right = up.clone().cross(normal).normalize();
-  up.copy(normal).cross(right).normalize();
-  marker.quaternion.setFromRotationMatrix(new Matrix4().makeBasis(right, up, normal));
+  const images: ElevationImages = {};
+  const viewBounds = new Box3().setFromObject(model, true);
+  const viewSize = viewBounds.getSize(new Vector3());
+  const center = viewBounds.getCenter(new Vector3());
+  const directions = getElevationDirections(model);
+  grid.visible = false;
+  scene.background = new Color(0xf3f5f7);
+  renderer.autoClear = false;
+  renderer.setClearColor(0xf3f5f7, 1);
+
+  try {
+    ELEVATION_VIEWS.forEach((view) => {
+      const direction = directions[view.id];
+      const screenRight = MODEL_UP.clone().cross(direction).normalize();
+      const horizontalSize = Math.abs(screenRight.x) * viewSize.x
+        + Math.abs(screenRight.z) * viewSize.z;
+      const halfHeight = Math.max(viewSize.y / 2, horizontalSize / (2 * aspect)) * 1.08;
+      const elevationCamera = new OrthographicCamera(
+        -halfHeight * aspect,
+        halfHeight * aspect,
+        halfHeight,
+        -halfHeight,
+        Math.max(maxDimension / 10_000, 0.01),
+        maxDimension * 8
+      );
+      elevationCamera.position.copy(center).addScaledVector(direction, maxDimension * 3);
+      elevationCamera.up.copy(MODEL_UP);
+      elevationCamera.lookAt(center);
+      elevationCamera.updateProjectionMatrix();
+      elevationCamera.updateMatrixWorld(true);
+
+      // A dedicated color/depth target keeps every elevation render isolated.
+      const renderTarget = new WebGLRenderTarget(
+        ELEVATION_PREVIEW_WIDTH,
+        ELEVATION_PREVIEW_HEIGHT
+      );
+      renderTarget.texture.colorSpace = SRGBColorSpace;
+      try {
+        renderer.setRenderTarget(renderTarget);
+        renderer.clear(true, true, true);
+        renderer.render(scene, elevationCamera);
+        renderer.readRenderTargetPixels(
+          renderTarget,
+          0,
+          0,
+          ELEVATION_PREVIEW_WIDTH,
+          ELEVATION_PREVIEW_HEIGHT,
+          pixels
+        );
+
+        const imageData = context.createImageData(
+          ELEVATION_PREVIEW_WIDTH,
+          ELEVATION_PREVIEW_HEIGHT
+        );
+        const rowLength = ELEVATION_PREVIEW_WIDTH * 4;
+        for (let sourceY = 0; sourceY < ELEVATION_PREVIEW_HEIGHT; sourceY += 1) {
+          const sourceStart = sourceY * rowLength;
+          const targetStart = (ELEVATION_PREVIEW_HEIGHT - sourceY - 1) * rowLength;
+          imageData.data.set(
+            pixels.subarray(sourceStart, sourceStart + rowLength),
+            targetStart
+          );
+        }
+        context.putImageData(imageData, 0, 0);
+        images[view.id] = canvas.toDataURL("image/jpeg", 0.95);
+      } finally {
+        renderTarget.dispose();
+      }
+    });
+  } finally {
+    renderer.setRenderTarget(originalRenderTarget);
+    renderer.autoClear = originalAutoClear;
+    renderer.setClearColor(originalClearColor, originalClearAlpha);
+    scene.background = originalBackground;
+    grid.visible = originalGridVisibility;
+    model.updateWorldMatrix(true, true);
+  }
+
+  return images;
 }
+
 const METASHAPE_GENERATOR_PATTERN = /^Agisoft Metashape\b/i;
-
-BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
-BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
-Mesh.prototype.raycast = acceleratedRaycast;
 
 function detectGeographicModelOrigin(bounds: Box3): GeographicModelOrigin | null {
   const center = bounds.getCenter(new Vector3());
@@ -329,7 +453,6 @@ export function BuildingModelPage({ mode = "professional" }: BuildingModelPagePr
   const modelInputRef = useRef<HTMLInputElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const resetViewRef = useRef<() => void>(() => undefined);
-  const focusPhotoRef = useRef<(photo: ProjectablePhoto) => boolean>(() => false);
   const imageDragRef = useRef<{
     pointerId: number;
     startX: number;
@@ -340,81 +463,12 @@ export function BuildingModelPage({ mode = "professional" }: BuildingModelPagePr
   const [loadState, setLoadState] = useState<LoadState>("querying");
   const [loadProgress, setLoadProgress] = useState<number | null>(null);
   const [loadError, setLoadError] = useState("模型加载失败，请稍后重试。");
-  const [selectedAnnotation, setSelectedAnnotation] = useState<DefectTag | null>(null);
-  const [selectedPhoto, setSelectedPhoto] = useState<ProjectablePhoto | null>(null);
+  const [selectedElevation, setSelectedElevation] = useState<ElevationId | null>(null);
+  const [elevationImages, setElevationImages] = useState<ElevationImages>({});
   const [imageView, setImageView] = useState<ImageViewState>(initialImageView);
   const projectQuery = useQuery(projectQueryOptions(id));
   const modelQuery = useQuery(buildingModelQueryOptions(id));
-  const resultsQuery = useQuery({
-    ...reviewProjectResultsQueryOptions(id),
-    enabled: Boolean(id && isReviewWorkspace)
-  });
-  const reviewedResultQuery = useQuery({
-    ...projectReviewedResultQueryOptions(id, !isReviewWorkspace),
-    enabled: Boolean(id && !isReviewWorkspace)
-  });
-  const photosQuery = useQuery({
-    ...projectPhotosQueryOptions(id),
-    enabled: Boolean(id && !isReviewWorkspace)
-  });
-  const defectTags = useMemo(
-    () => isReviewWorkspace
-      ? buildDefectTags(resultsQuery.data)
-      : buildReviewedReportDefectTags(reviewedResultQuery.data, photosQuery.data),
-    [isReviewWorkspace, photosQuery.data, resultsQuery.data, reviewedResultQuery.data]
-  );
-  const defectsByPhotoId = useMemo(() => {
-    const groupedDefects = new Map<string, DefectTag["defects"]>();
-    defectTags.forEach((tag) => {
-      groupedDefects.set(tag.photo.id, [
-        ...(groupedDefects.get(tag.photo.id) ?? []),
-        ...tag.defects
-      ]);
-    });
-    return groupedDefects;
-  }, [defectTags]);
-  const projectPhotos = useMemo<ProjectablePhoto[]>(
-    () => isReviewWorkspace ? resultsQuery.data?.photos ?? [] : photosQuery.data ?? [],
-    [isReviewWorkspace, photosQuery.data, resultsQuery.data?.photos]
-  );
-  const projectPhotoKey = useMemo(
-    () => projectPhotos.map((photo) => [
-      photo.id,
-      photo.longitude,
-      photo.latitude,
-      photo.relative_altitude,
-      photo.absolute_altitude,
-      photo.gimbal_yaw_degree,
-      photo.gimbal_pitch_degree
-    ].join(":")).join("|"),
-    [projectPhotos]
-  );
-  const defectTagKey = useMemo(
-    () => defectTags.map((tag) => `${tag.id}:${tag.count}`).join("|"),
-    [defectTags]
-  );
-  const defectTagsReady = isReviewWorkspace
-    ? !resultsQuery.isPending
-    : !reviewedResultQuery.isPending && !photosQuery.isPending;
-  const currentTaskStatus = resultsQuery.data?.project.current_task_status ?? null;
-  const resultCount = resultsQuery.data?.ai_results.length ?? 0;
-  const modelHelpText = defectTags.length
-    ? "点击标签查看照片 · 左键旋转 · 滚轮缩放 · Shift+左键或右键平移"
-    : !isReviewWorkspace
-      ? reviewedResultQuery.isError || photosQuery.isError
-        ? "标签数据读取失败，当前仍可查看三维模型。"
-        : "当前正式结果没有可定位的墙面标签。"
-      : resultsQuery.isError
-        ? "标签数据读取失败，当前仍可查看三维模型。"
-        : currentTaskStatus === "pending" || currentTaskStatus === "running"
-          ? "缺陷检测进行中，完成后将自动显示墙面标签。"
-          : currentTaskStatus === "failed" || currentTaskStatus === "canceled"
-            ? "缺陷检测未完成，暂无墙面标签。"
-            : resultCount > 0
-              ? "已有缺陷结果，但暂无可定位的墙面标签。"
-              : currentTaskStatus === "success"
-                ? "当前检测未发现缺陷，暂无墙面标签。"
-                : "项目尚未生成检测结果，暂无墙面标签。";
+  const modelHelpText = "左键旋转 · 滚轮缩放 · Shift+左键或右键平移";
   const project = projectQuery.data;
   const modelRecord = modelQuery.data ?? null;
   const isReadOnlyProject = project?.is_example ?? true;
@@ -425,7 +479,7 @@ export function BuildingModelPage({ mode = "professional" }: BuildingModelPagePr
     || project?.name
     || (id ? `检测项目 ${id}` : "建筑三维模型");
   const backLabel = locationState?.backLabel?.trim()
-    || (isReviewWorkspace ? "返回审核工作台" : "返回专业检测");
+    || (isReviewWorkspace ? "返回工作台" : "返回专业检测");
   const backTo = locationState?.backTo?.trim() || (isReviewWorkspace ? "/review" : "/detections");
 
   const uploadMutation = useMutation({
@@ -476,8 +530,8 @@ export function BuildingModelPage({ mode = "professional" }: BuildingModelPagePr
       return;
     }
 
-    setSelectedAnnotation(null);
-    setSelectedPhoto(null);
+    setSelectedElevation(null);
+    setElevationImages({});
     uploadMutation.mutate(file);
   };
 
@@ -487,8 +541,8 @@ export function BuildingModelPage({ mode = "professional" }: BuildingModelPagePr
       || !window.confirm("确认删除当前三维模型？模型文件将从项目存储中永久删除。")
     ) return;
 
-    setSelectedAnnotation(null);
-    setSelectedPhoto(null);
+    setSelectedElevation(null);
+    setElevationImages({});
     deleteMutation.mutate();
   };
 
@@ -503,8 +557,8 @@ export function BuildingModelPage({ mode = "professional" }: BuildingModelPagePr
       return;
     }
 
-    setSelectedAnnotation(null);
-    setSelectedPhoto(null);
+    setSelectedElevation(null);
+    setElevationImages({});
     setLoadProgress(null);
     setLoadState(modelUrl ? "loading" : "empty");
   }, [modelQuery.error, modelQuery.isError, modelQuery.isPending, modelUrl]);
@@ -573,13 +627,12 @@ export function BuildingModelPage({ mode = "professional" }: BuildingModelPagePr
   useEffect(() => {
     setImageView(initialImageView);
     imageDragRef.current = null;
-  }, [selectedAnnotation?.id, selectedPhoto?.id]);
+  }, [selectedElevation]);
 
   useEffect(() => {
     const viewport = viewportRef.current;
-    if (!viewport || !modelUrl || !defectTagsReady) {
+    if (!viewport || !modelUrl) {
       resetViewRef.current = () => undefined;
-      focusPhotoRef.current = () => false;
       return;
     }
 
@@ -609,6 +662,7 @@ export function BuildingModelPage({ mode = "professional" }: BuildingModelPagePr
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.domElement.setAttribute("aria-label", "可旋转、缩放和平移的建筑三维模型");
     renderer.domElement.setAttribute("role", "img");
+    renderer.domElement.style.cursor = "grab";
     viewport.appendChild(renderer.domElement);
 
     const hemisphereLight = new HemisphereLight(0xe5f1ff, 0x17202b, 1.6);
@@ -622,66 +676,10 @@ export function BuildingModelPage({ mode = "professional" }: BuildingModelPagePr
     fillLight.position.set(-5, 3, -4);
     scene.add(fillLight);
 
-    const markerTargets: Array<Mesh<PlaneGeometry, MeshBasicMaterial>> = [];
-    const markerRaycaster = new Raycaster();
-    const pointer = new Vector2();
-    let hoveredMarker: Mesh<PlaneGeometry, MeshBasicMaterial> | null = null;
-    let pointerDownPosition = { x: 0, y: 0 };
     let animationFrame = 0;
-    let cameraTransition: {
-      duration: number;
-      endPosition: Vector3;
-      endTarget: Vector3;
-      startPosition: Vector3;
-      startTarget: Vector3;
-      startedAt: number;
-    } | null = null;
     let disposed = false;
 
-    const findMarker = (event: PointerEvent | MouseEvent) => {
-      const rect = renderer.domElement.getBoundingClientRect();
-      pointer.set(
-        ((event.clientX - rect.left) / Math.max(rect.width, 1)) * 2 - 1,
-        -((event.clientY - rect.top) / Math.max(rect.height, 1)) * 2 + 1
-      );
-      markerRaycaster.setFromCamera(pointer, camera);
-      return markerRaycaster.intersectObjects(markerTargets, false)[0]?.object as
-        | Mesh<PlaneGeometry, MeshBasicMaterial>
-        | undefined;
-    };
-
-    const setMarkerHover = (marker: Mesh<PlaneGeometry, MeshBasicMaterial> | null) => {
-      if (hoveredMarker === marker) return;
-      hoveredMarker = marker;
-      renderer.domElement.style.cursor = hoveredMarker ? "pointer" : "grab";
-    };
-
-    const handlePointerMove = (event: PointerEvent) => setMarkerHover(findMarker(event) ?? null);
-    const handlePointerLeave = () => setMarkerHover(null);
     const handleContextMenu = (event: MouseEvent) => event.preventDefault();
-    const handlePointerDown = (event: PointerEvent) => {
-      pointerDownPosition = { x: event.clientX, y: event.clientY };
-    };
-    const handleClick = (event: MouseEvent) => {
-      const dragDistance = Math.hypot(
-        event.clientX - pointerDownPosition.x,
-        event.clientY - pointerDownPosition.y
-      );
-      if (dragDistance > 5) return;
-      const marker = findMarker(event);
-      if (!marker) return;
-      const annotationId = String(marker.userData.annotationId ?? "");
-      const annotation = defectTags.find((item) => item.id === annotationId);
-      if (annotation) {
-        setSelectedPhoto(null);
-        setSelectedAnnotation(annotation);
-      }
-    };
-
-    renderer.domElement.addEventListener("pointermove", handlePointerMove);
-    renderer.domElement.addEventListener("pointerleave", handlePointerLeave);
-    renderer.domElement.addEventListener("pointerdown", handlePointerDown);
-    renderer.domElement.addEventListener("click", handleClick);
     renderer.domElement.addEventListener("contextmenu", handleContextMenu);
 
     const resize = () => {
@@ -696,31 +694,12 @@ export function BuildingModelPage({ mode = "professional" }: BuildingModelPagePr
     resizeObserver.observe(viewport);
     resize();
 
-    const renderFrame = (timestamp: number) => {
-      if (cameraTransition) {
-        const progress = MathUtils.clamp(
-          (timestamp - cameraTransition.startedAt) / cameraTransition.duration,
-          0,
-          1
-        );
-        const eased = 1 - Math.pow(1 - progress, 3);
-        camera.position.lerpVectors(
-          cameraTransition.startPosition,
-          cameraTransition.endPosition,
-          eased
-        );
-        controls.target.lerpVectors(
-          cameraTransition.startTarget,
-          cameraTransition.endTarget,
-          eased
-        );
-        if (progress >= 1) cameraTransition = null;
-      }
+    const renderFrame = () => {
       controls.update();
       renderer.render(scene, camera);
       animationFrame = window.requestAnimationFrame(renderFrame);
     };
-    renderFrame(performance.now());
+    renderFrame();
 
     const loader = new GLTFLoader();
     loader.load(
@@ -740,7 +719,6 @@ export function BuildingModelPage({ mode = "professional" }: BuildingModelPagePr
           gltf.parser.json.asset?.extras
         );
         const vertexGeographicOrigin = detectGeographicModelOrigin(sourceBounds);
-        const geographicOrigin = vertexGeographicOrigin ?? embeddedProjectionPackage?.origin ?? null;
         let normalizedMetashapeLocalModel = false;
         if (vertexGeographicOrigin) {
           convertGeographicModelToLocalMeters(model, vertexGeographicOrigin);
@@ -773,239 +751,19 @@ export function BuildingModelPage({ mode = "professional" }: BuildingModelPagePr
         });
         scene.add(grid);
 
-        model.updateWorldMatrix(true, true);
-        const surfaceRaycaster = new Raycaster();
-        surfaceRaycaster.firstHitOnly = true;
-        const metashapeCameraIndex = buildMetashapeCameraIndex(
-          embeddedProjectionPackage?.cameras ?? []
-        );
-        if (
-          (geographicOrigin || embeddedProjectionPackage)
-          && (defectTags.length || projectPhotos.length)
-        ) {
-          const acceleratedGeometries = new Set<BufferGeometry>();
-          model.traverse((object) => {
-            if (!(object instanceof Mesh) || acceleratedGeometries.has(object.geometry)) return;
-            acceleratedGeometries.add(object.geometry);
-            object.geometry.computeBoundsTree();
-          });
+        try {
+          setElevationImages(renderElevationImages(
+            renderer,
+            scene,
+            grid,
+            model,
+            maxDimension
+          ));
+        } catch {
+          setElevationImages({});
         }
 
-        const findPhotoSurface = (
-          photo: ProjectablePhoto,
-          normalizedImagePoints: Array<{ x: number; y: number }>
-        ) => {
-          const points = normalizedImagePoints.length
-            ? normalizedImagePoints
-            : [{ x: 0.5, y: 0.5 }];
-          const projections = points.map((point) => ({
-            pitchAdjustment: 0,
-            point,
-            yawAdjustment: 0
-          }));
-          const center = points[0];
-          [-2, 2, -4, 4, -6, 6].forEach((yawAdjustment) => {
-            projections.push({ pitchAdjustment: 0, point: center, yawAdjustment });
-          });
-          [-3, 3].forEach((pitchAdjustment) => {
-            projections.push({ pitchAdjustment, point: center, yawAdjustment: 0 });
-          });
-
-          let surfaceHit: ReturnType<Raycaster["intersectObject"]>[number] | undefined;
-          let surfaceRayOrigin: Vector3 | undefined;
-          const metashapeCamera = findMetashapeCamera(
-            metashapeCameraIndex,
-            photo.original_filename
-          );
-          const projectedFacadeNormal = metashapeCamera
-            ? metashapeFacadeNormal(metashapeCamera)
-            : null;
-          if (metashapeCamera) {
-            for (const point of points) {
-              const ray = metashapeProjectionRay(metashapeCamera, point, model.position);
-              surfaceRaycaster.set(ray.origin, ray.direction);
-              surfaceHit = surfaceRaycaster.intersectObject(model, true)
-                .find((intersection) => Boolean(intersection.face));
-              if (surfaceHit) {
-                surfaceRayOrigin = ray.origin;
-                break;
-              }
-            }
-          }
-          if (!surfaceHit && geographicOrigin) {
-            for (const projection of projections) {
-              const ray = photoProjectionRay(
-                photo,
-                projection.point,
-                geographicOrigin,
-                model.position,
-                projection.yawAdjustment,
-                projection.pitchAdjustment
-              );
-              if (!ray) break;
-              surfaceRaycaster.set(ray.origin, ray.direction);
-              surfaceHit = surfaceRaycaster.intersectObject(model, true)
-                .find((intersection) => Boolean(intersection.face));
-              if (surfaceHit) {
-                surfaceRayOrigin = ray.origin;
-                break;
-              }
-            }
-          }
-          if (!surfaceHit && geographicOrigin) {
-            const ray = photoProjectionRay(photo, center, geographicOrigin, model.position);
-            if (ray) {
-              const fallbackTarget = bounds.getCenter(new Vector3());
-              const horizontalDistance = Math.hypot(
-                fallbackTarget.x - ray.origin.x,
-                fallbackTarget.z - ray.origin.z
-              );
-              const horizontalDirection = Math.hypot(ray.direction.x, ray.direction.z);
-              fallbackTarget.y = MathUtils.clamp(
-                ray.origin.y + ray.direction.y * horizontalDistance / Math.max(horizontalDirection, 0.001),
-                bounds.min.y,
-                bounds.max.y
-              );
-              surfaceRaycaster.set(ray.origin, fallbackTarget.sub(ray.origin).normalize());
-              surfaceHit = surfaceRaycaster.intersectObject(model, true)
-                .find((intersection) => Boolean(intersection.face));
-              if (surfaceHit) surfaceRayOrigin = ray.origin;
-            }
-          }
-          return surfaceHit?.face
-            ? { projectedFacadeNormal, surfaceHit, surfaceRayOrigin }
-            : null;
-        };
-
-        const photoAltitudes = projectPhotos
-          .map((photo) => photo.relative_altitude ?? photo.absolute_altitude)
-          .filter((value): value is number => value !== null && Number.isFinite(value));
-        const minimumPhotoAltitude = photoAltitudes.length ? Math.min(...photoAltitudes) : 0;
-        const maximumPhotoAltitude = photoAltitudes.length ? Math.max(...photoAltitudes) : 0;
-        const photoFocusTargets = new Map<string, { point: Vector3; viewDirection: Vector3 }>();
-
-        projectPhotos.forEach((photo, index) => {
-          const projection = findPhotoSurface(photo, [
-            { x: 0.5, y: 0.5 },
-            { x: 0.35, y: 0.5 },
-            { x: 0.65, y: 0.5 },
-            { x: 0.5, y: 0.35 },
-            { x: 0.5, y: 0.65 }
-          ]);
-          if (projection) {
-            const { surfaceHit, surfaceRayOrigin } = projection;
-            const surfaceNormal = (surfaceHit.normal ?? surfaceHit.face!.normal)
-              .clone()
-              .transformDirection(surfaceHit.object.matrixWorld);
-            const viewDirection = surfaceRayOrigin
-              ? surfaceRayOrigin.clone().sub(surfaceHit.point).normalize()
-              : surfaceNormal.normalize();
-            photoFocusTargets.set(photo.id, {
-              point: surfaceHit.point.clone(),
-              viewDirection
-            });
-            return;
-          }
-
-          const fallbackYaw = projectPhotos.length > 1
-            ? index / projectPhotos.length * 360
-            : 45;
-          const yaw = MathUtils.degToRad(photo.gimbal_yaw_degree ?? fallbackYaw);
-          const viewDirection = new Vector3(-Math.sin(yaw), 0, Math.cos(yaw)).normalize();
-          const point = bounds.getCenter(new Vector3());
-          if (Math.abs(viewDirection.x) >= Math.abs(viewDirection.z)) {
-            point.x = viewDirection.x >= 0 ? bounds.max.x : bounds.min.x;
-          } else {
-            point.z = viewDirection.z >= 0 ? bounds.max.z : bounds.min.z;
-          }
-          const altitude = photo.relative_altitude ?? photo.absolute_altitude;
-          const altitudeProgress = (
-            altitude !== null
-            && maximumPhotoAltitude - minimumPhotoAltitude > 0.5
-          ) ? MathUtils.clamp(
-              (altitude - minimumPhotoAltitude) / (maximumPhotoAltitude - minimumPhotoAltitude),
-              0,
-              1
-            ) : 0.5;
-          point.y = bounds.min.y + size.y * (0.15 + altitudeProgress * 0.7);
-          photoFocusTargets.set(photo.id, { point, viewDirection });
-        });
-
-        focusPhotoRef.current = (photo) => {
-          const focusTarget = photoFocusTargets.get(photo.id);
-          if (!focusTarget) return false;
-          const viewDirection = focusTarget.viewDirection.clone().normalize();
-          if (Math.abs(viewDirection.y) > 0.85) {
-            viewDirection.y = Math.sign(viewDirection.y) * 0.35;
-            viewDirection.normalize();
-          }
-          const endTarget = focusTarget.point.clone();
-          const endPosition = endTarget.clone()
-            .addScaledVector(viewDirection, maxDimension * 0.3)
-            .addScaledVector(MODEL_UP, maxDimension * 0.035);
-          cameraTransition = {
-            duration: 650,
-            endPosition,
-            endTarget,
-            startPosition: camera.position.clone(),
-            startTarget: controls.target.clone(),
-            startedAt: performance.now()
-          };
-          return true;
-        };
-
-        const addDefectTag = (tag: DefectTag) => {
-          const projection = findPhotoSurface(tag.photo, tag.normalizedImagePoints);
-          if (!projection) return;
-          const { projectedFacadeNormal, surfaceHit, surfaceRayOrigin } = projection;
-
-          const surfaceNormal = (surfaceHit.normal ?? surfaceHit.face!.normal)
-            .clone()
-            .transformDirection(surfaceHit.object.matrixWorld);
-          if (
-            surfaceRayOrigin
-            && surfaceNormal.dot(surfaceRayOrigin.clone().sub(surfaceHit.point)) < 0
-          ) {
-            surfaceNormal.negate();
-          }
-
-          const texture = createTagTexture(`${tag.label}X${tag.count}`);
-          if (!texture) return;
-          const markerMaterial = new MeshBasicMaterial({
-            depthTest: true,
-            depthWrite: false,
-            map: texture,
-            opacity: 1,
-            side: DoubleSide,
-            toneMapped: false,
-            transparent: true
-          });
-          const markerHeight = maxDimension * 0.015;
-          const marker = new Mesh(
-            new PlaneGeometry(markerHeight * 4, markerHeight),
-            markerMaterial
-          );
-          const markerNormal = projectedFacadeNormal ?? stabilizeFacadeNormal(
-            surfaceRayOrigin?.clone().sub(surfaceHit.point) ?? surfaceNormal
-          );
-          if (
-            surfaceRayOrigin
-            && markerNormal.dot(surfaceRayOrigin.clone().sub(surfaceHit.point)) < 0
-          ) {
-            markerNormal.negate();
-          }
-          marker.position.copy(surfaceHit.point).addScaledVector(markerNormal, markerHeight * 0.5);
-          orientMarkerToSurface(marker, markerNormal);
-          marker.renderOrder = 10;
-          marker.userData.annotationId = tag.id;
-          markerTargets.push(marker);
-          scene.add(marker);
-        };
-
-        defectTags.forEach(addDefectTag);
-
         const resetView = () => {
-          cameraTransition = null;
           const verticalFov = MathUtils.degToRad(camera.fov);
           const fitHeightDistance = size.y / (2 * Math.tan(verticalFov / 2));
           const fitWidthDistance = size.x / (2 * Math.tan(verticalFov / 2) * Math.max(camera.aspect, 0.1));
@@ -1043,19 +801,13 @@ export function BuildingModelPage({ mode = "professional" }: BuildingModelPagePr
     return () => {
       disposed = true;
       resetViewRef.current = () => undefined;
-      focusPhotoRef.current = () => false;
       resizeObserver.disconnect();
       window.cancelAnimationFrame(animationFrame);
       controls.dispose();
-      renderer.domElement.removeEventListener("pointermove", handlePointerMove);
-      renderer.domElement.removeEventListener("pointerleave", handlePointerLeave);
-      renderer.domElement.removeEventListener("pointerdown", handlePointerDown);
-      renderer.domElement.removeEventListener("click", handleClick);
       renderer.domElement.removeEventListener("contextmenu", handleContextMenu);
 
       scene.traverse((object) => {
         if (!(object instanceof Mesh || object instanceof LineSegments)) return;
-        if (object instanceof Mesh) object.geometry.disposeBoundsTree();
         object.geometry.dispose();
         const materials = Array.isArray(object.material) ? object.material : [object.material];
         materials.forEach((material) => {
@@ -1068,7 +820,7 @@ export function BuildingModelPage({ mode = "professional" }: BuildingModelPagePr
       renderer.dispose();
       renderer.domElement.remove();
     };
-  }, [defectTagKey, defectTagsReady, modelUrl, projectPhotoKey]);
+  }, [modelUrl]);
 
   const busyStatus = loadState === "querying"
     ? { title: "正在读取项目模型", detail: "正在获取项目存储信息…" }
@@ -1085,32 +837,18 @@ export function BuildingModelPage({ mode = "professional" }: BuildingModelPagePr
   const selectedImageTransform = (
     `translate3d(${imageView.x}px, ${imageView.y}px, 0) scale(${imageView.scale})`
   );
-  const activePhoto = selectedAnnotation?.photo ?? selectedPhoto;
-  const activePhotoUrl = selectedAnnotation?.imageUrl
-    ?? selectedPhoto?.preview_url
-    ?? selectedPhoto?.thumbnail_url
-    ?? "";
-  const activePhotoDefects = selectedAnnotation?.defects
-    ?? (selectedPhoto ? defectsByPhotoId.get(selectedPhoto.id) ?? [] : []);
-  const defectivePhotoCount = projectPhotos.reduce(
-    (count, photo) => count + ((defectsByPhotoId.get(photo.id)?.length ?? 0) > 0 ? 1 : 0),
-    0
-  );
-  const totalDefectCount = Array.from(defectsByPhotoId.values()).reduce(
-    (count, defects) => count + defects.length,
-    0
-  );
+  const activeElevation = selectedElevation
+    ? ELEVATION_VIEWS.find((view) => view.id === selectedElevation) ?? null
+    : null;
+  const activeImageUrl = selectedElevation ? elevationImages[selectedElevation] ?? "" : "";
 
-  const handleProjectPhotoSelect = (photo: ProjectablePhoto) => {
-    if (!photo.preview_url && !photo.thumbnail_url) return;
-    focusPhotoRef.current(photo);
-    setSelectedAnnotation(null);
-    setSelectedPhoto(photo);
+  const handleElevationSelect = (elevationId: ElevationId) => {
+    if (!elevationImages[elevationId]) return;
+    setSelectedElevation(elevationId);
   };
 
-  const closePhotoDetail = () => {
-    setSelectedAnnotation(null);
-    setSelectedPhoto(null);
+  const closeImageDetail = () => {
+    setSelectedElevation(null);
   };
 
   return (
@@ -1154,7 +892,7 @@ export function BuildingModelPage({ mode = "professional" }: BuildingModelPagePr
       />
 
       <div
-        className={`building-model-workspace${activePhoto ? " has-defect-detail" : ""}`}
+        className={`building-model-workspace${activeImageUrl ? " has-detail" : ""}`}
       >
         <div className="building-model-viewport" ref={viewportRef}>
           <button
@@ -1194,16 +932,13 @@ export function BuildingModelPage({ mode = "professional" }: BuildingModelPagePr
             </div>
           ) : null}
         </div>
-        {activePhoto ? (
+        {activeImageUrl ? (
           <aside
-            aria-label={selectedAnnotation
-              ? `${selectedAnnotation.label} ${selectedAnnotation.count} 处缺陷照片`
-              : `${activePhoto.original_filename}照片预览`}
-            className="building-defect-detail-card"
-            role="dialog"
+            aria-label={`${activeElevation?.label ?? "建筑立面"}预览`}
+            className="building-model-detail-card"
           >
             <div
-              className={`building-defect-image-viewport${imageView.scale > 1 ? " is-zoomed" : ""}`}
+              className={`building-model-detail-image-viewport${imageView.scale > 1 ? " is-zoomed" : ""}`}
               onPointerCancel={handleImagePointerEnd}
               onPointerDown={handleImagePointerDown}
               onPointerMove={handleImagePointerMove}
@@ -1211,11 +946,11 @@ export function BuildingModelPage({ mode = "professional" }: BuildingModelPagePr
               onWheel={handleImageWheel}
             >
               <div
-                className="building-defect-image-actions"
+                className="building-model-detail-actions"
                 onPointerDown={(event) => event.stopPropagation()}
               >
                 <button
-                  aria-label="缩小检测图片"
+                  aria-label="缩小图片"
                   disabled={imageView.scale <= 1}
                   title="缩小"
                   type="button"
@@ -1224,7 +959,7 @@ export function BuildingModelPage({ mode = "professional" }: BuildingModelPagePr
                   <ZoomOut aria-hidden="true" />
                 </button>
                 <button
-                  aria-label="放大检测图片"
+                  aria-label="放大图片"
                   disabled={imageView.scale >= 5}
                   title="放大"
                   type="button"
@@ -1233,67 +968,54 @@ export function BuildingModelPage({ mode = "professional" }: BuildingModelPagePr
                   <ZoomIn aria-hidden="true" />
                 </button>
                 <button
-                  aria-label="关闭缺陷详情"
+                  aria-label="关闭图片预览"
                   title="关闭"
                   type="button"
-                  onClick={closePhotoDetail}
+                  onClick={closeImageDetail}
                 >
                   <X aria-hidden="true" />
                 </button>
               </div>
               <div
-                className="trial-annotated-photo building-defect-annotated-photo"
+                className="building-model-detail-image"
                 style={{ transform: selectedImageTransform }}
               >
                 <img
-                  alt={selectedAnnotation
-                    ? `${activePhoto.original_filename}，${selectedAnnotation.label} ${selectedAnnotation.count} 处`
-                    : activePhoto.original_filename}
+                  alt={`${activeElevation?.label ?? "建筑立面"}图`}
                   draggable="false"
-                  src={activePhotoUrl}
+                  src={activeImageUrl}
                 />
-                {activePhotoDefects.map((defect, index) => (
-                  <ReportDefectBox
-                    key={defect.id || `${activePhoto.id}:box:${index}`}
-                    defect={defect}
-                    imageHeight={activePhoto.image_height}
-                    imageWidth={activePhoto.image_width}
-                    fallbackIndex={index}
-                  />
-                ))}
               </div>
             </div>
           </aside>
         ) : null}
       </div>
 
-      {projectPhotos.length > 0 ? (
-        <section className="building-model-photo-section" aria-label="项目全部照片">
-          <p className="building-model-photo-summary">
-            {projectPhotos.length}张照片，{defectivePhotoCount}张检测出缺陷的照片，{totalDefectCount}个缺陷
+      {modelUrl ? (
+        <section className="building-model-elevation-section" aria-label="建筑立面缩略图">
+          <p className="building-model-elevation-heading">
+            选择建筑立面
           </p>
-          <div className="building-model-photo-gallery" aria-label="项目照片缩略图">
-            {projectPhotos.map((photo) => {
-              const thumbnailUrl = photo.thumbnail_url ?? photo.preview_url ?? "";
-              const isActive = activePhoto?.id === photo.id;
+          <div className="building-model-elevation-gallery">
+            {ELEVATION_VIEWS.map((view) => {
+              const thumbnailUrl = elevationImages[view.id] ?? "";
+              const isActive = selectedElevation === view.id;
               return (
                 <button
-                  key={photo.id}
-                  aria-label={`查看照片：${photo.original_filename}`}
+                  key={view.id}
+                  aria-label={`查看${view.label}`}
                   aria-pressed={isActive}
                   className={isActive ? "is-active" : ""}
                   disabled={!thumbnailUrl}
                   type="button"
-                  onClick={() => handleProjectPhotoSelect(photo)}
+                  onClick={() => handleElevationSelect(view.id)}
                 >
-                  {thumbnailUrl ? (
-                    <img
-                      alt=""
-                      decoding="async"
-                      loading="lazy"
-                      src={thumbnailUrl}
-                    />
-                  ) : <span aria-hidden="true" />}
+                  <span className="building-model-elevation-thumbnail">
+                    {thumbnailUrl ? (
+                      <img alt="" decoding="async" src={thumbnailUrl} />
+                    ) : <span aria-hidden="true" />}
+                  </span>
+                  <strong>{view.label}</strong>
                 </button>
               );
             })}

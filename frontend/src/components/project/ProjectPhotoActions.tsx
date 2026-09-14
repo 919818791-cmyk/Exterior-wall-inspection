@@ -141,7 +141,8 @@ export function ProjectPhotoActions({
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["projects"] }),
       queryClient.invalidateQueries({ queryKey: ["projects", project.id] }),
-      queryClient.invalidateQueries({ queryKey: ["projects", project.id, "photos"] })
+      queryClient.invalidateQueries({ queryKey: ["projects", project.id, "photos"] }),
+      queryClient.invalidateQueries({ queryKey: ["current-account-usage"] })
     ]);
   };
 

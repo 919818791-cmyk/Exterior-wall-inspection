@@ -63,7 +63,9 @@ class TrialInferenceSettingRead(BaseModel):
     provider: TrialInferenceProvider
     global_job_concurrency: int
     request_concurrency: int
-    daily_api_request_limit: int
+    daily_photo_upload_limit: int
+    monthly_photo_upload_limit: int
+    formal_monthly_photo_upload_limit: int
     generate_limit_per_user: int
     visible_prompt: str
     crack_prompt: str
@@ -81,7 +83,9 @@ class TrialInferenceSettingUpdate(BaseModel):
     provider: TrialInferenceProvider | None = None
     global_job_concurrency: int | None = Field(default=None, ge=1, le=10)
     request_concurrency: int | None = Field(default=None, ge=1, le=10)
-    daily_api_request_limit: int | None = Field(default=None, ge=1, le=1_000_000)
+    daily_photo_upload_limit: int | None = Field(default=None, ge=1, le=100_000)
+    monthly_photo_upload_limit: int | None = Field(default=None, ge=1, le=100_000)
+    formal_monthly_photo_upload_limit: int | None = Field(default=None, ge=1, le=100_000)
     generate_limit_per_user: int | None = Field(default=None, ge=1, le=10_000)
     visible_prompt: str | None = Field(default=None, min_length=20, max_length=20_000)
     crack_prompt: str | None = Field(default=None, min_length=20, max_length=20_000)

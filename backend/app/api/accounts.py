@@ -234,14 +234,16 @@ def get_current_account_usage(
     current_user: AuthenticatedUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> CurrentAccountUsageResponse:
-    """Return the signed-in account's current-month usage and today's Trial API quota balance."""
+    """Return current-month usage and the account's three photo-upload balances."""
     today = datetime.now(DISPLAY_TIMEZONE).date()
     month_start = today.replace(day=1)
     month_start_utc = _utc_boundary(month_start)
     tomorrow_utc = _utc_boundary(today + timedelta(days=1))
     today_utc = _utc_boundary(today)
     metrics = _empty_usage_metrics()
-    trial_api_request_count = 0
+    trial_daily_photo_upload_count = 0
+    trial_monthly_photo_upload_count = 0
+    formal_monthly_photo_upload_count = 0
 
     rows = db.execute(
         select(
@@ -262,20 +264,33 @@ def get_current_account_usage(
     ).all()
     for row in rows:
         _add_usage_event(metrics, row)
-        if (
-            row.source_type == "trial"
-            and row.event_type == "inference"
-            and today_utc <= _aware_utc(row.occurred_at) < tomorrow_utc
-        ):
-            trial_api_request_count += max(0, int(row.api_request_count or 0))
+        if row.event_type == "photo_upload":
+            count = max(0, int(row.photo_count or 0))
+            if row.source_type == "trial":
+                trial_monthly_photo_upload_count += count
+                if today_utc <= _aware_utc(row.occurred_at) < tomorrow_utc:
+                    trial_daily_photo_upload_count += count
+            elif row.source_type == "formal":
+                formal_monthly_photo_upload_count += count
 
-    api_request_limit = trial_scheduling_settings(db, get_settings()).daily_api_request_limit
+    scheduling = trial_scheduling_settings(db, get_settings())
     return CurrentAccountUsageResponse(
         account_id=current_user.id,
         period_start=month_start,
         period_end=today,
         usage=AccountUsageTotals(**metrics),
-        trial_api_request_balance=_quota_balance(api_request_limit, trial_api_request_count),
+        trial_daily_photo_upload_balance=_quota_balance(
+            scheduling.daily_photo_upload_limit,
+            trial_daily_photo_upload_count,
+        ),
+        trial_monthly_photo_upload_balance=_quota_balance(
+            scheduling.monthly_photo_upload_limit,
+            trial_monthly_photo_upload_count,
+        ),
+        formal_monthly_photo_upload_balance=_quota_balance(
+            scheduling.formal_monthly_photo_upload_limit,
+            formal_monthly_photo_upload_count,
+        ),
     )
 
 

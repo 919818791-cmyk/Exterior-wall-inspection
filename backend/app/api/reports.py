@@ -64,6 +64,10 @@ from app.services.inference_scheduling import (
 from app.services.local_qwen_lifecycle import start_local_qwen
 from app.services.object_storage import get_object_bytes, presigned_get_url, put_object, remove_object, signed_object_url
 from app.services.photo_metadata import extract_photo_metadata
+from app.services.photo_upload_quota import (
+    refund_photo_upload_quota,
+    reserve_photo_upload_quota,
+)
 from app.services.photo_precheck import run_stored_photo_precheck
 from app.services.photo_thumbnails import build_thumbnail, store_thumbnail
 from app.services.report_data import build_report_data
@@ -83,12 +87,10 @@ from app.services.trial_qwen_inference import (
 from app.services.trial_inference_provider import (
     active_trial_inference_runtime,
     trial_prompts,
-    trial_scheduling_settings,
 )
 from app.services.trial_pdf_report import TrialPdfExportError, build_trial_result_pdf
 from app.services.usage_control import (
     SecurityStoreUnavailable,
-    enforce_limit,
     get_usage_store,
 )
 from app.services.usage_tracking import add_inference_usage_event, add_photo_upload_event
@@ -157,24 +159,6 @@ def _reserve_trial_usage(
         db=db,
         generate_limit_detail=generate_limit_detail,
         settings=get_settings(),
-    )
-
-
-def _enforce_trial_upload_limit(
-    current_user: AuthenticatedUser,
-    db: Session | None = None,
-) -> None:
-    settings = get_settings()
-    scheduling = trial_scheduling_settings(db, settings)
-    store = get_usage_store()
-    user_identity = str(current_user.id)
-    enforce_limit(
-        store,
-        "trial:upload:user",
-        user_identity,
-        limit=scheduling.upload_limit_per_user,
-        ttl_seconds=scheduling.upload_window_seconds,
-        detail="照片上传过于频繁，请稍后重试。",
     )
 
 
@@ -1444,7 +1428,7 @@ def upload_trial_photo(
     current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> TrialUploadedPhotoRead:
     file_entry = _trial_file_entries([file])[0]
-    _enforce_trial_upload_limit(current_user, db)
+    quota_reservation = reserve_photo_upload_quota(current_user.id, source="trial", db=db)
     photo_id = uuid4()
     suffix = Path(file.filename or "").suffix.lower()
     object_key = f"quick-detection/{current_user.id}/photos/{photo_id}{suffix or '.bin'}"
@@ -1489,6 +1473,7 @@ def upload_trial_photo(
         committed = True
         db.refresh(photo)
     except Exception:
+        refund_photo_upload_quota(quota_reservation)
         if bucket is not None and not committed:
             remove_object(bucket, object_key)
         if thumbnail_bucket is not None and thumbnail is not None and not committed:

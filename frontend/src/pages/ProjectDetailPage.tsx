@@ -102,7 +102,7 @@ export function ProjectDetailPage() {
           <Card className="w-full max-w-2xl rounded-lg border border-red-200 shadow-none">
             <CardBody className="gap-4 p-6">
               <h2 className="text-xl font-black text-ink">项目加载失败</h2>
-              <p className="text-sm font-bold text-red-700">
+              <p className="text-sm font-normal text-red-700">
                 {getErrorMessage(projectQuery.error)}
               </p>
             </CardBody>

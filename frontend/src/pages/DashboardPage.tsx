@@ -2,7 +2,6 @@ import {
   ArrowRight,
   CalendarClock,
   ChevronRight,
-  FileCheck2,
   ScanSearch,
   Sparkles
 } from "lucide-react";
@@ -20,25 +19,21 @@ const defects = [
   {
     key: "crack",
     title: "裂缝识别",
-    description: "识别墙面细微裂缝与延伸走向，辅助快速判断风险位置。",
     image: "/images/optimized/defect-crack-card.webp"
   },
   {
     key: "spalling",
     title: "剥落识别",
-    description: "定位饰面层空缺与脱落区域，降低高空坠物安全隐患。",
     image: "/images/optimized/defect-spalling-card.webp"
   },
   {
     key: "corrosion",
     title: "锈蚀识别",
-    description: "发现外露金属构件锈蚀迹象，辅助评估腐蚀范围与程度。",
     image: "/images/optimized/defect-corrosion-card.webp"
   },
   {
     key: "hollow",
     title: "空鼓识别",
-    description: "结合热成像异常区域识别潜在空鼓，提升隐蔽缺陷筛查效率。",
     image: "/images/optimized/defect-hollow-card.webp"
   }
 ];
@@ -300,45 +295,11 @@ export function DashboardPage() {
             <Link key={defect.key} className="defect-card home-reveal-item" id={`defect-${defect.key}`} to={`/capabilities/${defect.key}`} aria-label={`查看${defect.title}详情`}>
               <div className="defect-media"><img alt={`${defect.title}示意图`} decoding="async" loading="lazy" src={defect.image} /></div>
               <div className="defect-card-body">
-                <div className="defect-card-copy">
-                  <h3>{defect.title}</h3>
-                  <p className="defect-description">{defect.description}</p>
-                </div>
+                <h3>{defect.title}</h3>
                 <span className="defect-detail-link">了解详情 <ChevronRight aria-hidden="true" /></span>
               </div>
             </Link>
           ))}
-        </div>
-      </section>
-
-      <section className="section compact home-reveal-section" id="capabilities" data-home-panel aria-labelledby="home-capabilities-title">
-        <div className="section-heading home-reveal-item">
-          <h2 id="home-capabilities-title">核心功能</h2>
-        </div>
-        <div className="capability-grid">
-          <article className="capability-card time-recommendation-card home-reveal-item">
-            <span className="feature-icon feature-icon-image time-recommendation-mark">
-              <img alt="" decoding="async" loading="lazy" src="/images/optimized/time-recommendation-icon.webp" />
-            </span>
-            <div>
-              <h3>检测时段推荐</h3>
-              <p>综合立面朝向、温度和光照等因素，推荐适合采集的时段</p>
-            </div>
-          </article>
-          <Link className="capability-card home-reveal-item" to="/trials/new">
-            <span className="feature-icon indigo"><ScanSearch aria-hidden="true" /></span>
-            <div>
-              <h3>外墙缺陷识别</h3>
-              <p>基于视觉分析算法，识别裂缝、剥落、锈蚀、空鼓等缺陷</p>
-            </div>
-          </Link>
-          <Link className="capability-card home-reveal-item" to="/trials">
-            <span className="feature-icon green"><FileCheck2 aria-hidden="true" /></span>
-            <div>
-              <h3>智能报告生成</h3>
-              <p>系统汇总检测结果和标注图，生成在线检测报告并支持导出</p>
-            </div>
-          </Link>
         </div>
       </section>
 

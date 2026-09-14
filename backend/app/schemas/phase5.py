@@ -35,6 +35,7 @@ class DetectionTaskRead(ApiSchema):
 
 
 class DetectionStartRequest(ApiSchema):
+    generate_building_model: bool = False
     model_types: list[DefectType] = Field(
         default_factory=lambda: [
             DefectType.CRACK,

@@ -1,13 +1,15 @@
-import { ChevronDown, Gauge, LogOut, Menu, Plus, RefreshCw, Sparkles, UserRound, X } from "lucide-react";
+import { ChevronDown, Gauge, LogOut, Menu, RefreshCw, UserRound, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { currentAccountUsageQueryOptions } from "@/api/accounts";
 import { logout } from "@/api/auth";
 import { AUTH_UNAUTHORIZED_EVENT } from "@/api/client";
+import { AppSidebar } from "@/components/AppSidebar";
 import { AuthModal } from "@/components/auth/AuthModal";
 import { ChangePasswordModal } from "@/components/auth/ChangePasswordModal";
+import { getListPageHeader, ListPageHeader } from "@/components/ListPageHeader";
 import { PersonalInfoModal } from "@/components/auth/PersonalInfoModal";
 import { useAuthStore } from "@/stores/useAuthStore";
 import type { CurrentAccountUsageResponse } from "@/types/accountUsage";
@@ -21,13 +23,14 @@ function pageClass(pathname: string) {
   if (/^\/detections\/[^/]+\/model$/.test(pathname)) return "building-model-route";
   if (pathname.startsWith("/accounts")) return "project-page account-management-route";
   if (pathname.startsWith("/data-management")) return "project-page data-management-route";
+  if (pathname.startsWith("/system-settings")) return "project-page system-settings-route";
   if (pathname === "/review") return "project-page review-workbench-route review-workbench-list-route";
   if (/^\/review\/detections\/[^/]+$/.test(pathname)) return "project-page review-workbench-route review-workbench-detail-route";
   if (pathname.startsWith("/review")) return "project-page review-workbench-route";
   if (/^\/detections\/results\/[^/]+$/.test(pathname)) return "project-page report-detail-route formal-result-route";
   if (/^\/trials\/[^/]+$/.test(pathname) || /^\/reports\/[^/]+$/.test(pathname)) return "project-page report-detail-route formal-result-route";
   if (pathname === "/detections/new") return "project-page new-project-page project-list-chrome";
-  if (/^\/detections\/[^/]+$/.test(pathname)) return "project-page new-project-page project-list-chrome";
+  if (/^\/detections\/[^/]+$/.test(pathname)) return "project-page project-detail-page project-list-chrome";
   if (pathname.startsWith("/detections") || pathname.startsWith("/trials") || pathname.startsWith("/accounts") || pathname.startsWith("/data-management") || pathname.startsWith("/system-settings") || pathname.startsWith("/review")) {
     return "project-page";
   }
@@ -38,6 +41,25 @@ function pageClass(pathname: string) {
 function safeRedirectPath(value: string | null) {
   if (!value || !value.startsWith("/") || value.startsWith("//")) return null;
   return value;
+}
+
+function usesAppSidebar(pathname: string) {
+  return pathname === "/detections"
+    || pathname === "/trials"
+    || pathname === "/review"
+    || pathname === "/accounts";
+}
+
+function sidebarCompactBreakpoint(pathname: string) {
+  if (pathname === "/detections") return 1663;
+  if (pathname === "/trials") return 1533;
+  return 1447;
+}
+
+function isSidebarCompactViewport(breakpoint: number) {
+  return typeof window !== "undefined"
+    && typeof window.matchMedia === "function"
+    && window.matchMedia(`(max-width: ${breakpoint}px)`).matches;
 }
 
 export function AppLayout() {
@@ -56,11 +78,23 @@ export function AppLayout() {
   const [headerScrolled, setHeaderScrolled] = useState(false);
   const [homeNavigationVisible, setHomeNavigationVisible] = useState(true);
   const [projectDetailListChrome, setProjectDetailListChrome] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try {
+      return window.localStorage.getItem("exterior-wall:sidebar-collapsed") === "true";
+    } catch {
+      return false;
+    }
+  });
+  const sidebarBreakpoint = sidebarCompactBreakpoint(location.pathname);
+  const [sidebarViewportCompact, setSidebarViewportCompact] = useState(() => isSidebarCompactViewport(sidebarBreakpoint));
+  const hasAppSidebar = usesAppSidebar(location.pathname);
+  const isSidebarCollapsed = sidebarCollapsed || sidebarViewportCompact;
   const accountUsageQuery = useQuery({
     ...currentAccountUsageQueryOptions,
-    enabled: Boolean(user && accountMenuOpen)
+    enabled: Boolean(user && (accountMenuOpen || (hasAppSidebar && !isSidebarCollapsed)))
   });
   const accountMenuRef = useRef<HTMLDivElement>(null);
+  const sidebarAccountMenuRef = useRef<HTMLElement>(null);
   const managementMenuRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLElement>(null);
   const pendingAuthenticationActionRef = useRef<(() => void) | null>(null);
@@ -74,56 +108,22 @@ export function AppLayout() {
     || location.pathname.startsWith("/data-management")
     || location.pathname === "/review"
   );
-  const isReviewRoute = location.pathname.startsWith("/review");
-  const isDetectionRoute = location.pathname.startsWith("/detections") && !isBuildingModelRoute;
   const isManagementRoute = location.pathname.startsWith("/accounts") || location.pathname.startsWith("/data-management") || location.pathname.startsWith("/system-settings");
   const isHomeRoute = location.pathname === "/";
-  const isTrialSectionRoute = location.pathname.startsWith("/trials");
   const isCreationRoute = location.pathname === "/detections/new" || location.pathname === "/trials/new";
-  const isProfessionalWizardRoute = location.pathname === "/detections/new"
-    || /^\/detections\/[^/]+$/.test(location.pathname);
   const currentPageClass = pageClass(location.pathname);
   const resolvedPageClass = `${currentPageClass}${projectDetailListChrome ? " project-list-chrome" : ""}`;
-  const isCapabilityDetailRoute = location.pathname.startsWith("/capabilities");
   const isDetectionInnerRoute = location.pathname !== "/detections" && location.pathname.startsWith("/detections/");
   const isTrialInnerRoute = location.pathname !== "/trials" && location.pathname.startsWith("/trials/");
   const isLegacyReportDetailRoute = /^\/reports\/[^/]+$/.test(location.pathname);
-  const listPageHeader = location.pathname === "/detections"
-    ? {
-        actionLabel: "开始检测",
-        actionTo: "/detections/new",
-        icon: (
-          <img
-            alt=""
-            aria-hidden="true"
-            className="list-page-header-icon list-page-header-icon-image"
-            src="/icons/detections.png"
-          />
-        ),
-        title: "专业检测",
-        subtitle: "更准确的检测结果，更全面的数据分析"
-      }
-    : location.pathname === "/trials"
-      ? {
-          actionLabel: "开始体验",
-          actionTo: "/trials/new",
-          icon: <Sparkles aria-hidden="true" className="list-page-header-icon" />,
-          title: "快速体验",
-          subtitle: "上传照片即可体验 AI 外墙缺陷检测"
-        }
-      : null;
+  const listPageHeader = getListPageHeader(location.pathname);
   const showsSiteHeader = !isBuildingModelRoute
     && !isReviewBuildingModelRoute
     && !isReviewDetailRoute
-    && !isStandaloneManagementRoute
+    && (!isStandaloneManagementRoute || Boolean(listPageHeader))
     && !isDetectionInnerRoute
     && !isTrialInnerRoute
     && !isLegacyReportDetailRoute;
-  const isThemeHeroRoute = (
-    isTrialSectionRoute || isDetectionRoute || isManagementRoute || (isReviewRoute && !isReviewBuildingModelRoute)
-  ) && !isProfessionalWizardRoute && !listPageHeader;
-  const usesPermanentDarkShell = isCapabilityDetailRoute || isThemeHeroRoute;
-  const usesDarkShell = usesPermanentDarkShell;
   const canAccessAdmin = user?.role === "admin";
   const canAccessReview = user?.role === "reviewer" || user?.role === "admin";
 
@@ -139,6 +139,23 @@ export function AppLayout() {
   useEffect(() => {
     if (new URLSearchParams(location.search).get("login") === "1") setAuthModalOpen(true);
   }, [location.search]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return undefined;
+    const mediaQuery = window.matchMedia(`(max-width: ${sidebarBreakpoint}px)`);
+    const updateSidebarViewport = () => setSidebarViewportCompact(mediaQuery.matches);
+    updateSidebarViewport();
+    mediaQuery.addEventListener("change", updateSidebarViewport);
+    return () => mediaQuery.removeEventListener("change", updateSidebarViewport);
+  }, [sidebarBreakpoint]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("exterior-wall:sidebar-collapsed", String(sidebarCollapsed));
+    } catch {
+      // The layout still works if the browser does not expose persistent storage.
+    }
+  }, [sidebarCollapsed]);
 
   useEffect(() => {
     const handleUnauthorized = () => {
@@ -196,6 +213,7 @@ export function AppLayout() {
   useEffect(() => {
     setManagementMenuOpen(false);
     setMobileNavOpen(false);
+    setAccountMenuOpen(false);
     if (!/^\/detections\/[^/]+$/.test(location.pathname)) setProjectDetailListChrome(false);
   }, [location.pathname]);
 
@@ -231,7 +249,10 @@ export function AppLayout() {
     if (!accountMenuOpen) return;
 
     const closeOnOutsidePointer = (event: PointerEvent) => {
-      if (!accountMenuRef.current?.contains(event.target as Node)) setAccountMenuOpen(false);
+      const target = event.target as Node;
+      if (!accountMenuRef.current?.contains(target) && !sidebarAccountMenuRef.current?.contains(target)) {
+        setAccountMenuOpen(false);
+      }
     };
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") setAccountMenuOpen(false);
@@ -319,9 +340,40 @@ export function AppLayout() {
   }
 
   const displayName = user?.real_name?.trim() || user?.username || "";
+  const sidebarShowsTrialQuota = location.pathname.startsWith("/trials");
+  const sidebarQuotaBalance = accountUsageQuery.data
+    ? (
+        sidebarShowsTrialQuota
+          ? accountUsageQuery.data.trial_daily_photo_upload_balance
+          : accountUsageQuery.data.formal_monthly_photo_upload_balance
+      )
+    : undefined;
+  const sidebarQuotaValueLabel = sidebarQuotaBalance
+    ? `${sidebarQuotaBalance.remaining} / ${sidebarQuotaBalance.limit} 张`
+    : "--";
+  const sidebarQuotaLabel = sidebarShowsTrialQuota ? "快速体验额度" : "专业检测额度";
+  const sidebarQuotaPeriodLabel = sidebarShowsTrialQuota ? "今日" : "本月";
   const managementLinks = [
     ...(canAccessAdmin ? [{ label: "账号管理", to: "/accounts" }, { label: "数据管理", to: "/data-management" }, { label: "推理设置", to: "/system-settings" }] : [])
   ];
+  const renderAccountDropdown = (id: string) => (
+    <div id={id} className="account-dropdown" role="dialog" aria-label="本账号用量、余额和账户操作">
+      <AccountUsageSummary
+        isError={accountUsageQuery.isError}
+        isLoading={accountUsageQuery.isLoading}
+        onRetry={() => void accountUsageQuery.refetch()}
+        usage={accountUsageQuery.data}
+      />
+      <div className="account-menu-actions">
+        <button type="button" onClick={() => { setAccountMenuOpen(false); setMobileNavOpen(false); setPersonalInfoModalOpen(true); }}>
+          <UserRound aria-hidden="true" />个人信息
+        </button>
+        <button type="button" onClick={() => void handleLogout()}>
+          <LogOut aria-hidden="true" />退出登录
+        </button>
+      </div>
+    </div>
+  );
   const accountControl = user ? (
     <div ref={accountMenuRef} className={`account-menu ${accountMenuOpen ? "is-open" : ""}`}>
       <button
@@ -335,22 +387,7 @@ export function AppLayout() {
         <span className="account-trigger-name">{displayName}</span>
         <ChevronDown aria-hidden="true" className="account-trigger-chevron" />
       </button>
-      <div id="account-dropdown" className="account-dropdown" role="dialog" aria-label="本账号用量、余额和账户操作">
-        <AccountUsageSummary
-          isError={accountUsageQuery.isError}
-          isLoading={accountUsageQuery.isLoading}
-          onRetry={() => void accountUsageQuery.refetch()}
-          usage={accountUsageQuery.data}
-        />
-        <div className="account-menu-actions">
-          <button type="button" onClick={() => { setAccountMenuOpen(false); setMobileNavOpen(false); setPersonalInfoModalOpen(true); }}>
-            <UserRound aria-hidden="true" />个人信息
-          </button>
-          <button type="button" onClick={() => void handleLogout()}>
-            <LogOut aria-hidden="true" />退出登录
-          </button>
-        </div>
-      </div>
+      {renderAccountDropdown("account-dropdown")}
     </div>
   ) : (
     <button className="nav-cta auth-trigger" type="button" onClick={() => { setMobileNavOpen(false); requestAuthentication(); }}>
@@ -361,13 +398,38 @@ export function AppLayout() {
 
   return (
     <div
-      className={`${resolvedPageClass} ${usesDarkShell ? "site-dark-theme" : ""} ${isThemeHeroRoute ? "theme-hero-page" : ""}`.trim()}
+      className={`${resolvedPageClass}${hasAppSidebar ? " app-sidebar-route" : ""}${hasAppSidebar && isSidebarCollapsed ? " app-sidebar-collapsed" : ""}`.trim()}
       data-defect={defectKey}
     >
+      {hasAppSidebar ? (
+        <AppSidebar
+          accountMenu={renderAccountDropdown("sidebar-account-dropdown")}
+          accountMenuOpen={accountMenuOpen}
+          accountMenuRef={sidebarAccountMenuRef}
+          canAccessReview={canAccessReview}
+          canToggle={!sidebarViewportCompact}
+          collapsed={isSidebarCollapsed}
+          onCollapsedChange={() => {
+            if (!sidebarViewportCompact) setSidebarCollapsed((collapsed) => !collapsed);
+          }}
+          onAccountMenuToggle={() => setAccountMenuOpen((open) => !open)}
+          onLogin={() => requestAuthentication()}
+          onLogout={() => void handleLogout()}
+          onPersonalInfo={() => {
+            setAccountMenuOpen(false);
+            setMobileNavOpen(false);
+            setPersonalInfoModalOpen(true);
+          }}
+          quotaValueLabel={sidebarQuotaValueLabel}
+          quotaLabel={sidebarQuotaLabel}
+          quotaPeriodLabel={sidebarQuotaPeriodLabel}
+          user={user}
+        />
+      ) : null}
       <header
         ref={headerRef}
         hidden={!showsSiteHeader || (isHomeRoute && !homeNavigationVisible)}
-        className={`site-header centered-nav home-site-header ${listPageHeader ? "list-page-site-header" : ""} ${isCreationRoute ? "creation-page-header" : ""} ${headerScrolled ? "is-scrolled" : ""} ${mobileNavOpen ? "mobile-nav-open" : ""}`}
+        className={`site-header centered-nav home-site-header ${listPageHeader ? "list-page-site-header" : ""} ${isCreationRoute ? "creation-page-header" : ""} ${headerScrolled && !listPageHeader ? "is-scrolled" : ""} ${mobileNavOpen ? "mobile-nav-open" : ""}`}
         aria-label="顶部导航"
       >
         <NavLink className="brand" to="/" aria-label="外墙智能巡检平台首页" onClick={() => setMobileNavOpen(false)}>
@@ -375,19 +437,7 @@ export function AppLayout() {
           <span className="brand-name">外墙智能巡检平台</span>
         </NavLink>
 
-        {listPageHeader ? <div className="list-page-header-copy">
-          <h1>
-            {listPageHeader.title}
-            {listPageHeader.icon}
-          </h1>
-          <p>{listPageHeader.subtitle}</p>
-        </div> : null}
-
-        {listPageHeader ? <div className="list-page-header-action-slot">
-          <Link className="list-page-header-action primary-action-button" to={listPageHeader.actionTo}>
-            <Plus aria-hidden="true" />{listPageHeader.actionLabel}
-          </Link>
-        </div> : null}
+        {listPageHeader ? <ListPageHeader config={listPageHeader} /> : null}
 
         {!listPageHeader ? <button
           aria-controls="mobile-navigation-panel"
@@ -410,7 +460,7 @@ export function AppLayout() {
           <NavLink className={({ isActive }) => (isActive ? "active" : "")} to="/detections" onClick={() => { setManagementMenuOpen(false); setMobileNavOpen(false); }}>专业检测</NavLink>
           <NavLink className={({ isActive }) => (isActive ? "active" : "")} to="/trials" onClick={() => { setManagementMenuOpen(false); setMobileNavOpen(false); }}>快速体验</NavLink>
           {canAccessReview ? (
-            <NavLink className={({ isActive }) => (isActive ? "active" : "")} to="/review" onClick={() => { setManagementMenuOpen(false); setMobileNavOpen(false); }}>审核工作台</NavLink>
+            <NavLink className={({ isActive }) => (isActive ? "active" : "")} to="/review" onClick={() => { setManagementMenuOpen(false); setMobileNavOpen(false); }}>工作台</NavLink>
           ) : null}
           {managementLinks.length > 0 ? (
             <div ref={managementMenuRef} className={`nav-menu ${managementMenuOpen ? "is-open" : ""}`}>
@@ -504,30 +554,22 @@ function AccountUsageSummary({
   return (
     <section className="account-popover-summary" aria-label="本账号用量与余额">
       <div className="account-popover-heading account-balance-heading">
-        <span><Gauge aria-hidden="true" />检测额度</span>
-        <small>每日00:00重置</small>
+        <span><Gauge aria-hidden="true" />照片上传额度</span>
+        <small>北京时间重置</small>
       </div>
-      <QuotaBalanceRow {...usage.trial_api_request_balance} />
+      <QuotaBalanceRow label="快速体验 · 今日" {...usage.trial_daily_photo_upload_balance} />
+      <QuotaBalanceRow label="快速体验 · 本月" {...usage.trial_monthly_photo_upload_balance} />
+      <QuotaBalanceRow label="专业检测 · 本月" {...usage.formal_monthly_photo_upload_balance} />
     </section>
   );
 }
 
-function QuotaBalanceRow({ limit, remaining }: { limit: number; remaining: number }) {
-  const percent = limit > 0 ? Math.min(100, Math.max(0, remaining / limit * 100)) : 0;
-  const percentLabel = `剩余 ${Math.round(percent)}％`;
+function QuotaBalanceRow({ label, limit, remaining }: { label: string; limit: number; remaining: number }) {
   return (
     <div className="account-balance-row">
-      <div
-        aria-label={`检测额度余额 ${remaining}，总额度 ${limit}`}
-        aria-valuemax={limit}
-        aria-valuemin={0}
-        aria-valuenow={remaining}
-        className="account-balance-track"
-        role="progressbar"
-      >
-        <span style={{ width: `${percent}%` }} />
-      </div>
-      <strong>{percentLabel}</strong>
+      <strong aria-label={`${label}照片上传额度余额 ${remaining} 张，总额度 ${limit} 张`}>
+        {label} · 剩余 {remaining} / {limit} 张
+      </strong>
     </div>
   );
 }

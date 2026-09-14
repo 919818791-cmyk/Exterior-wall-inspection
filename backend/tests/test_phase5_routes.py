@@ -85,7 +85,14 @@ def test_algorithm_result_payload_accepts_fixed_json_contract() -> None:
 def test_detection_start_defaults_to_all_supported_report_types() -> None:
     payload = DetectionStartRequest.model_validate({})
 
+    assert payload.generate_building_model is False
     assert payload.model_types == ["crack", "spalling", "hollow"]
+
+
+def test_detection_start_accepts_building_model_generation() -> None:
+    payload = DetectionStartRequest.model_validate({"generate_building_model": True})
+
+    assert payload.generate_building_model is True
 
 
 def test_detection_start_uses_project_facade_type_instead_of_request_payload() -> None:

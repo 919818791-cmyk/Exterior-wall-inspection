@@ -139,17 +139,22 @@ def _project_list_item(
     total_defects: int | None = None,
     by_defect_type: dict[str, int] | None = None,
     model_types: list[str] | None = None,
+    generate_building_model: bool | None = None,
     has_building_model: bool | None = None,
 ) -> ProjectListItem:
-    if model_types is None:
-        model_types = list(
-            db.scalar(
-                select(DetectionConfig.model_types).where(
-                    DetectionConfig.project_id == project.id
-                )
-            )
-            or []
+    if model_types is None or generate_building_model is None:
+        detection_config = db.scalar(
+            select(DetectionConfig).where(DetectionConfig.project_id == project.id)
         )
+        if model_types is None:
+            model_types = list(detection_config.model_types or []) if detection_config else []
+        if generate_building_model is None:
+            config_json = detection_config.config_json if detection_config else None
+            generate_building_model = bool(
+                config_json.get("generate_building_model", False)
+                if isinstance(config_json, dict)
+                else False
+            )
     if has_building_model is None:
         has_building_model = bool(getattr(project, "is_example", False)) or db.scalar(
             select(BuildingModel.id).where(BuildingModel.project_id == project.id)
@@ -171,6 +176,7 @@ def _project_list_item(
         latitude=project.latitude,
         status=project.status,
         is_example=bool(getattr(project, "is_example", False)),
+        generate_building_model=bool(generate_building_model),
         has_building_model=has_building_model,
         current_report_id=project.current_report_id,
         photo_count=_count_photos(db, project.id) if photo_count is None else photo_count,
@@ -301,10 +307,21 @@ def list_projects(
         ).all()
     )
     current_task_ids = [project.current_task_id for project in projects if project.current_task_id]
-    model_types_by_project = {
-        project_id: list(model_types or [])
-        for project_id, model_types in db.execute(
-            select(DetectionConfig.project_id, DetectionConfig.model_types).where(
+    detection_config_by_project = {
+        project_id: {
+            "model_types": list(model_types or []),
+            "generate_building_model": bool(
+                config_json.get("generate_building_model", False)
+                if isinstance(config_json, dict)
+                else False
+            ),
+        }
+        for project_id, model_types, config_json in db.execute(
+            select(
+                DetectionConfig.project_id,
+                DetectionConfig.model_types,
+                DetectionConfig.config_json,
+            ).where(
                 DetectionConfig.project_id.in_(project_ids)
             )
         ).all()
@@ -351,7 +368,11 @@ def list_projects(
                 photo_count=int(photo_counts.get(project.id, 0)),
                 total_defects=sum(defect_counts.get(project.current_task_id, {}).values()),
                 by_defect_type=defect_counts.get(project.current_task_id, {}),
-                model_types=model_types_by_project.get(project.id, []),
+                model_types=detection_config_by_project.get(project.id, {}).get("model_types", []),
+                generate_building_model=detection_config_by_project.get(project.id, {}).get(
+                    "generate_building_model",
+                    False,
+                ),
                 has_building_model=(
                     bool(getattr(project, "is_example", False))
                     or project.id in building_model_project_ids

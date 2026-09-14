@@ -15,7 +15,9 @@ UpstreamInferenceProvider = Literal["qwen", "zhipu"]
 TRIAL_INFERENCE_PROVIDER_KEY = "trial_inference_provider"
 TRIAL_GLOBAL_JOB_CONCURRENCY_KEY = "trial_global_job_concurrency"
 TRIAL_REQUEST_CONCURRENCY_KEY = "trial_request_concurrency"
-TRIAL_DAILY_API_REQUEST_LIMIT_KEY = "trial_daily_api_request_limit"
+TRIAL_DAILY_PHOTO_UPLOAD_LIMIT_KEY = "trial_daily_photo_upload_limit"
+TRIAL_MONTHLY_PHOTO_UPLOAD_LIMIT_KEY = "trial_monthly_photo_upload_limit"
+FORMAL_MONTHLY_PHOTO_UPLOAD_LIMIT_KEY = "formal_monthly_photo_upload_limit"
 TRIAL_GENERATE_LIMIT_PER_USER_KEY = "trial_generate_limit_per_user"
 TRIAL_VISIBLE_PROMPT_KEY = "trial_visible_prompt"
 TRIAL_CRACK_PROMPT_KEY = "trial_crack_prompt"
@@ -49,11 +51,11 @@ class TrialInferenceRuntime:
 class TrialSchedulingSettings:
     global_job_concurrency: int
     request_concurrency: int
-    daily_api_request_limit: int
+    daily_photo_upload_limit: int
+    monthly_photo_upload_limit: int
+    formal_monthly_photo_upload_limit: int
     generate_limit_per_user: int
     generate_window_seconds: int
-    upload_limit_per_user: int
-    upload_window_seconds: int
     request_timeout_seconds: int
     job_lock_seconds: int
 
@@ -142,12 +144,26 @@ def trial_scheduling_settings(
             minimum=1,
             maximum=10,
         ),
-        daily_api_request_limit=_bounded_int_setting(
+        daily_photo_upload_limit=_bounded_int_setting(
             db,
-            TRIAL_DAILY_API_REQUEST_LIMIT_KEY,
-            getattr(settings, "trial_daily_api_request_limit", 800),
+            TRIAL_DAILY_PHOTO_UPLOAD_LIMIT_KEY,
+            getattr(settings, "trial_daily_photo_upload_limit", 10),
             minimum=1,
-            maximum=1_000_000,
+            maximum=100_000,
+        ),
+        monthly_photo_upload_limit=_bounded_int_setting(
+            db,
+            TRIAL_MONTHLY_PHOTO_UPLOAD_LIMIT_KEY,
+            getattr(settings, "trial_monthly_photo_upload_limit", 50),
+            minimum=1,
+            maximum=100_000,
+        ),
+        formal_monthly_photo_upload_limit=_bounded_int_setting(
+            db,
+            FORMAL_MONTHLY_PHOTO_UPLOAD_LIMIT_KEY,
+            getattr(settings, "formal_monthly_photo_upload_limit", 50),
+            minimum=1,
+            maximum=100_000,
         ),
         generate_limit_per_user=_bounded_int_setting(
             db,
@@ -158,16 +174,6 @@ def trial_scheduling_settings(
         ),
         generate_window_seconds=_bounded_int_value(
             getattr(settings, "trial_generate_window_seconds", 600),
-            minimum=60,
-            maximum=86_400,
-        ),
-        upload_limit_per_user=_bounded_int_value(
-            getattr(settings, "trial_upload_limit_per_user", 30),
-            minimum=1,
-            maximum=100_000,
-        ),
-        upload_window_seconds=_bounded_int_value(
-            getattr(settings, "trial_upload_window_seconds", 600),
             minimum=60,
             maximum=86_400,
         ),

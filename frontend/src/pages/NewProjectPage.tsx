@@ -1,7 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  Box,
   Check,
   FileText,
+  Trash2,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -9,6 +11,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import {
   createProjectDraft,
   createUploadBatch,
+  deleteProject,
   deletePhoto,
   finalizeProject,
   projectPhotosQueryOptions,
@@ -310,7 +313,8 @@ export function NewProjectPage() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["projects", "list"] }),
         queryClient.invalidateQueries({ queryKey: ["projects", project.id] }),
-        queryClient.invalidateQueries({ queryKey: ["projects", project.id, "photos"] })
+        queryClient.invalidateQueries({ queryKey: ["projects", project.id, "photos"] }),
+        queryClient.invalidateQueries({ queryKey: ["current-account-usage"] })
       ]);
       if (savedCount && !id) {
         hydratedProjectIdRef.current = project.id;
@@ -599,7 +603,34 @@ export function NewProjectPage() {
     onError: (error) => setPageError(getErrorMessage(error))
   });
 
-  const busy = savePending || startDetectionMutation.isPending;
+  const deleteProjectMutation = useMutation({
+    mutationFn: deleteProject,
+    onSuccess: async (_, projectId) => {
+      queryClient.removeQueries({ queryKey: ["projects", projectId] });
+      await queryClient.invalidateQueries({ queryKey: ["projects", "list"] });
+      navigate("/detections", { replace: true });
+    },
+    onError: (error) => setPageError(getErrorMessage(error))
+  });
+
+  const canDeleteProject = Boolean(
+    project
+    && !project.is_example
+    && canManageProject
+    && ["draft", "reviewed", "completed"].includes(project.status)
+  );
+  const deleteProjectDisabledReason = project?.is_example
+    ? "示例项目为所有账号共享，无法删除"
+    : !canManageProject
+      ? "仅项目所有者或管理员可以删除"
+      : "检测进行中，无法删除";
+  const handleDeleteProject = () => {
+    if (!project || !canDeleteProject) return;
+    if (!window.confirm(`确认删除检测“${project.name}”？删除后将无法恢复。`)) return;
+    deleteProjectMutation.mutate(project.id);
+  };
+
+  const busy = savePending || startDetectionMutation.isPending || deleteProjectMutation.isPending;
   const canNavigateToWizardStep = (targetStep: WizardStep) => (
     targetStep !== step
     && targetStep <= furthestAccessibleStep
@@ -885,6 +916,32 @@ export function NewProjectPage() {
           >
             {project ? "返回列表" : "取消"}
           </button>
+          {project?.has_building_model ? (
+            <button
+              className="back-cancel-button"
+              disabled={busy}
+              type="button"
+              onClick={() => navigate(`/detections/${project.id}/model`, {
+                state: { projectTitle: project.name }
+              })}
+            >
+              <Box aria-hidden="true" />
+              3D模型
+            </button>
+          ) : null}
+          {project ? (
+            <button
+              aria-busy={deleteProjectMutation.isPending}
+              className="button destructive-action-button"
+              disabled={busy || !canDeleteProject}
+              title={canDeleteProject ? `删除：${project.name}` : deleteProjectDisabledReason}
+              type="button"
+              onClick={handleDeleteProject}
+            >
+              <Trash2 aria-hidden="true" />
+              {deleteProjectMutation.isPending ? "删除中" : "删除"}
+            </button>
+          ) : null}
           {step === 1 ? (
             <button
               className={`button primary-action-button professional-create-details-action${project && detailsChanged ? " is-save" : ""}`}

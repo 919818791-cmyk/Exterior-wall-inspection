@@ -16,13 +16,13 @@ from app.api import reports
 from app.api.dependencies import AuthenticatedUser, get_current_user
 from app.api.reports import (
     _append_trial_detection_result,
-    _enforce_trial_upload_limit,
     _project_reviewed_result_visible,
     _report_access_filter,
     _reserve_trial_usage,
     create_trial_result,
     list_reports,
 )
+from app.services.photo_upload_quota import reserve_photo_upload_quota
 from app.db.session import get_db
 from app.enums.status import InspectionReportStatus, UserRole
 from app.main import app
@@ -481,7 +481,6 @@ def test_trial_photo_precheck_rejection_keeps_stored_original(monkeypatch) -> No
         photo.precheck_attempts = 1
         photo.prechecked_at = datetime.now(UTC)
 
-    monkeypatch.setattr(reports, "_enforce_trial_upload_limit", lambda *args: None)
     monkeypatch.setattr(reports, "run_stored_photo_precheck", reject_after_storage)
     monkeypatch.setattr(reports, "put_object", put)
 
@@ -1409,23 +1408,63 @@ def test_trial_generate_rejects_more_than_thirty_uploaded_photo_ids() -> None:
     assert response.json()["message"] == "单次最多上传 30 张照片。"
 
 
-def test_trial_upload_rate_limit_allows_thirty_per_ten_minutes(monkeypatch) -> None:
+def test_trial_daily_photo_upload_limit_allows_ten_per_account(monkeypatch) -> None:
     monkeypatch.setattr(
-        "app.api.reports.get_settings",
+        "app.services.photo_upload_quota.get_settings",
         lambda: SimpleNamespace(
-            trial_upload_limit_per_user=30,
-            trial_upload_window_seconds=600,
+            trial_daily_photo_upload_limit=10,
+            trial_monthly_photo_upload_limit=50,
+            formal_monthly_photo_upload_limit=50,
         ),
     )
 
-    for _ in range(30):
-        _enforce_trial_upload_limit(_trial_customer())
+    for _ in range(10):
+        reserve_photo_upload_quota(_trial_customer().id, source="trial")
 
     with raises(HTTPException) as raised:
-        _enforce_trial_upload_limit(_trial_customer())
+        reserve_photo_upload_quota(_trial_customer().id, source="trial")
 
     assert raised.value.status_code == 429
-    assert raised.value.detail == "照片上传过于频繁，请稍后重试。"
+    assert raised.value.detail == "快速体验每账号每天最多上传 10 张照片。"
+
+
+def test_trial_monthly_photo_upload_limit_allows_fifty_per_account(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.services.photo_upload_quota.get_settings",
+        lambda: SimpleNamespace(
+            trial_daily_photo_upload_limit=100,
+            trial_monthly_photo_upload_limit=50,
+            formal_monthly_photo_upload_limit=50,
+        ),
+    )
+
+    for _ in range(50):
+        reserve_photo_upload_quota(_trial_customer().id, source="trial")
+
+    with raises(HTTPException) as raised:
+        reserve_photo_upload_quota(_trial_customer().id, source="trial")
+
+    assert raised.value.detail == "快速体验每账号每月最多上传 50 张照片。"
+
+
+def test_formal_monthly_quota_is_separate_from_trial(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.services.photo_upload_quota.get_settings",
+        lambda: SimpleNamespace(
+            trial_daily_photo_upload_limit=10,
+            trial_monthly_photo_upload_limit=50,
+            formal_monthly_photo_upload_limit=50,
+        ),
+    )
+
+    for _ in range(50):
+        reserve_photo_upload_quota(_trial_customer().id, source="formal")
+
+    with raises(HTTPException) as raised:
+        reserve_photo_upload_quota(_trial_customer().id, source="formal")
+
+    assert raised.value.detail == "专业检测每账号每月最多上传 50 张照片。"
+    reserve_photo_upload_quota(_trial_customer().id, source="trial")
 
 
 def test_trial_generate_rate_limit_allows_five_per_ten_minutes(monkeypatch) -> None:
@@ -1434,7 +1473,9 @@ def test_trial_generate_rate_limit_allows_five_per_ten_minutes(monkeypatch) -> N
         lambda: SimpleNamespace(
             trial_generate_limit_per_user=5,
             trial_generate_window_seconds=600,
-            trial_daily_api_request_limit=800,
+            trial_daily_photo_upload_limit=10,
+            trial_monthly_photo_upload_limit=50,
+            formal_monthly_photo_upload_limit=50,
             trial_job_lock_seconds=900,
             trial_global_job_concurrency=4,
         ),
@@ -1451,26 +1492,9 @@ def test_trial_generate_rate_limit_allows_five_per_ten_minutes(monkeypatch) -> N
     assert raised.value.detail == "免费版每 10 分钟最多可试用 3 次，请 10 分钟后再试。"
 
 
-def test_trial_daily_api_request_limit_is_reserved_and_reconciled() -> None:
-    first = _reserve_trial_usage(_trial_customer(), api_request_count=800)
-    first.release(successful=True, actual_api_request_count=400)
-
-    second = _reserve_trial_usage(_trial_customer(), api_request_count=400)
-    second.release(successful=True, actual_api_request_count=400)
-
-    with raises(HTTPException) as raised:
-        _reserve_trial_usage(_trial_customer(), api_request_count=1)
-
-    assert raised.value.status_code == 429
-    assert raised.value.detail == "每位用户每天最多使用 800 次模型 API 请求。"
-
-
-def test_trial_failed_inference_refunds_reserved_api_requests() -> None:
-    failed = _reserve_trial_usage(_trial_customer(), api_request_count=800)
-    failed.release(successful=False)
-
-    retried = _reserve_trial_usage(_trial_customer(), api_request_count=800)
-    retried.release(successful=True, actual_api_request_count=800)
+def test_model_api_request_count_is_not_limited() -> None:
+    reservation = _reserve_trial_usage(_trial_customer(), api_request_count=1_000_000)
+    reservation.release(successful=True, actual_api_request_count=1_000_000)
 
 
 def test_trial_generate_rejects_files_larger_than_five_mb() -> None:

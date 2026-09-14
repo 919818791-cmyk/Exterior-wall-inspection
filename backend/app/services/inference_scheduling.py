@@ -11,10 +11,8 @@ from app.services.trial_inference_provider import trial_scheduling_settings
 from app.services.usage_control import (
     SecurityStoreUnavailable,
     UsageControlStore,
-    daily_identity,
     enforce_limit,
     get_usage_store,
-    seconds_until_next_day,
 )
 
 
@@ -22,8 +20,6 @@ from app.services.usage_control import (
 class InferenceUsageReservation:
     store: UsageControlStore
     user_identity: str
-    quota_identity: str
-    api_request_count: int
     user_lock_token: str
     global_slot_token: str
     released: bool = False
@@ -37,23 +33,6 @@ class InferenceUsageReservation:
         if self.released:
             return
         self.released = True
-        if not successful:
-            self.store.refund(
-                "trial:daily-api-requests",
-                self.quota_identity,
-                amount=self.api_request_count,
-            )
-        elif actual_api_request_count is not None:
-            unused_api_requests = max(
-                0,
-                self.api_request_count - actual_api_request_count,
-            )
-            if unused_api_requests:
-                self.store.refund(
-                    "trial:daily-api-requests",
-                    self.quota_identity,
-                    amount=unused_api_requests,
-                )
         self.store.release_semaphore(
             "trial:inference-jobs",
             self.global_slot_token,
@@ -78,7 +57,6 @@ def reserve_inference_usage(
     scheduling = trial_scheduling_settings(db, settings)
     store = get_usage_store()
     user_identity = str(actor_id)
-    quota_identity = daily_identity(user_identity)
     enforce_limit(
         store,
         "trial:generate:user",
@@ -87,23 +65,6 @@ def reserve_inference_usage(
         ttl_seconds=scheduling.generate_window_seconds,
         detail=generate_limit_detail,
     )
-    enforce_limit(
-        store,
-        "trial:daily-api-requests",
-        quota_identity,
-        amount=api_request_count,
-        limit=scheduling.daily_api_request_limit,
-        ttl_seconds=seconds_until_next_day(),
-        detail=f"每位用户每天最多使用 {scheduling.daily_api_request_limit} 次模型 API 请求。",
-    )
-
-    def refund_daily_usage() -> None:
-        store.refund(
-            "trial:daily-api-requests",
-            quota_identity,
-            amount=api_request_count,
-        )
-
     try:
         user_lock_token = store.acquire_lock(
             "trial:user-job",
@@ -111,13 +72,11 @@ def reserve_inference_usage(
             ttl_seconds=scheduling.job_lock_seconds,
         )
     except SecurityStoreUnavailable as exc:
-        refund_daily_usage()
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(exc),
         ) from exc
     if user_lock_token is None:
-        refund_daily_usage()
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="同一账号只能同时执行一个检测任务。",
@@ -132,14 +91,12 @@ def reserve_inference_usage(
         )
     except SecurityStoreUnavailable as exc:
         store.release_lock("trial:user-job", user_identity, user_lock_token)
-        refund_daily_usage()
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(exc),
         ) from exc
     if global_slot_token is None:
         store.release_lock("trial:user-job", user_identity, user_lock_token)
-        refund_daily_usage()
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="当前检测任务较多，请稍后重试。",
@@ -149,8 +106,6 @@ def reserve_inference_usage(
     return InferenceUsageReservation(
         store=store,
         user_identity=user_identity,
-        quota_identity=quota_identity,
-        api_request_count=api_request_count,
         user_lock_token=user_lock_token,
         global_slot_token=global_slot_token,
     )

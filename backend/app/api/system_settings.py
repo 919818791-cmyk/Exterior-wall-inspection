@@ -26,9 +26,11 @@ from app.services.local_qwen_lifecycle import (
     reconcile_local_qwen,
 )
 from app.services.trial_inference_provider import (
+    FORMAL_MONTHLY_PHOTO_UPLOAD_LIMIT_KEY,
     PHOTO_GUARD_PROMPT_KEY,
     TRIAL_CRACK_PROMPT_KEY,
-    TRIAL_DAILY_API_REQUEST_LIMIT_KEY,
+    TRIAL_DAILY_PHOTO_UPLOAD_LIMIT_KEY,
+    TRIAL_MONTHLY_PHOTO_UPLOAD_LIMIT_KEY,
     TRIAL_GENERATE_LIMIT_PER_USER_KEY,
     TRIAL_GLOBAL_JOB_CONCURRENCY_KEY,
     TRIAL_INFERENCE_PROVIDER_KEY,
@@ -80,7 +82,9 @@ def _setting_read(db: Session) -> TrialInferenceSettingRead:
         provider=get_trial_inference_provider(db),
         global_job_concurrency=scheduling.global_job_concurrency,
         request_concurrency=scheduling.request_concurrency,
-        daily_api_request_limit=scheduling.daily_api_request_limit,
+        daily_photo_upload_limit=scheduling.daily_photo_upload_limit,
+        monthly_photo_upload_limit=scheduling.monthly_photo_upload_limit,
+        formal_monthly_photo_upload_limit=scheduling.formal_monthly_photo_upload_limit,
         generate_limit_per_user=scheduling.generate_limit_per_user,
         visible_prompt=prompts.visible_prompt,
         crack_prompt=prompts.crack_prompt,
@@ -141,7 +145,9 @@ def update_trial_inference_setting(
     numeric_settings = (
         ("global_job_concurrency", TRIAL_GLOBAL_JOB_CONCURRENCY_KEY),
         ("request_concurrency", TRIAL_REQUEST_CONCURRENCY_KEY),
-        ("daily_api_request_limit", TRIAL_DAILY_API_REQUEST_LIMIT_KEY),
+        ("daily_photo_upload_limit", TRIAL_DAILY_PHOTO_UPLOAD_LIMIT_KEY),
+        ("monthly_photo_upload_limit", TRIAL_MONTHLY_PHOTO_UPLOAD_LIMIT_KEY),
+        ("formal_monthly_photo_upload_limit", FORMAL_MONTHLY_PHOTO_UPLOAD_LIMIT_KEY),
         ("generate_limit_per_user", TRIAL_GENERATE_LIMIT_PER_USER_KEY),
     )
     for field_name, setting_key in numeric_settings:

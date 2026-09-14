@@ -46,4 +46,6 @@ class CurrentAccountUsageResponse(BaseModel):
     period_start: date
     period_end: date
     usage: AccountUsageTotals
-    trial_api_request_balance: AccountQuotaBalance
+    trial_daily_photo_upload_balance: AccountQuotaBalance
+    trial_monthly_photo_upload_balance: AccountQuotaBalance
+    formal_monthly_photo_upload_balance: AccountQuotaBalance

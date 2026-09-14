@@ -5,7 +5,7 @@ import {
   ModalFooter,
   ModalHeader
 } from "@heroui/react";
-import { Images, ScanLine, X } from "lucide-react";
+import { X } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import type { StartDetectionPayload } from "@/types/projects";
@@ -49,6 +49,7 @@ export function StartDetectionModal({
   onSubmit: (payload: StartDetectionPayload) => void;
 }) {
   const [modelTypes, setModelTypes] = useState<DetectionModelType[]>(["crack"]);
+  const [generateBuildingModel, setGenerateBuildingModel] = useState(false);
   const [localError, setLocalError] = useState("");
   const visiblePhotoCount = qualifiedPhotoCount - thermalPhotoCount;
 
@@ -61,6 +62,7 @@ export function StartDetectionModal({
           : ["hollow"]
         : ["crack"]
     );
+    setGenerateBuildingModel(false);
     setLocalError("");
   }, [isOpen, thermalPhotoCount, visiblePhotoCount]);
 
@@ -93,6 +95,7 @@ export function StartDetectionModal({
     }
     onOpenChange(false);
     onSubmit({
+      generate_building_model: isProfessional && generateBuildingModel,
       model_types: modelTypes
     });
   };
@@ -126,47 +129,21 @@ export function StartDetectionModal({
               <X aria-hidden="true" />
             </button>
             <ModalHeader className="start-detection-modal-header">
-              <span className="start-detection-modal-title-icon" aria-hidden="true">
-                <ScanLine />
-              </span>
               <span className="start-detection-modal-title-copy">
-                {isProfessional ? "开始检测" : "开始 AI 检测"}
+                开始检测
               </span>
-              {isProfessional ? (
-                <span className="start-detection-modal-title-count">
-                  · {qualifiedPhotoCount} 张照片
-                </span>
-              ) : null}
             </ModalHeader>
             <ModalBody className="start-detection-modal-body gap-5">
-              {isProfessional ? (
-                nonDronePhotoCount || rejectedPhotoCount - nonDronePhotoCount > 0 ? (
-                  <div className="start-detection-cleanup-notice">
-                    {nonDronePhotoCount ? (
-                      <span>{nonDronePhotoCount} 张非无人机照片将在确认后自动从照片列表中移除</span>
-                    ) : null}
-                    {rejectedPhotoCount - nonDronePhotoCount > 0 ? (
-                      <span>{rejectedPhotoCount - nonDronePhotoCount} 张非建筑照片将在确认后自动从照片列表中移除</span>
-                    ) : null}
-                  </div>
-                ) : null
-              ) : (
-                <div className="start-detection-summary">
-                  <span className="start-detection-summary-icon" aria-hidden="true">
-                    <Images />
-                  </span>
-                  <span className="start-detection-summary-copy">
-                    <strong>{qualifiedPhotoCount} 张照片将参与检测</strong>
-                    {nonDronePhotoCount ? (
-                      <span>{nonDronePhotoCount} 张非无人机照片将在确认后自动从照片列表中移除</span>
-                    ) : null}
-                    {rejectedPhotoCount - nonDronePhotoCount > 0 ? (
-                      <span>{rejectedPhotoCount - nonDronePhotoCount} 张非建筑照片将在确认后自动从照片列表中移除</span>
-                    ) : null}
-                  </span>
-                  <span className="start-detection-ready-badge">已就绪</span>
+              {nonDronePhotoCount || rejectedPhotoCount - nonDronePhotoCount > 0 ? (
+                <div className="start-detection-cleanup-notice">
+                  {nonDronePhotoCount ? (
+                    <span>{nonDronePhotoCount} 张非无人机照片将在确认后自动从照片列表中移除</span>
+                  ) : null}
+                  {rejectedPhotoCount - nonDronePhotoCount > 0 ? (
+                    <span>{rejectedPhotoCount - nonDronePhotoCount} 张非建筑照片将在确认后自动从照片列表中移除</span>
+                  ) : null}
                 </div>
-              )}
+              ) : null}
 
               <fieldset className="start-detection-types">
                 <legend>检测类型</legend>
@@ -196,6 +173,30 @@ export function StartDetectionModal({
                   ))}
                 </div>
               </fieldset>
+
+              {isProfessional ? (
+                <fieldset className="start-detection-addons">
+                  <legend>附加能力</legend>
+                  <label className="start-detection-addon-option">
+                    <strong className="start-detection-addon-copy">生成三维模型</strong>
+                    <input
+                      checked={generateBuildingModel}
+                      className="sr-only"
+                      disabled={isPending}
+                      type="checkbox"
+                      onChange={(event) => setGenerateBuildingModel(event.target.checked)}
+                    />
+                    <span aria-hidden="true" className="start-detection-addon-switch">
+                      <span />
+                    </span>
+                  </label>
+                  <p className={`start-detection-addon-hint${generateBuildingModel ? " is-enabled" : ""}`}>
+                    {generateBuildingModel
+                      ? "为了获得最佳结果，请确保您采集的照片具有良好的GPS、重叠、光照和距离"
+                      : "基于无人机照片生成建筑三维模型"}
+                  </p>
+                </fieldset>
+              ) : null}
 
               {localError || error ? (
                 <p className="start-detection-error" role="alert">

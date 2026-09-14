@@ -29,7 +29,9 @@ export interface TrialInferenceSetting {
   provider: TrialInferenceProvider;
   global_job_concurrency: number;
   request_concurrency: number;
-  daily_api_request_limit: number;
+  daily_photo_upload_limit: number;
+  monthly_photo_upload_limit: number;
+  formal_monthly_photo_upload_limit: number;
   generate_limit_per_user: number;
   visible_prompt: string;
   crack_prompt: string;
@@ -53,7 +55,9 @@ export interface TrialInferenceSettingUpdate {
   provider: TrialInferenceProvider;
   global_job_concurrency: number;
   request_concurrency: number;
-  daily_api_request_limit: number;
+  daily_photo_upload_limit: number;
+  monthly_photo_upload_limit: number;
+  formal_monthly_photo_upload_limit: number;
   generate_limit_per_user: number;
   visible_prompt: string;
   crack_prompt: string;

@@ -625,6 +625,7 @@ async def start_detection(
     inference_snapshot = {
         "source": "formal_project",
         "facade_type": facade_type,
+        "generate_building_model": bool(payload.generate_building_model) if payload else False,
         "model_types": selected_model_types,
         "high_precision": True,
         "provider": runtime.provider,
@@ -634,7 +635,9 @@ async def start_detection(
         "scheduling": {
             "global_job_concurrency": scheduling.global_job_concurrency,
             "request_concurrency": runtime.max_concurrency,
-            "daily_api_request_limit": scheduling.daily_api_request_limit,
+            "daily_photo_upload_limit": scheduling.daily_photo_upload_limit,
+            "monthly_photo_upload_limit": scheduling.monthly_photo_upload_limit,
+            "formal_monthly_photo_upload_limit": scheduling.formal_monthly_photo_upload_limit,
             "generate_limit_per_user": scheduling.generate_limit_per_user,
             "request_timeout_seconds": runtime.timeout_seconds,
         },

@@ -1,6 +1,6 @@
 import { queryOptions } from "@tanstack/react-query";
 
-import { apiRequest } from "@/api/client";
+import { ApiError, apiFetch, apiRequest } from "@/api/client";
 import type {
   AnnotationPhotoEdit,
   ReviewAnnotationDetail,
@@ -72,6 +72,21 @@ export function resetReviewDetectionAnnotations(taskId: string, photoKey: string
     `/review/detections/${taskId}/annotations/photos?${query.toString()}`,
     { method: "DELETE" }
   );
+}
+
+export async function downloadReviewOriginalPhotos(taskId: string) {
+  const response = await apiFetch(`/review/detections/${taskId}/photos/archive`);
+  if (!response.ok) {
+    const contentType = response.headers.get("content-type") ?? "";
+    const body = contentType.includes("application/json")
+      ? await response.json()
+      : await response.text();
+    const message = typeof body === "object" && body !== null && "detail" in body
+      ? String((body as { detail: unknown }).detail)
+      : `API request failed with status ${response.status}`;
+    throw new ApiError(message, response.status, body);
+  }
+  return response.blob();
 }
 
 export function completeDetectionReview(taskId: string) {

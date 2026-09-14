@@ -37,7 +37,7 @@ class Settings(BaseSettings):
 
     database_url: str = (
         "postgresql+psycopg://building_exterior:building_exterior_password"
-        "@localhost:5433/building_exterior"
+        "@127.0.0.1:5433/building_exterior"
     )
 
     minio_endpoint: str = "localhost:9002"
@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     minio_secret_key: str = "building_exterior_minio_secret"
     minio_bucket: str = "building-exterior"
 
-    redis_url: str = "redis://localhost:6379/0"
+    redis_url: str = "redis://127.0.0.1:6379/0"
     rq_default_queue: str = "algorithm"
     security_store_backend: Literal["redis", "memory"] = "redis"
     security_fail_closed: bool = True
@@ -75,7 +75,9 @@ class Settings(BaseSettings):
     sms_verification_check_window_seconds: int = Field(default=600, ge=60, le=3600)
     sms_verification_request_timeout_seconds: int = Field(default=10, ge=3, le=30)
 
-    trial_daily_api_request_limit: int = Field(default=800, ge=1)
+    trial_daily_photo_upload_limit: int = Field(default=10, ge=1)
+    trial_monthly_photo_upload_limit: int = Field(default=50, ge=1)
+    formal_monthly_photo_upload_limit: int = Field(default=50, ge=1)
     trial_max_file_size_bytes: int = Field(default=5 * 1024 * 1024, ge=1024)
     trial_max_image_pixels: int = Field(default=64_000_000, ge=1_000_000)
     trial_inference_max_image_pixels: int = Field(default=64_000_000, ge=1_000_000)
@@ -83,8 +85,6 @@ class Settings(BaseSettings):
     trial_max_tiles_per_request: int = Field(default=1000, ge=1)
     trial_generate_limit_per_user: int = Field(default=5, ge=1)
     trial_generate_window_seconds: int = Field(default=600, ge=60)
-    trial_upload_limit_per_user: int = Field(default=30, ge=1)
-    trial_upload_window_seconds: int = Field(default=600, ge=60)
     trial_global_job_concurrency: int = Field(default=4, ge=1, le=10)
     trial_request_timeout_seconds: float = Field(default=300, ge=5, le=600)
     trial_request_concurrency: int = Field(default=5, ge=1, le=10)

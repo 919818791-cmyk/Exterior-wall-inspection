@@ -30,7 +30,7 @@ export function ReviewProjectDetailPage() {
           <CardBody className="gap-4 p-6">
             <TriangleAlert className="h-9 w-9 text-red-500" aria-hidden="true" />
             <h1 className="text-xl font-black text-ink">审核详情加载失败</h1>
-            <p className="text-sm font-bold text-red-700">
+            <p className="text-sm font-normal text-red-700">
               {errorMessage(detectionQuery.error)}
             </p>
             <Button
@@ -40,7 +40,7 @@ export function ReviewProjectDetailPage() {
               to="/review"
               variant="flat"
             >
-              返回审核工作台
+              返回工作台
             </Button>
           </CardBody>
         </Card>
@@ -58,7 +58,7 @@ export function ReviewProjectDetailPage() {
             <h1 className="text-xl font-black text-ink">
               {detection.review_status === "failed" ? "AI 检测失败" : "检测结果尚未就绪"}
             </h1>
-            <p className="text-sm font-bold text-slate-500">
+            <p className="text-sm font-normal text-slate-500">
               {detection.project_name}
             </p>
             <Button
@@ -67,7 +67,7 @@ export function ReviewProjectDetailPage() {
               to="/review"
               variant="flat"
             >
-              返回审核工作台
+              返回工作台
             </Button>
           </CardBody>
         </Card>
@@ -79,7 +79,6 @@ export function ReviewProjectDetailPage() {
     <ReviewAnnotationWorkbench
       backLabel="返回列表"
       backTo="/review"
-      pageTitle="审核工作台"
       projectName={detection.project_name}
       reviewTaskId={detection.id}
     />

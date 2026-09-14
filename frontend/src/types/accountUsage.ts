@@ -39,5 +39,7 @@ export interface CurrentAccountUsageResponse {
   period_start: string;
   period_end: string;
   usage: AccountUsageTotals;
-  trial_api_request_balance: AccountQuotaBalance;
+  trial_daily_photo_upload_balance: AccountQuotaBalance;
+  trial_monthly_photo_upload_balance: AccountQuotaBalance;
+  formal_monthly_photo_upload_balance: AccountQuotaBalance;
 }

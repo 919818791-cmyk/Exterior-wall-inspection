@@ -2,6 +2,7 @@ import { Button, Card, CardBody, Skeleton } from "@heroui/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type Konva from "konva";
 import {
+  Box,
   ChevronLeft,
   ChevronRight,
   CircleCheckBig,
@@ -24,6 +25,7 @@ import {
 } from "react-router-dom";
 
 import {
+  downloadReviewOriginalPhotos,
   reviewDetectionAnnotationsQueryOptions,
   saveReviewDetectionAnnotations
 } from "@/api/review";
@@ -84,6 +86,13 @@ type AnnotationEditorSaveHandler = () => void;
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "操作失败，请稍后重试。";
+}
+
+function safeExportBaseName(value: string) {
+  return value
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "-")
+    .trim()
+    .slice(0, 120) || "项目";
 }
 
 function finiteNumber(value: unknown): number | null {
@@ -150,13 +159,11 @@ function useElementWidth<T extends HTMLElement>() {
 export function ReviewAnnotationWorkbench({
   backLabel,
   backTo,
-  pageTitle,
   projectName,
   reviewTaskId
 }: {
   backLabel: string;
   backTo: string;
-  pageTitle: string;
   projectName?: string;
   reviewTaskId: string;
 }) {
@@ -276,6 +283,16 @@ export function ReviewAnnotationWorkbench({
       await queryClient.invalidateQueries({ queryKey: ["review", "detections"] });
     }
   });
+  const originalPhotosExportMutation = useMutation({
+    mutationFn: () => downloadReviewOriginalPhotos(reviewTaskId),
+    onSuccess: (blob) => {
+      const baseName = safeExportBaseName(projectName || detailQuery.data?.result.title || "项目");
+      saveBlobAsFile(blob, `${baseName}-原始照片.zip`);
+    },
+    onError: (error) => {
+      setImportNotice({ tone: "error", message: errorMessage(error) });
+    }
+  });
   const hasBlockingWork = hasUnsavedChanges || isAnyEditorSaving || importMutation.isPending;
   const navigationBlocker = useBlocker(({ currentLocation, nextLocation }) => (
     hasBlockingWork
@@ -310,8 +327,8 @@ export function ReviewAnnotationWorkbench({
       <div className="grid min-h-[calc(100svh-8rem)] place-items-center">
         <Card className="w-full max-w-2xl rounded-lg border border-red-200 shadow-none">
           <CardBody className="gap-4 p-6">
-            <h1 className="text-xl font-black text-ink">{pageTitle}详情加载失败</h1>
-            <p className="text-sm font-bold text-red-700">{errorMessage(detailQuery.error)}</p>
+            <h1 className="text-xl font-black text-ink">{projectName || "项目"}详情加载失败</h1>
+            <p className="text-sm font-normal text-red-700">{errorMessage(detailQuery.error)}</p>
             <RouterLink className="back-cancel-button" to={backTo}>
               <ChevronLeft aria-hidden="true" />
               <span>{backLabel}</span>
@@ -445,10 +462,7 @@ export function ReviewAnnotationWorkbench({
       exported_at: new Date().toISOString(),
       images
     };
-    const baseName = (projectName || report.title || report.report_no || "审核标注")
-      .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "-")
-      .trim()
-      .slice(0, 120) || "审核标注";
+    const baseName = safeExportBaseName(projectName || report.title || report.report_no || "审核标注");
     saveBlobAsFile(
       new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json;charset=utf-8" }),
       `${baseName}-标注.json`
@@ -475,14 +489,7 @@ export function ReviewAnnotationWorkbench({
           <header className="annotation-detail-header">
             <div className="management-page-title">
               <ClipboardCheck aria-hidden="true" className="management-page-title-icon" />
-              <div>
-                <h1>{pageTitle}</h1>
-                {projectName ? (
-                  <p className="mt-1 text-xs font-bold text-slate-500">
-                    {projectName}
-                  </p>
-                ) : null}
-              </div>
+              <h1>{projectName || report.title}</h1>
             </div>
             <div className="annotation-detail-header-actions">
               <input
@@ -517,8 +524,22 @@ export function ReviewAnnotationWorkbench({
                 <Save aria-hidden="true" />
                 {activeSaveStatus?.isSaving ? "保存中…" : "保存标注"}
               </button>
+              {detailQuery.data?.result.project_id ? (
+                <RouterLink
+                  className="primary-action-button annotation-model-link"
+                  state={{
+                    backLabel: "返回推送详情",
+                    backTo: `/review/detections/${reviewTaskId}`,
+                    projectTitle: projectName
+                  }}
+                  to={`/review/detections/${detailQuery.data.result.project_id}/model`}
+                >
+                  <Box aria-hidden="true" />
+                  三维模型
+                </RouterLink>
+              ) : null}
               <button
-                className="button primary-action-button annotation-import-annotations"
+                className="button back-cancel-button annotation-import-annotations"
                 disabled={readOnly || hasUnsavedChanges || isAnyEditorSaving || importMutation.isPending}
                 title={hasUnsavedChanges ? "请先保存当前未保存的标注" : "按照片文件名匹配并覆盖现有标注"}
                 type="button"
@@ -528,7 +549,7 @@ export function ReviewAnnotationWorkbench({
                 {importMutation.isPending ? "导入保存中…" : "批量导入 JSON"}
               </button>
               <button
-                className="button primary-action-button annotation-export-annotations"
+                className="button back-cancel-button annotation-export-annotations"
                 disabled={hasUnsavedChanges || isAnyEditorSaving || importMutation.isPending}
                 title={hasUnsavedChanges ? "请先保存当前未保存的标注" : "导出全部照片的已保存标注"}
                 type="button"
@@ -536,6 +557,16 @@ export function ReviewAnnotationWorkbench({
               >
                 <Download aria-hidden="true" />
                 导出 JSON
+              </button>
+              <button
+                className="button back-cancel-button annotation-export-annotations"
+                disabled={originalPhotosExportMutation.isPending}
+                title="导出当前项目的全部原始照片"
+                type="button"
+                onClick={() => originalPhotosExportMutation.mutate()}
+              >
+                <FileImage aria-hidden="true" />
+                {originalPhotosExportMutation.isPending ? "导出中…" : "导出原始照片"}
               </button>
               <RouterLink
                 aria-label={backLabel}
@@ -775,7 +806,7 @@ function AnnotationPhotoEditor({
   const activeError = saveMutation.error;
   return (
     <div className="annotation-photo-editor-module">
-      {activeError ? <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-700">{errorMessage(activeError)}</p> : null}
+      {activeError ? <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-normal text-red-700">{errorMessage(activeError)}</p> : null}
 
       <AnnotationColumn title={row.filename}>
         <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -805,7 +836,7 @@ function AnnotationPhotoEditor({
           >
             <Trash2 aria-hidden="true" />
           </AnnotationIconButton>
-          <p className="min-w-0 text-sm font-bold text-slate-500" aria-live="polite">
+          <p className="min-w-0 text-sm font-normal text-slate-500" aria-live="polite">
             {isDrawing ? (
               <strong className="text-green-700">请在照片上按住鼠标并拖动绘制标注框，按 Esc 可取消</strong>
             ) : (
@@ -820,7 +851,7 @@ function AnnotationPhotoEditor({
             )}
           </p>
           {selected ? (
-            <label className="ml-auto flex items-center gap-2 text-sm font-bold text-slate-500">
+            <label className="ml-auto flex items-center gap-2 text-sm font-medium text-slate-500">
               类型
               <select
                 className="h-10 w-[98px] rounded-lg border border-slate-300 bg-white px-3 text-base font-bold text-slate-700 outline-none focus:border-action"
@@ -1083,9 +1114,9 @@ function AnnotationCanvas({
   return (
     <div ref={containerRef} className={`annotation-canvas-viewport overflow-hidden rounded-lg border border-slate-200 bg-slate-200 ${drawingEnabled ? "is-drawing" : ""}`}>
       {!imageUrl ? (
-        <div className="grid min-h-64 place-items-center text-sm font-bold text-slate-500">照片没有可预览地址</div>
+        <div className="grid min-h-64 place-items-center text-sm font-normal text-slate-500">照片没有可预览地址</div>
       ) : failed ? (
-        <div className="grid min-h-64 place-items-center text-sm font-bold text-red-600">图片加载失败</div>
+        <div className="grid min-h-64 place-items-center text-sm font-normal text-red-600">图片加载失败</div>
       ) : (
         <>
           <Stage

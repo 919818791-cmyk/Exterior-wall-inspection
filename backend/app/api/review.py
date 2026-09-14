@@ -1,9 +1,16 @@
 from __future__ import annotations
 
+import os
+import re
 from datetime import UTC, datetime
+from tempfile import SpooledTemporaryFile
+from typing import BinaryIO, Callable, Iterable, Iterator
+from urllib.parse import quote
 from uuid import UUID
+from zipfile import ZIP_STORED, ZipFile
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -23,6 +30,7 @@ from app.enums.status import (
 from app.models.tables import (
     AiDetectionResult,
     AnnotationPhotoEdit,
+    BuildingModel,
     DetectionConfig,
     DetectionTask,
     DetectionTaskPhoto,
@@ -53,7 +61,7 @@ from app.schemas.projects import DeleteResponse
 from app.schemas.phase7 import ReportDetailRead
 from app.services.defect_area import approximate_bbox_area_m2, approximate_bbox_length_m
 from app.services.defect_numbering import number_defects
-from app.services.object_storage import presigned_get_url
+from app.services.object_storage import get_object_bytes, presigned_get_url
 from app.services.report_data import build_report_data
 
 router = APIRouter(
@@ -71,6 +79,49 @@ REVIEWABLE_REPORT_STATUSES = {
     InspectionReportStatus.GENERATED.value,
     InspectionReportStatus.PUSHED.value,
 }
+
+
+def _safe_archive_name(value: str, fallback: str) -> str:
+    filename = value.replace("\\", "/").rsplit("/", 1)[-1]
+    filename = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "-", filename).strip(" .")
+    return filename[:180] or fallback
+
+
+def _build_original_photo_archive(
+    photos: Iterable[Photo],
+    *,
+    read_object: Callable[[str, str], bytes] = get_object_bytes,
+) -> BinaryIO:
+    archive = SpooledTemporaryFile(max_size=64 * 1024 * 1024, mode="w+b")
+    used_names: set[str] = set()
+    try:
+        with ZipFile(archive, "w", compression=ZIP_STORED, allowZip64=True) as zip_file:
+            for index, photo in enumerate(photos, start=1):
+                base_name = _safe_archive_name(photo.original_filename, f"photo-{index}")
+                stem, suffix = os.path.splitext(base_name)
+                archive_name = base_name
+                duplicate_index = 2
+                while archive_name.casefold() in used_names:
+                    archive_name = f"{stem} ({duplicate_index}){suffix}"
+                    duplicate_index += 1
+                used_names.add(archive_name.casefold())
+                zip_file.writestr(
+                    archive_name,
+                    read_object(photo.storage_bucket, photo.storage_object_key),
+                )
+        archive.seek(0)
+        return archive
+    except Exception:
+        archive.close()
+        raise
+
+
+def _stream_archive(archive: BinaryIO) -> Iterator[bytes]:
+    try:
+        while chunk := archive.read(1024 * 1024):
+            yield chunk
+    finally:
+        archive.close()
 
 
 def _count_rows(db: Session, model: type, *criteria: object) -> int:
@@ -170,12 +221,21 @@ def _detection_review_status(
     return "completed"
 
 
-def _review_detection_item(
+def _building_model_requested(snapshot: dict, config: DetectionConfig | None) -> bool:
+    if "generate_building_model" in snapshot:
+        return bool(snapshot["generate_building_model"])
+    config_snapshot = config.config_json if config is not None else None
+    return bool(
+        config_snapshot.get("generate_building_model", False)
+        if isinstance(config_snapshot, dict)
+        else False
+    )
+
+
+def _task_detection_config(
     db: Session,
     task: DetectionTask,
-    project: Project,
-) -> ReviewDetectionListItem:
-    report = _report_for_task(db, task.id)
+) -> tuple[dict, DetectionConfig | None]:
     config = (
         db.get(DetectionConfig, task.detection_config_id)
         if task.detection_config_id
@@ -187,6 +247,34 @@ def _review_detection_item(
         if isinstance(summary.get("detection_config"), dict)
         else {}
     )
+    return snapshot, config
+
+
+def _building_model_exists(db: Session, project_id: UUID) -> bool:
+    return db.scalar(
+        select(BuildingModel.id).where(BuildingModel.project_id == project_id)
+    ) is not None
+
+
+def _ensure_required_building_model(
+    *,
+    requested: bool,
+    model_exists: bool,
+) -> None:
+    if requested and not model_exists:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="该项目已勾选“生成三维模型”，请先导入三维模型后再完成审核。",
+        )
+
+
+def _review_detection_item(
+    db: Session,
+    task: DetectionTask,
+    project: Project,
+) -> ReviewDetectionListItem:
+    report = _report_for_task(db, task.id)
+    snapshot, config = _task_detection_config(db, task)
     return ReviewDetectionListItem(
         id=task.id,
         project_id=project.id,
@@ -199,6 +287,8 @@ def _review_detection_item(
         review_status=_detection_review_status(task, report),
         report_id=report.id if report is not None else None,
         report_status=report.status if report is not None else None,
+        generate_building_model=_building_model_requested(snapshot, config),
+        has_building_model=_building_model_exists(db, project.id),
         model_types=(
             snapshot.get("model_types")
             or (config.model_types if config is not None else [])
@@ -383,6 +473,43 @@ def get_review_detection(
     task = _get_review_task_or_404(db, task_id)
     project = _get_project_or_404(db, task.project_id)
     return _review_detection_item(db, task, project)
+
+
+@router.get("/review/detections/{task_id}/photos/archive")
+def download_review_project_original_photos(
+    task_id: UUID,
+    db: Session = Depends(get_db),
+    _: AuthenticatedUser = Depends(get_current_user),
+) -> StreamingResponse:
+    task = _get_review_task_or_404(db, task_id)
+    project = _get_project_or_404(db, task.project_id)
+    photos = list(
+        db.scalars(
+            select(Photo)
+            .where(Photo.project_id == project.id, Photo.deleted_at.is_(None))
+            .order_by(Photo.created_at.asc())
+        )
+    )
+    if not photos:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No original photos are available for this project.",
+        )
+
+    archive = _build_original_photo_archive(photos)
+    archive.seek(0, os.SEEK_END)
+    archive_size = archive.tell()
+    archive.seek(0)
+    project_name = _safe_archive_name(project.name, "project")
+    filename = f"{project_name}-原始照片.zip"
+    return StreamingResponse(
+        _stream_archive(archive),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}",
+            "Content-Length": str(archive_size),
+        },
+    )
 
 
 def _review_annotation_report(
@@ -1264,6 +1391,12 @@ def complete_detection_review(
             status_code=status.HTTP_409_CONFLICT,
             detail="Project is not awaiting review.",
         )
+
+    snapshot, config = _task_detection_config(db, task)
+    _ensure_required_building_model(
+        requested=_building_model_requested(snapshot, config),
+        model_exists=_building_model_exists(db, project.id),
+    )
 
     now = datetime.now(UTC)
     previous_report_status = report.status

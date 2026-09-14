@@ -124,13 +124,40 @@ def test_current_account_usage_returns_month_usage_and_daily_balance() -> None:
 
     class FakeDb:
         def get(self, model: object, key: str) -> SystemSetting | None:
-            if model is SystemSetting and key == "trial_daily_api_request_limit":
-                return SimpleNamespace(value="1200")
+            if model is SystemSetting and key == "trial_daily_photo_upload_limit":
+                return SimpleNamespace(value="10")
+            if model is SystemSetting and key in {
+                "trial_monthly_photo_upload_limit",
+                "formal_monthly_photo_upload_limit",
+            }:
+                return SimpleNamespace(value="50")
             return None
 
         def execute(self, _: object) -> Rows:
             return Rows(
                 [
+                    SimpleNamespace(
+                        occurred_at=now,
+                        event_type="photo_upload",
+                        source_type="formal",
+                        photo_count=1,
+                        api_request_count=0,
+                        token_count=0,
+                        input_token_count=0,
+                        output_token_count=0,
+                        trial_task_count=0,
+                    ),
+                    SimpleNamespace(
+                        occurred_at=now,
+                        event_type="photo_upload",
+                        source_type="trial",
+                        photo_count=2,
+                        api_request_count=0,
+                        token_count=0,
+                        input_token_count=0,
+                        output_token_count=0,
+                        trial_task_count=0,
+                    ),
                     SimpleNamespace(
                         occurred_at=now,
                         event_type="inference",
@@ -161,6 +188,10 @@ def test_current_account_usage_returns_month_usage_and_daily_balance() -> None:
     assert response.usage.task_count == 2
     assert response.usage.api_request_count == 10
     assert response.usage.token_count == 1000
-    assert response.trial_api_request_balance.used == 6
-    assert response.trial_api_request_balance.limit == 1200
-    assert response.trial_api_request_balance.remaining == 1194
+    assert response.trial_daily_photo_upload_balance.used == 2
+    assert response.trial_daily_photo_upload_balance.limit == 10
+    assert response.trial_daily_photo_upload_balance.remaining == 8
+    assert response.trial_monthly_photo_upload_balance.used == 2
+    assert response.trial_monthly_photo_upload_balance.limit == 50
+    assert response.formal_monthly_photo_upload_balance.used == 1
+    assert response.formal_monthly_photo_upload_balance.limit == 50

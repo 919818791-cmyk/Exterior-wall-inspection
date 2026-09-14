@@ -5,6 +5,7 @@
   ModalFooter,
   ModalHeader
 } from "@heroui/react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
   Check,
@@ -131,6 +132,7 @@ function trialRequestStorageKey(userId: string) {
 }
 
 export function TrialExperiencePage() {
+  const queryClient = useQueryClient();
   const navigate = useNavigate();
   const user = useAuthStore((state) => state.user);
   const previewViewportRef = useRef<HTMLDivElement | null>(null);
@@ -789,6 +791,7 @@ export function TrialExperiencePage() {
       setSelectedPhotos((current) => current.map((currentPhoto) => (
         currentPhoto.id === photo.id ? photoWithUploadResult(currentPhoto, uploadResult) : currentPhoto
       )));
+      void queryClient.invalidateQueries({ queryKey: ["current-account-usage"] });
       return uploadResult;
     } catch (uploadError) {
       const message = trialUploadErrorMessage(uploadError);
@@ -1101,7 +1104,7 @@ export function TrialExperiencePage() {
       <Modal
         classNames={{
           backdrop: "trial-detection-modal-backdrop",
-          base: "trial-detection-modal-content",
+          base: `trial-detection-modal-content${detectionDialogStage === "completed" ? " is-completed" : ""}`,
           wrapper: "trial-detection-modal-wrapper"
         }}
         hideCloseButton
@@ -1122,14 +1125,10 @@ export function TrialExperiencePage() {
                   <LoaderCircle />
                 </span>
                 <div>
-                  <small>正在处理</small>
-                  <h2>AI检测进行中</h2>
+                  <h2>检测进行中</h2>
                 </div>
               </ModalHeader>
               <ModalBody className="trial-detection-modal-body trial-detection-progress-body">
-                <div className="trial-detection-progress-copy">
-                  <strong>{GENERATION_STEP_MESSAGES[generationStepIndex]}</strong>
-                </div>
                 <div
                   aria-label="AI检测进度"
                   aria-valuemax={100}
@@ -1158,38 +1157,12 @@ export function TrialExperiencePage() {
             </>
           ) : detectionDialogStage === "completed" ? (
             <>
-              <ModalHeader className="trial-detection-modal-header trial-detection-progress-header">
+              <ModalHeader className="trial-detection-modal-header trial-detection-completed-header">
                 <span className="trial-detection-modal-visual is-completed" aria-hidden="true">
                   <CircleCheckBig />
                 </span>
-                <div>
-                  <small>检测状态</small>
-                  <h2>已完成</h2>
-                </div>
+                <h2>已完成</h2>
               </ModalHeader>
-              <ModalBody className="trial-detection-modal-body trial-detection-progress-body">
-                <div className="trial-detection-progress-copy">
-                  <strong>AI检测已完成</strong>
-                </div>
-                <div
-                  aria-label="AI检测进度"
-                  aria-valuemax={100}
-                  aria-valuemin={0}
-                  aria-valuenow={100}
-                  className="trial-detection-progress-track"
-                  role="progressbar"
-                >
-                  <span style={{ width: "100%" }} />
-                </div>
-                <ol className="trial-detection-progress-steps">
-                  {GENERATION_STEP_MESSAGES.map((message) => (
-                    <li className="is-complete" key={message}>
-                      <span><Check aria-hidden="true" /></span>
-                      {message}
-                    </li>
-                  ))}
-                </ol>
-              </ModalBody>
               <ModalFooter className="trial-detection-modal-footer">
                 <button
                   className="back-cancel-button"
