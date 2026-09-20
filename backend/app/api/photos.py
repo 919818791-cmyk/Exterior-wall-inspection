@@ -32,18 +32,12 @@ from app.services.photo_metadata import (
     infer_drone_type,
 )
 from app.services.photo_precheck import run_stored_photo_precheck
-from app.services.photo_upload_quota import (
-    refund_photo_upload_quota,
-    reserve_photo_upload_quota,
-)
+from app.services.photo_upload_quota import ensure_photo_upload_capacity
+from app.services.photo_upload_validation import MAX_PHOTO_FILE_SIZE_BYTES
 from app.services.photo_thumbnails import build_thumbnail, store_thumbnail
 from app.services.usage_tracking import add_photo_upload_event
 
 router = APIRouter(tags=["photos"])
-
-FORMAL_MAX_PHOTO_COUNT = 30
-FORMAL_MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024
-
 
 def _enum_value(value: object) -> str:
     return getattr(value, "value", value)
@@ -192,17 +186,11 @@ def upload_photo(
     file.file.seek(0)
     if file_size <= 0:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded file is empty.")
-    if file_size > FORMAL_MAX_FILE_SIZE_BYTES:
+    if file_size > MAX_PHOTO_FILE_SIZE_BYTES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"单张图片最大 {FORMAL_MAX_FILE_SIZE_BYTES // (1024 * 1024)}MB。",
+            detail=f"单张图片最大 {MAX_PHOTO_FILE_SIZE_BYTES // (1024 * 1024)}MB。",
         )
-    if _count_active_project_photos(db, project.id) >= FORMAL_MAX_PHOTO_COUNT:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"每个项目最多上传 {FORMAL_MAX_PHOTO_COUNT} 张照片。",
-        )
-
     suffix = Path(file.filename or "").suffix.lower()
     object_id = uuid4()
     object_key = f"projects/{project.id}/photos/{object_id}{suffix or '.bin'}"
@@ -222,6 +210,21 @@ def upload_photo(
     except Exception:
         if bucket is not None:
             remove_object(bucket, object_key)
+        if thumbnail_bucket is not None and thumbnail is not None:
+            remove_object(thumbnail_bucket, thumbnail.object_key)
+        raise
+
+    try:
+        ensure_photo_upload_capacity(
+            db,
+            current_user.id,
+            source="formal",
+            role=current_user.role,
+            account_plan=current_user.account_plan,
+        )
+    except Exception:
+        db.rollback()
+        remove_object(bucket, object_key)
         if thumbnail_bucket is not None and thumbnail is not None:
             remove_object(thumbnail_bucket, thumbnail.object_key)
         raise
@@ -297,17 +300,9 @@ def upload_photo(
     )
     project.updated_at = uploaded_at
     try:
-        quota_reservation = reserve_photo_upload_quota(current_user.id, source="formal", db=db)
-    except Exception:
-        db.rollback()
-        remove_object(bucket, object_key)
-        if thumbnail_bucket is not None and thumbnail is not None:
-            remove_object(thumbnail_bucket, thumbnail.object_key)
-        raise
-    try:
         db.commit()
     except Exception:
-        refund_photo_upload_quota(quota_reservation)
+        db.rollback()
         remove_object(bucket, object_key)
         if thumbnail_bucket is not None and thumbnail is not None:
             remove_object(thumbnail_bucket, thumbnail.object_key)

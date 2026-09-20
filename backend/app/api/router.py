@@ -4,7 +4,6 @@ from app.api import (
     accounts,
     auth,
     building_models,
-    data_management,
     detection_config,
     detection_tasks,
     health,
@@ -22,7 +21,6 @@ api_router.include_router(health.router, tags=["health"])
 api_router.include_router(auth.router)
 api_router.include_router(object_storage.router)
 api_router.include_router(accounts.router)
-api_router.include_router(data_management.router)
 api_router.include_router(projects.router)
 api_router.include_router(building_models.router)
 api_router.include_router(photos.router)

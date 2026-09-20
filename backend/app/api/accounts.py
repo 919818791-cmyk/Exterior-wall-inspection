@@ -1,15 +1,15 @@
 from __future__ import annotations
 
 import secrets
-from datetime import datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Literal
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import and_, case, func, select
 from sqlalchemy.orm import Session
 
-from app.api.data_management import DISPLAY_TIMEZONE, _aware_utc, _bucket_index, _period_ranges, _utc_boundary
 from app.api.dependencies import AuthenticatedUser, get_current_user, require_roles
 from app.core.config import get_settings
 from app.core.security import hash_password
@@ -27,13 +27,58 @@ from app.schemas.account_usage import (
 from app.schemas.auth import (
     AccountCreateRequest,
     AccountPasswordResetResponse,
+    AccountQuotaResetResponse,
     AccountRead,
     AccountUpdateRequest,
 )
+from app.services.photo_upload_quota import reset_account_quota_counters
 from app.services.trial_inference_provider import trial_scheduling_settings
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
 TEMPORARY_PASSWORD_BYTES = 18
+DISPLAY_TIMEZONE = ZoneInfo("Asia/Shanghai")
+
+
+def _month_start(value: date, offset: int = 0) -> date:
+    month_index = value.year * 12 + value.month - 1 + offset
+    return date(month_index // 12, month_index % 12 + 1, 1)
+
+
+def _period_ranges(period: Literal["week", "month"], today: date) -> list[tuple[date, date, str]]:
+    if period == "week":
+        current_start = today - timedelta(days=today.weekday())
+        starts = [current_start - timedelta(weeks=offset) for offset in range(7, -1, -1)]
+        return [
+            (
+                start,
+                start + timedelta(days=7),
+                f"{start:%m月%d日}-{(start + timedelta(days=6)):%m月%d日}",
+            )
+            for start in starts
+        ]
+
+    current_start = today.replace(day=1)
+    starts = [_month_start(current_start, offset) for offset in range(-11, 1)]
+    return [
+        (start, _month_start(start, 1), f"{start:%Y年%m月}")
+        for start in starts
+    ]
+
+
+def _utc_boundary(value: date) -> datetime:
+    return datetime.combine(value, time.min, tzinfo=DISPLAY_TIMEZONE).astimezone(UTC)
+
+
+def _aware_utc(value: datetime) -> datetime:
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+
+
+def _bucket_index(timestamp: datetime, boundaries: list[tuple[datetime, datetime]]) -> int | None:
+    value = _aware_utc(timestamp)
+    for index, (start, end) in enumerate(boundaries):
+        if start <= value < end:
+            return index
+    return None
 
 
 def _enum_value(value: object) -> str:
@@ -128,6 +173,7 @@ def _empty_usage_metrics() -> dict[str, int]:
         "task_count": 0,
         "formal_task_count": 0,
         "trial_task_count": 0,
+        "detected_photo_count": 0,
         "api_request_count": 0,
         "token_count": 0,
         "input_token_count": 0,
@@ -146,6 +192,8 @@ def _add_usage_event(metrics: dict[str, int], row: object) -> None:
     trial_tasks = max(0, int(row.trial_task_count or 0))
     metrics["trial_task_count"] += trial_tasks
     metrics["task_count"] += trial_tasks
+    if row.event_type == "photo_detection":
+        metrics["detected_photo_count"] += max(0, int(row.photo_count or 0))
     for field in USAGE_SUM_FIELDS[:-1]:
         metrics[field] += max(0, int(getattr(row, field) or 0))
 
@@ -166,21 +214,36 @@ def _usage_aggregate_columns() -> tuple[object, ...]:
         ),
         0,
     )
+    detected_photo_count = func.coalesce(
+        func.sum(
+            case(
+                (
+                    UsageEvent.event_type == "photo_detection",
+                    UsageEvent.photo_count,
+                ),
+                else_=0,
+            )
+        ),
+        0,
+    )
     return (
         formal_task_count,
+        detected_photo_count,
         *(func.coalesce(func.sum(getattr(UsageEvent, field)), 0) for field in USAGE_SUM_FIELDS),
     )
 
 
 def _metrics_from_aggregate_row(row: object) -> dict[str, int]:
     formal_tasks = max(0, int(row[0] or 0))
+    detected_photos = max(0, int(row[1] or 0))
     sums = {
         field: max(0, int(row[index] or 0))
-        for index, field in enumerate(USAGE_SUM_FIELDS, start=1)
+        for index, field in enumerate(USAGE_SUM_FIELDS, start=2)
     }
     return {
         "task_count": formal_tasks + sums["trial_task_count"],
         "formal_task_count": formal_tasks,
+        "detected_photo_count": detected_photos,
         **sums,
     }
 
@@ -234,16 +297,19 @@ def get_current_account_usage(
     current_user: AuthenticatedUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> CurrentAccountUsageResponse:
-    """Return current-month usage and the account's three photo-upload balances."""
+    """Return current-month activity and the account's photo-detection balances."""
     today = datetime.now(DISPLAY_TIMEZONE).date()
     month_start = today.replace(day=1)
     month_start_utc = _utc_boundary(month_start)
     tomorrow_utc = _utc_boundary(today + timedelta(days=1))
-    today_utc = _utc_boundary(today)
     metrics = _empty_usage_metrics()
-    trial_daily_photo_upload_count = 0
-    trial_monthly_photo_upload_count = 0
-    formal_monthly_photo_upload_count = 0
+    basic_trial_photo_upload_count = 0
+    basic_formal_photo_upload_count = 0
+    professional_formal_monthly_photo_upload_count = 0
+    professional_trial_monthly_photo_upload_count = 0
+    account = db.get(UserAccount, current_user.id)
+    quota_reset_at = getattr(account, "quota_reset_at", None)
+    aware_quota_reset_at = _aware_utc(quota_reset_at) if quota_reset_at is not None else None
 
     rows = db.execute(
         select(
@@ -258,20 +324,27 @@ def get_current_account_usage(
             UsageEvent.trial_task_count,
         ).where(
             UsageEvent.actor_id == current_user.id,
-            UsageEvent.occurred_at >= month_start_utc,
             UsageEvent.occurred_at < tomorrow_utc,
         )
     ).all()
     for row in rows:
-        _add_usage_event(metrics, row)
-        if row.event_type == "photo_upload":
+        is_current_month = _aware_utc(row.occurred_at) >= month_start_utc
+        is_after_quota_reset = (
+            aware_quota_reset_at is None
+            or _aware_utc(row.occurred_at) >= aware_quota_reset_at
+        )
+        if is_current_month:
+            _add_usage_event(metrics, row)
+        if row.event_type == "photo_detection" and is_after_quota_reset:
             count = max(0, int(row.photo_count or 0))
             if row.source_type == "trial":
-                trial_monthly_photo_upload_count += count
-                if today_utc <= _aware_utc(row.occurred_at) < tomorrow_utc:
-                    trial_daily_photo_upload_count += count
+                basic_trial_photo_upload_count += count
+                if is_current_month:
+                    professional_trial_monthly_photo_upload_count += count
             elif row.source_type == "formal":
-                formal_monthly_photo_upload_count += count
+                basic_formal_photo_upload_count += count
+                if is_current_month:
+                    professional_formal_monthly_photo_upload_count += count
 
     scheduling = trial_scheduling_settings(db, get_settings())
     return CurrentAccountUsageResponse(
@@ -279,17 +352,21 @@ def get_current_account_usage(
         period_start=month_start,
         period_end=today,
         usage=AccountUsageTotals(**metrics),
-        trial_daily_photo_upload_balance=_quota_balance(
-            scheduling.daily_photo_upload_limit,
-            trial_daily_photo_upload_count,
-        ),
         trial_monthly_photo_upload_balance=_quota_balance(
             scheduling.monthly_photo_upload_limit,
-            trial_monthly_photo_upload_count,
+            basic_trial_photo_upload_count,
         ),
-        formal_monthly_photo_upload_balance=_quota_balance(
-            scheduling.formal_monthly_photo_upload_limit,
-            formal_monthly_photo_upload_count,
+        basic_formal_monthly_photo_upload_balance=_quota_balance(
+            scheduling.basic_formal_monthly_photo_upload_limit,
+            basic_formal_photo_upload_count,
+        ),
+        professional_formal_monthly_photo_upload_balance=_quota_balance(
+            scheduling.professional_monthly_photo_upload_limit,
+            professional_formal_monthly_photo_upload_count,
+        ),
+        professional_trial_monthly_photo_upload_balance=_quota_balance(
+            scheduling.professional_trial_monthly_photo_upload_limit,
+            professional_trial_monthly_photo_upload_count,
         ),
     )
 
@@ -311,6 +388,7 @@ def get_account_usage(
             UsageEvent.occurred_at,
             UsageEvent.event_type,
             UsageEvent.source_type,
+            UsageEvent.photo_count,
             UsageEvent.api_request_count,
             UsageEvent.token_count,
             UsageEvent.input_token_count,
@@ -368,6 +446,7 @@ def create_account(
         real_name=_clean_optional_text(payload.real_name),
         phone=phone,
         role=_enum_value(payload.role),
+        account_plan=_enum_value(payload.account_plan),
         organization=_clean_optional_text(payload.organization),
         status=_enum_value(payload.status),
     )
@@ -410,6 +489,8 @@ def update_account(
             setattr(account, field, _clean_optional_text(data[field]))
     if data.get("role") is not None:
         account.role = next_role
+    if data.get("account_plan") is not None:
+        account.account_plan = _enum_value(data["account_plan"])
     if data.get("status") is not None:
         account.status = next_status
 
@@ -435,3 +516,17 @@ def reset_account_password(
         account=_to_account_read(account),
         temporary_password=temporary_password,
     )
+
+
+@router.post("/{account_id}/reset-quotas", response_model=AccountQuotaResetResponse)
+def reset_account_quotas(
+    account_id: UUID,
+    _: AuthenticatedUser = Depends(require_roles(UserRole.ADMIN)),
+    db: Session = Depends(get_db),
+) -> AccountQuotaResetResponse:
+    account = _account_or_404(db, account_id)
+    reset_at = datetime.now(UTC)
+    reset_account_quota_counters(account.id)
+    account.quota_reset_at = reset_at
+    db.commit()
+    return AccountQuotaResetResponse(reset_at=reset_at)

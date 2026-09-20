@@ -189,13 +189,20 @@ QWEN_BBOX_COORDINATE_MAX = 1000.0
 DEFECT_TYPE_NAMES = {
     "crack": "裂缝",
     "spalling": "剥落",
+    "peeling": "起皮",
+    "damage": "面板破损",
+    "detachment": "脱落",
     "corrosion": "锈蚀",
     "hollow": "空鼓",
 }
 SUPPORTED_IMAGE_FORMATS = {"JPEG", "MPO", "PNG"}
 VISIBLE_LIGHT_DEFECT_TYPES = frozenset({"crack", "spalling"})
+SUPPORTED_VISIBLE_DEFECT_TYPES = frozenset(
+    {"crack", "spalling", "peeling", "damage", "detachment"}
+)
 THERMAL_DEFECT_TYPES = frozenset({"hollow"})
 VISIBLE_LIGHT_REQUESTED_MODELS = ("crack", "spalling")
+VISIBLE_LIGHT_MODEL_ORDER = ("crack", "spalling", "peeling", "damage", "detachment")
 THERMAL_REQUESTED_MODELS = ("hollow",)
 NORMAL_SEAM_DESCRIPTION_MARKERS = (
     "正常",
@@ -429,8 +436,10 @@ def _bounded_concurrency(value: int) -> int:
 
 def _visible_defect_types(values: Sequence[str]) -> frozenset[str]:
     normalized = frozenset(str(value).strip() for value in values)
-    if not normalized.issubset(VISIBLE_LIGHT_DEFECT_TYPES):
-        raise ValueError("Visible defect types can only contain crack and spalling.")
+    if not normalized.issubset(SUPPORTED_VISIBLE_DEFECT_TYPES):
+        raise ValueError(
+            "Visible defect types can only contain crack, spalling, peeling, damage, and detachment."
+        )
     return normalized
 
 
@@ -648,7 +657,7 @@ def _inference_result(
             if state.image_input.thermal_imaging_available
             else (
                 model
-                for model in VISIBLE_LIGHT_REQUESTED_MODELS
+                for model in VISIBLE_LIGHT_MODEL_ORDER
                 if model in visible_requested_models
             )
         ),

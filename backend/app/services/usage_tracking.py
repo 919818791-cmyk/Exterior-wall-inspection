@@ -84,6 +84,27 @@ def add_photo_upload_event(
     return event
 
 
+def add_photo_detection_event(
+    db: Session,
+    *,
+    source_type: UsageSourceType,
+    detection_run_id: UUID | str,
+    actor_id: UUID,
+    photo_count: int,
+    occurred_at: datetime | None = None,
+) -> UsageEvent:
+    event = UsageEvent(
+        event_key=f"photo-detection:{source_type}:{detection_run_id}",
+        event_type="photo_detection",
+        source_type=source_type,
+        actor_id=actor_id,
+        photo_count=max(0, int(photo_count)),
+        occurred_at=occurred_at or datetime.now(UTC),
+    )
+    db.add(event)
+    return event
+
+
 def add_building_model_upload_event(
     db: Session,
     *,

@@ -41,3 +41,9 @@ export function resetAccountPassword(accountId: string) {
     method: "POST"
   });
 }
+
+export function resetAccountQuotas(accountId: string) {
+  return apiRequest<{ ok: boolean; reset_at: string }>(`/accounts/${accountId}/reset-quotas`, {
+    method: "POST"
+  });
+}

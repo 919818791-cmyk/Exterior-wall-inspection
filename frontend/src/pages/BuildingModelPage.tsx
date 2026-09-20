@@ -969,6 +969,7 @@ export function BuildingModelPage({ mode = "professional" }: BuildingModelPagePr
                 </button>
                 <button
                   aria-label="关闭图片预览"
+                  className="back-cancel-button"
                   title="关闭"
                   type="button"
                   onClick={closeImageDetail}

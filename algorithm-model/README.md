@@ -35,7 +35,7 @@ The service exposes `/health`, `/ready`, `/metadata`, and `/predict`.
 | Type | Label |
 | --- | --- |
 | `crack` | 裂缝 |
-| `spalling` | 剥落 |
+| `spalling` | 脱落 |
 
 Inference uses tiled/sliding-window prediction by default so high-resolution
 photos keep enough detail for small facade defects. Each tile is predicted in

@@ -63,6 +63,9 @@ def test_phase2_required_status_values_are_centralized() -> None:
     assert {item.value for item in DefectType} == {
         "crack",
         "spalling",
+        "peeling",
+        "damage",
+        "detachment",
         "moisture",
         "hollow",
     }

@@ -400,6 +400,23 @@ def test_visible_defect_types_limit_model_output(monkeypatch) -> None:
     assert "不得只框最宽、最明显或破损最重的一小段" in qwen.TRIAL_QWEN_CRACK_PROMPT
 
 
+def test_visible_defect_types_accept_peeling_for_formal_detection(monkeypatch) -> None:
+    RecordingAsyncClient.reset(
+        '[{"type":"peeling","confidence":0.89,"bbox":[180,120,520,430],'
+        '"description":"涂饰层片状起皮"}]'
+    )
+    monkeypatch.setattr(qwen.httpx, "AsyncClient", RecordingAsyncClient)
+
+    result = _run_inference(
+        [qwen.TrialQwenImageInput(filename="coating.png", content=_image_bytes(640, 480))],
+        visible_prompt="涂饰起皮检测提示词，只输出 JSON 数组。",
+        visible_defect_types=("peeling",),
+    )[0]
+
+    assert [item["type"] for item in result["detections"]] == ["peeling"]
+    assert result["requested_models"] == ["peeling"]
+
+
 def test_qwen_collects_and_aggregates_token_usage_per_tile(monkeypatch) -> None:
     RecordingAsyncClient.reset(
         response_usage={

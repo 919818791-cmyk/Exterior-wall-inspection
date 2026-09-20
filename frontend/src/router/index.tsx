@@ -8,10 +8,10 @@ const AccountManagementPage = lazy(() => import("@/pages/AccountManagementPage")
 const BuildingModelPage = lazy(() => import("@/pages/BuildingModelPage").then((module) => ({ default: module.BuildingModelPage })));
 const CapabilityDetailPage = lazy(() => import("@/pages/CapabilityDetailPage").then((module) => ({ default: module.CapabilityDetailPage })));
 const DashboardPage = lazy(() => import("@/pages/DashboardPage").then((module) => ({ default: module.DashboardPage })));
-const DataManagementPage = lazy(() => import("@/pages/DataManagementPage").then((module) => ({ default: module.DataManagementPage })));
 const PrivacyPolicyPage = lazy(() => import("@/pages/LegalDocumentPage").then((module) => ({ default: module.PrivacyPolicyPage })));
 const TermsPage = lazy(() => import("@/pages/LegalDocumentPage").then((module) => ({ default: module.TermsPage })));
 const NewProjectPage = lazy(() => import("@/pages/NewProjectPage").then((module) => ({ default: module.NewProjectPage })));
+const PricingPage = lazy(() => import("@/pages/PricingPage").then((module) => ({ default: module.PricingPage })));
 const ProjectListPage = lazy(() => import("@/pages/ProjectListPage").then((module) => ({ default: module.ProjectListPage })));
 const ReportDetailPage = lazy(() => import("@/pages/ReportDetailPage").then((module) => ({ default: module.ReportDetailPage })));
 const ReportListPage = lazy(() => import("@/pages/ReportListPage").then((module) => ({ default: module.ReportListPage })));
@@ -50,6 +50,7 @@ export const router = createBrowserRouter([
       { path: "capabilities", element: <Navigate replace to="/capabilities/crack" /> },
       { path: "capabilities/time", element: <Navigate replace to="/" /> },
       { path: "capabilities/:type", element: deferred(<CapabilityDetailPage />) },
+      { path: "pricing", element: deferred(<PricingPage />) },
       { path: "trials", element: deferred(<ReportListPage />) },
       { path: "reports", element: <Navigate replace to="/trials" /> },
       { path: "projects", element: <Navigate replace to="/detections" /> },
@@ -71,7 +72,6 @@ export const router = createBrowserRouter([
             element: <RequireRole roles={["admin"]} />,
             children: [
               { path: "accounts", element: deferred(<AccountManagementPage />) },
-              { path: "data-management", element: deferred(<DataManagementPage />) },
               { path: "system-settings", element: deferred(<SystemSettingsPage />) }
             ]
           },

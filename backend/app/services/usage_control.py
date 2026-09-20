@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from functools import lru_cache
 from threading import Lock
-from typing import Any
+from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException, status
@@ -26,7 +26,7 @@ class SecurityStoreUnavailable(RuntimeError):
 class LimitResult:
     allowed: bool
     current: int
-    retry_after: int
+    retry_after: int | None
 
 
 class UsageControlStore:
@@ -38,7 +38,14 @@ class UsageControlStore:
 
     _CONSUME_SCRIPT = """
 local current = redis.call('INCRBY', KEYS[1], ARGV[1])
-if current == tonumber(ARGV[1]) then redis.call('EXPIRE', KEYS[1], ARGV[2]) end
+local baseline = tonumber(ARGV[4])
+if current - tonumber(ARGV[1]) < baseline then
+  redis.call('SET', KEYS[1], baseline, 'KEEPTTL')
+  current = redis.call('INCRBY', KEYS[1], ARGV[1])
+end
+if current == tonumber(ARGV[1]) and tonumber(ARGV[2]) > 0 then
+  redis.call('EXPIRE', KEYS[1], ARGV[2])
+end
 local ttl = redis.call('TTL', KEYS[1])
 if current > tonumber(ARGV[3]) then
   redis.call('DECRBY', KEYS[1], ARGV[1])
@@ -81,8 +88,18 @@ return 1
         self._memory: dict[str, tuple[Any, float | None]] = {}
         self._memory_lock = Lock()
 
-    def consume(self, scope: str, identity: str, *, amount: int, limit: int, ttl_seconds: int) -> LimitResult:
+    def consume(
+        self,
+        scope: str,
+        identity: str,
+        *,
+        amount: int,
+        limit: int,
+        ttl_seconds: int | None,
+        baseline: int = 0,
+    ) -> LimitResult:
         key = self._key(scope, identity)
+        redis_ttl = ttl_seconds or 0
         if self._redis is not None:
             try:
                 raw = self._redis.eval(
@@ -90,19 +107,23 @@ return 1
                     1,
                     key,
                     amount,
-                    ttl_seconds,
+                    redis_ttl,
                     limit,
+                    max(0, baseline),
                 )
-                return LimitResult(bool(raw[0]), int(raw[1]), max(1, int(raw[2])))
+                retry_after = max(1, int(raw[2])) if int(raw[2]) > 0 else None
+                return LimitResult(bool(raw[0]), int(raw[1]), retry_after)
             except RedisError as exc:
                 return self._redis_failure(exc)
 
         now = time.time()
         with self._memory_lock:
             self._purge_memory(now)
-            current, expiry = self._memory.get(key, (0, now + ttl_seconds))
+            initial_expiry = now + ttl_seconds if ttl_seconds is not None else None
+            current, expiry = self._memory.get(key, (0, initial_expiry))
+            current = max(int(current), max(0, baseline))
             proposed = int(current) + amount
-            retry_after = max(1, int((expiry or now + ttl_seconds) - now))
+            retry_after = max(1, int(expiry - now)) if expiry is not None else None
             if proposed > limit:
                 return LimitResult(False, proposed, retry_after)
             self._memory[key] = (proposed, expiry)
@@ -124,6 +145,18 @@ return 1
                 self._memory[key] = (next_value, expiry)
             else:
                 self._memory.pop(key, None)
+
+    def clear_limit(self, scope: str, identity: str) -> None:
+        key = self._key(scope, identity)
+        if self._redis is not None:
+            try:
+                self._redis.delete(key)
+                return
+            except RedisError as exc:
+                self._redis_failure(exc)
+                return
+        with self._memory_lock:
+            self._memory.pop(key, None)
 
     def acquire_lock(self, scope: str, identity: str, *, ttl_seconds: int) -> str | None:
         key = self._key(scope, identity)
@@ -321,19 +354,28 @@ def enforce_limit(
     identity: str,
     *,
     limit: int,
-    ttl_seconds: int,
+    ttl_seconds: int | None,
+    baseline: int = 0,
     amount: int = 1,
-    detail: str = "请求过于频繁，请稍后重试。",
+    detail: str | Callable[[LimitResult], str] = "请求过于频繁，请稍后重试。",
 ) -> None:
     try:
-        result = store.consume(scope, identity, amount=amount, limit=limit, ttl_seconds=ttl_seconds)
+        result = store.consume(
+            scope,
+            identity,
+            amount=amount,
+            limit=limit,
+            ttl_seconds=ttl_seconds,
+            baseline=baseline,
+        )
     except SecurityStoreUnavailable as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
     if not result.allowed:
+        headers = {"Retry-After": str(result.retry_after)} if result.retry_after is not None else None
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=detail,
-            headers={"Retry-After": str(result.retry_after)},
+            detail=detail(result) if callable(detail) else detail,
+            headers=headers,
         )
 
 

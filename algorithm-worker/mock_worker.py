@@ -27,7 +27,7 @@ ALGORITHM_INFERENCE_TIMEOUT_SECONDS = int(env("ALGORITHM_INFERENCE_TIMEOUT_SECON
 
 DEFECT_TYPE_NAMES = {
     "crack": "裂缝",
-    "spalling": "剥落",
+    "spalling": "脱落",
     "hollow": "空鼓",
 }
 DEFECT_ALIASES = {
@@ -37,8 +37,11 @@ DEFECT_ALIASES = {
     "missing": "spalling",
     "spalling": "spalling",
     "剥落": "spalling",
+    "脱落": "spalling",
     "面砖剥落": "spalling",
+    "面砖脱落": "spalling",
     "瓷砖剥落": "spalling",
+    "瓷砖脱落": "spalling",
     "面砖缺失": "spalling",
     "hollowing": "spalling",
     "hollow": "hollow",

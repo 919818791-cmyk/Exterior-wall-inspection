@@ -73,6 +73,14 @@ const DEFECT_TYPE_ALIASES: Record<string, string> = {
   spall: "spalling",
   boluo: "spalling",
   剥落: "spalling",
+  脱落: "spalling",
+  peeling: "peeling",
+  qipi: "peeling",
+  起皮: "peeling",
+  damage: "damage",
+  mianbanposun: "damage",
+  面板破损: "damage",
+  detachment: "detachment",
   hollow: "hollow",
   tac: "hollow",
   空鼓: "hollow"
@@ -224,7 +232,7 @@ function parseDefectType(value: Record<string, unknown>, index: number, filename
   const rawType = firstString(value, DEFECT_TYPE_KEYS);
   const defectType = rawType ? normalizedDefectType(rawType) : null;
   if (!defectType) {
-    throw new Error(`${filename} 的第 ${index + 1} 个标注缺少可识别类别（支持 crack/lie_feng、spalling/bo_luo、hollow/T.A.C.）。`);
+    throw new Error(`${filename} 的第 ${index + 1} 个标注缺少可识别类别（支持 crack、spalling、peeling、damage、detachment、hollow）。`);
   }
   return defectType;
 }

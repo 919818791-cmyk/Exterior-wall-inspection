@@ -18,7 +18,7 @@ export function ModelOutputDialog({ text, tileTokenText, onClose }: ModelOutputD
       <section className="model-output-dialog" onClick={(event) => event.stopPropagation()}>
         <header className="model-output-dialog-header">
           <h2 id="model-output-dialog-title">模型原始输出</h2>
-          <button type="button" aria-label="关闭模型原始输出" onClick={onClose}>
+          <button className="back-cancel-button" type="button" aria-label="关闭模型原始输出" onClick={onClose}>
             <X aria-hidden="true" />
           </button>
         </header>

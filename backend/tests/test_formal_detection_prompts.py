@@ -3,24 +3,40 @@ from types import SimpleNamespace
 import pytest
 
 from app.api.detection_tasks import _formal_inference_prompts
-from app.services.formal_detection_prompts import formal_detection_prompts
+from app.services.formal_detection_prompts import (
+    FACADE_DEFECT_TYPES,
+    formal_detection_prompts,
+)
+
+
+def test_every_facade_has_the_expected_distinct_defect_types() -> None:
+    assert FACADE_DEFECT_TYPES == {
+        "tile": frozenset({"crack", "detachment", "hollow"}),
+        "coating": frozenset({"crack", "peeling", "hollow"}),
+        "plaster": frozenset({"crack", "spalling", "hollow"}),
+        "panel": frozenset({"damage", "detachment"}),
+        "curtain_wall": frozenset({"damage"}),
+    }
 
 
 @pytest.mark.parametrize(
     ("facade_type", "models", "prompt_kind", "expected_file", "expected_text"),
     [
-        ("tile", ["crack"], "visible", "面砖裂缝.txt", "面砖外墙"),
-        ("tile", ["spalling"], "visible", "面砖剥落.txt", "面砖剥落"),
-        ("tile", ["crack", "spalling"], "visible", "面砖裂缝+剥落.txt", "crack 或 spalling"),
-        ("tile", ["hollow"], "thermal", "面砖空鼓.txt", "面砖/瓷砖外墙"),
-        ("coating", ["crack"], "visible", "涂料裂缝.txt", "涂料外墙"),
-        ("coating", ["spalling"], "visible", "涂料剥落.txt", "涂料饰面剥落"),
-        ("coating", ["crack", "spalling"], "visible", "涂料裂缝+剥落.txt", "crack 或 spalling"),
-        ("coating", ["hollow"], "thermal", "涂料空鼓.txt", "涂料饰面外墙"),
-        ("stone", ["crack"], "visible", "石材裂缝.txt", "石材外墙"),
-        ("stone", ["spalling"], "visible", "石材剥落.txt", "石材饰面剥落"),
-        ("stone", ["crack", "spalling"], "visible", "石材裂缝+剥落.txt", "crack 或 spalling"),
-        ("stone", ["hollow"], "thermal", "石材空鼓.txt", "湿贴或粘贴式石材外墙"),
+        ("tile", ["crack"], "visible", "饰面砖裂缝.txt", "type 只能是 crack"),
+        ("tile", ["detachment"], "visible", "饰面砖脱落.txt", "type 只能是 detachment"),
+        ("tile", ["crack", "detachment"], "visible", "饰面砖裂缝+脱落.txt", "crack 或 detachment"),
+        ("tile", ["hollow"], "thermal", "饰面砖空鼓.txt", "type 只能是 hollow"),
+        ("coating", ["crack"], "visible", "涂饰裂缝.txt", "type 只能是 crack"),
+        ("coating", ["peeling"], "visible", "涂饰起皮.txt", "type 只能是 peeling"),
+        ("coating", ["crack", "peeling"], "visible", "涂饰裂缝+起皮.txt", "crack 或 peeling"),
+        ("coating", ["hollow"], "thermal", "涂饰空鼓.txt", "type 只能是 hollow"),
+        ("plaster", ["crack"], "visible", "抹灰裂缝.txt", "抹灰层裂缝"),
+        ("plaster", ["spalling"], "visible", "抹灰剥落.txt", "抹灰层剥落"),
+        ("plaster", ["crack", "spalling"], "visible", "抹灰裂缝+剥落.txt", "crack 或 spalling"),
+        ("plaster", ["hollow"], "thermal", "抹灰空鼓.txt", "抹灰层空鼓"),
+        ("panel", ["damage"], "visible", "饰面板—面板破损.txt", "饰面板板材本体"),
+        ("panel", ["detachment"], "visible", "饰面板—脱落.txt", "暴露出后方基层"),
+        ("curtain_wall", ["damage"], "visible", "幕墙—面板破损.txt", "幕墙面板或玻璃本体"),
     ],
 )
 def test_formal_detection_selects_facade_specific_prompt(
@@ -32,10 +48,41 @@ def test_formal_detection_selects_facade_specific_prompt(
 ) -> None:
     selection = formal_detection_prompts(facade_type, models)
 
-    prompt = getattr(selection, f"{prompt_kind}_prompt")
-    source_file = getattr(selection, f"{prompt_kind}_file")
+    defect_type = models[0]
+    prompt = (
+        selection.visible_prompts[defect_type]
+        if defect_type in selection.visible_prompts
+        else getattr(selection, f"{prompt_kind}_prompt")
+    )
+    source_file = (
+        selection.visible_files[defect_type]
+        if defect_type in selection.visible_files
+        else getattr(selection, f"{prompt_kind}_file")
+    )
     assert expected_text in prompt
     assert source_file == f"docs/提示词/{expected_file}"
+
+
+def test_coating_facade_rejects_spalling_prompt_selection() -> None:
+    with pytest.raises(ValueError, match="涂饰外墙不支持"):
+        formal_detection_prompts("coating", ["spalling"])
+
+
+def test_tile_facade_rejects_plaster_spalling_prompt_selection() -> None:
+    with pytest.raises(ValueError, match="饰面砖外墙不支持"):
+        formal_detection_prompts("tile", ["spalling"])
+
+
+def test_panel_facade_keeps_each_document_prompt_separate() -> None:
+    selection = formal_detection_prompts("panel", ["damage", "detachment"])
+
+    assert selection.visible_prompt is None
+    assert selection.visible_prompts["damage"] == (
+        formal_detection_prompts("panel", ["damage"]).visible_prompts["damage"]
+    )
+    assert selection.visible_prompts["detachment"] == (
+        formal_detection_prompts("panel", ["detachment"]).visible_prompts["detachment"]
+    )
 
 
 def test_formal_inference_prefers_snapshot_prompts() -> None:
@@ -62,14 +109,14 @@ def test_formal_inference_prefers_snapshot_prompts() -> None:
 def test_formal_detection_prefers_saved_prompt_override() -> None:
     class PromptDb:
         def get(self, _model: object, key: str) -> object | None:
-            if key == "formal_stone_visible_prompt":
-                return SimpleNamespace(value="设置页保存的石材裂缝剥落提示词")
+            if key == "formal_plaster_visible_prompt":
+                return SimpleNamespace(value="设置页保存的抹灰裂缝脱落提示词")
             return None
 
     selection = formal_detection_prompts(
-        "stone",
+        "plaster",
         ["crack", "spalling"],
         db=PromptDb(),
     )
 
-    assert selection.visible_prompt == "设置页保存的石材裂缝剥落提示词"
+    assert selection.visible_prompt == "设置页保存的抹灰裂缝脱落提示词"

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDownToLine, ArrowUpFromLine, BarChart3, Bot, Database, KeyRound, RefreshCw, Save, X } from "lucide-react";
-import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
+import { BarChart3, Copy, RefreshCw, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import {
@@ -8,11 +8,14 @@ import {
   accountUsageDetailQueryOptions,
   createAccount,
   resetAccountPassword,
+  resetAccountQuotas,
   updateAccount
 } from "@/api/accounts";
 import { WorkbenchNameSearch } from "@/components/WorkbenchNameSearch";
+import { AccountEditorModal, type AccountFormState } from "@/components/auth/AccountEditorModal";
+import { ErrorNoticeModal } from "@/components/project/PhotoLimitModal";
 import type { AccountUsagePeriod, AccountUsageTotals } from "@/types/accountUsage";
-import type { AccountCreatePayload, AccountUpdatePayload, AccountUser, UserRole, UserStatus } from "@/types/auth";
+import type { AccountCreatePayload, AccountPlan, AccountUpdatePayload, AccountUser, UserRole, UserStatus } from "@/types/auth";
 import { formatDateTime } from "@/utils/projectDisplay";
 
 const roleLabels: Record<UserRole, string> = {
@@ -26,20 +29,15 @@ const statusLabels: Record<UserStatus, string> = {
   disabled: "停用"
 };
 
+const planLabels: Record<AccountPlan, string> = {
+  basic: "基础版",
+  professional: "专业版"
+};
+
 const statusClass: Record<UserStatus, "ready" | "neutral"> = {
   active: "ready",
   disabled: "neutral"
 };
-
-interface AccountFormState {
-  username: string;
-  password: string;
-  real_name: string;
-  phone: string;
-  organization: string;
-  role: UserRole;
-  status: UserStatus;
-}
 
 const emptyAccountForm: AccountFormState = {
   username: "",
@@ -48,6 +46,7 @@ const emptyAccountForm: AccountFormState = {
   phone: "",
   organization: "",
   role: "customer",
+  account_plan: "basic",
   status: "active"
 };
 
@@ -55,7 +54,7 @@ const integerFormatter = new Intl.NumberFormat("zh-CN");
 const accountUsageHistoryStartDate = "2026-07-05";
 
 function hasRecordedUsage(usage: AccountUsageTotals) {
-  return usage.task_count > 0 || usage.api_request_count > 0 || usage.token_count > 0;
+  return usage.task_count > 0 || usage.detected_photo_count > 0 || usage.api_request_count > 0 || usage.token_count > 0;
 }
 
 function getErrorMessage(error: unknown) {
@@ -75,6 +74,7 @@ function formFromAccount(account: AccountUser): AccountFormState {
     phone: account.phone ?? "",
     organization: account.organization ?? "",
     role: account.role,
+    account_plan: account.account_plan,
     status: account.status
   };
 }
@@ -89,6 +89,8 @@ export function AccountManagementPage() {
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [formError, setFormError] = useState("");
   const [formNotice, setFormNotice] = useState("");
+  const [temporaryPassword, setTemporaryPassword] = useState("");
+  const [temporaryPasswordCopied, setTemporaryPasswordCopied] = useState(false);
   const [accountSearch, setAccountSearch] = useState("");
 
   const createMutation = useMutation({
@@ -111,7 +113,19 @@ export function AccountManagementPage() {
     mutationFn: resetAccountPassword,
     onSuccess: async (result) => {
       await queryClient.invalidateQueries({ queryKey: ["accounts"] });
-      setFormNotice(`密码已重置。临时密码：${result.temporary_password}（请立即安全转交用户）`);
+      setTemporaryPasswordCopied(false);
+      setTemporaryPassword(result.temporary_password);
+    }
+  });
+
+  const resetQuotaMutation = useMutation({
+    mutationFn: resetAccountQuotas,
+    onSuccess: async (_, accountId) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["account-usage", accountId] }),
+        queryClient.invalidateQueries({ queryKey: ["current-account-usage"] })
+      ]);
+      setFormNotice("账号全部额度已重置。");
     }
   });
 
@@ -125,16 +139,20 @@ export function AccountManagementPage() {
     ));
   }, [accountSearch, accounts]);
 
-  const activeMutationError = createMutation.error ?? updateMutation.error ?? resetPasswordMutation.error;
+  const activeMutationError = createMutation.error ?? updateMutation.error ?? resetPasswordMutation.error ?? resetQuotaMutation.error;
   const isSaving = createMutation.isPending || updateMutation.isPending;
   const isResettingPassword = resetPasswordMutation.isPending;
+  const isResettingQuota = resetQuotaMutation.isPending;
   const editorMode = editingAccount ? "edit" : "create";
 
   function openCreateEditor() {
     setEditingAccount(null);
     setFormError("");
     setFormNotice("");
+    setTemporaryPassword("");
+    setTemporaryPasswordCopied(false);
     resetPasswordMutation.reset();
+    resetQuotaMutation.reset();
     setIsEditorOpen(true);
   }
 
@@ -148,7 +166,10 @@ export function AccountManagementPage() {
     setEditingAccount(account);
     setFormError("");
     setFormNotice("");
+    setTemporaryPassword("");
+    setTemporaryPasswordCopied(false);
     resetPasswordMutation.reset();
+    resetQuotaMutation.reset();
     setIsEditorOpen(true);
   }
 
@@ -157,9 +178,12 @@ export function AccountManagementPage() {
     setEditingAccount(null);
     setFormError("");
     setFormNotice("");
+    setTemporaryPassword("");
+    setTemporaryPasswordCopied(false);
     createMutation.reset();
     updateMutation.reset();
     resetPasswordMutation.reset();
+    resetQuotaMutation.reset();
   }
 
   function buildCreatePayload(form: AccountFormState): AccountCreatePayload | null {
@@ -181,6 +205,7 @@ export function AccountManagementPage() {
       phone: toNullable(form.phone),
       organization: toNullable(form.organization),
       role: form.role,
+      account_plan: form.account_plan,
       status: form.status
     };
   }
@@ -198,6 +223,7 @@ export function AccountManagementPage() {
       phone: toNullable(form.phone),
       organization: toNullable(form.organization),
       role: form.role,
+      account_plan: form.account_plan,
       status: form.status
     };
   }
@@ -220,6 +246,25 @@ export function AccountManagementPage() {
     resetPasswordMutation.reset();
     if (!window.confirm(`确认重置账号“${editingAccount.username}”的密码？系统将生成一个随机临时密码。`)) return;
     resetPasswordMutation.mutate(editingAccount.id);
+  }
+
+  function resetQuotas() {
+    if (!editingAccount) return;
+    setFormError("");
+    setFormNotice("");
+    resetQuotaMutation.reset();
+    if (!window.confirm(`确认重置账号“${editingAccount.username}”的全部额度？历史用量记录仍会保留。`)) return;
+    resetQuotaMutation.mutate(editingAccount.id);
+  }
+
+  async function copyTemporaryPassword() {
+    if (!temporaryPassword) return;
+    try {
+      await navigator.clipboard.writeText(temporaryPassword);
+      setTemporaryPasswordCopied(true);
+    } catch {
+      setTemporaryPasswordCopied(false);
+    }
   }
 
   const editorInitialForm = useMemo(
@@ -247,6 +292,7 @@ export function AccountManagementPage() {
                   <tr>
                     <th>账号</th>
                     <th className="account-role-column">权限</th>
+                    <th className="account-secondary-column">套餐</th>
                     <th className="account-secondary-column">状态</th>
                     <th className="account-secondary-column">最近登录</th>
                   </tr>
@@ -270,6 +316,7 @@ export function AccountManagementPage() {
                         <small>{account.username}</small>
                       </td>
                       <td className="account-role-column" data-label="权限"><span className="account-role">{roleLabels[account.role]}</span></td>
+                      <td className="account-secondary-column" data-label="套餐">{account.role === "customer" ? planLabels[account.account_plan] : "—"}</td>
                       <td className="account-secondary-column" data-label="状态"><span className={`status-tag ${statusClass[account.status]}`}>{statusLabels[account.status]}</span></td>
                       <td className="account-secondary-column" data-label="最近登录">{formatDateTime(account.last_login_at)}</td>
                     </tr>
@@ -293,16 +340,32 @@ export function AccountManagementPage() {
           error={editorError}
           initialForm={editorInitialForm}
           isResetting={isResettingPassword}
+          isResettingQuota={isResettingQuota}
           isPending={isSaving}
           mode={editorMode}
           notice={formNotice}
           onClose={closeEditor}
           onOpenUsage={editingAccount ? () => setUsageAccount(editingAccount) : undefined}
           onResetPassword={resetPassword}
+          onResetQuotas={resetQuotas}
           onSubmit={submitAccount}
         />
       ) : null}
       {usageAccount ? <AccountUsageModal account={usageAccount} onClose={() => setUsageAccount(null)} /> : null}
+      <ErrorNoticeModal
+        actionIcon={<Copy aria-hidden="true" />}
+        actionLabel={temporaryPasswordCopied ? "已复制" : "复制密码"}
+        closeLabel="关闭密码重置结果"
+        message={temporaryPassword ? `临时密码：${temporaryPassword}。请立即安全转交用户。` : ""}
+        title="密码已重置"
+        onAction={() => void copyTemporaryPassword()}
+        onOpenChange={(nextIsOpen) => {
+          if (!nextIsOpen) {
+            setTemporaryPassword("");
+            setTemporaryPasswordCopied(false);
+          }
+        }}
+      />
     </div>
   );
 }
@@ -331,14 +394,10 @@ function AccountUsageModal({ account, onClose }: { account: AccountUser; onClose
     <div aria-labelledby="account-usage-title" aria-modal="true" className="auth-modal account-usage-modal is-open" role="dialog">
       <button aria-label="关闭账号用量弹窗" className="auth-modal-backdrop" type="button" onClick={onClose} />
       <section className="auth-dialog account-usage-dialog">
-        <button aria-label="关闭账号用量弹窗" className="auth-close" type="button" onClick={onClose}><X aria-hidden="true" /></button>
+        <button aria-label="关闭账号用量弹窗" className="auth-close back-cancel-button" type="button" onClick={onClose}><X aria-hidden="true" /></button>
         <div className="account-usage-heading">
           <div>
             <h2 id="account-usage-title">账号用量</h2>
-          </div>
-          <div className="data-period-switch" aria-label="账号用量统计周期">
-            <button className={period === "week" ? "active" : ""} type="button" onClick={() => setPeriod("week")}>按周</button>
-            <button className={period === "month" ? "active" : ""} type="button" onClick={() => setPeriod("month")}>按月</button>
           </div>
         </div>
 
@@ -348,11 +407,12 @@ function AccountUsageModal({ account, onClose }: { account: AccountUser; onClose
             <button type="button" onClick={() => void usageQuery.refetch()}><RefreshCw aria-hidden="true" />重试</button>
           </div>
         ) : usageQuery.isLoading || !usage ? (
-          <div className="account-usage-feedback"><span className="data-loading-ring" /><strong>正在汇总账号用量…</strong></div>
+          <div className="account-usage-feedback"><span className="account-usage-loading-ring" /><strong>正在汇总账号用量…</strong></div>
         ) : (
           <div className="account-usage-content">
             <section className="account-usage-lifetime" aria-label="账号历史累计用量">
               <div><span>历史累计任务</span><strong>{integerFormatter.format(usage.all_time.task_count)}<small>次</small></strong></div>
+              <div><span>历史累计已检测照片</span><strong>{integerFormatter.format(usage.all_time.detected_photo_count)}<small>张</small></strong></div>
               <div><span>历史 API 请求</span><strong>{integerFormatter.format(usage.all_time.api_request_count)}<small>次</small></strong></div>
               <div><span>历史输入 Token</span><strong>{integerFormatter.format(usage.all_time.input_token_count)}<small>Token</small></strong></div>
               <div><span>历史输出 Token</span><strong>{integerFormatter.format(usage.all_time.output_token_count)}<small>Token</small></strong></div>
@@ -360,24 +420,29 @@ function AccountUsageModal({ account, onClose }: { account: AccountUser; onClose
 
             <div className="account-usage-current-heading">
               <div><strong>{period === "week" ? "本周用量" : "本月用量"}</strong><span>{usage.current.start_date} 至 {usage.current.end_date}</span></div>
-              <small>仅统计已完成并成功落账的模型任务</small>
+              <div className="account-usage-period-switch" aria-label="账号用量统计周期">
+                <button className={period === "week" ? "active" : ""} type="button" onClick={() => setPeriod("week")}>按周</button>
+                <button className={period === "month" ? "active" : ""} type="button" onClick={() => setPeriod("month")}>按月</button>
+              </div>
             </div>
             <section className="account-usage-metrics" aria-label="账号本期用量">
-              <UsageMetric icon={<Bot aria-hidden="true" />} label="任务数" value={usage.current.task_count} detail={`正式 ${integerFormatter.format(usage.current.formal_task_count)} · Trial ${integerFormatter.format(usage.current.trial_task_count)}`} />
-              <UsageMetric icon={<Database aria-hidden="true" />} label="模型 API 请求" value={usage.current.api_request_count} detail="模型推理请求次数" />
-              <UsageMetric icon={<ArrowDownToLine aria-hidden="true" />} label="输入 Token" value={usage.current.input_token_count} detail="发送至模型" />
-              <UsageMetric icon={<ArrowUpFromLine aria-hidden="true" />} label="输出 Token" value={usage.current.output_token_count} detail="模型生成" />
+              <UsageMetric label="任务数" value={usage.current.task_count} />
+              <UsageMetric label="已检测照片" value={usage.current.detected_photo_count} />
+              <UsageMetric label="模型 API 请求" value={usage.current.api_request_count} />
+              <UsageMetric label="输入 Token" value={usage.current.input_token_count} />
+              <UsageMetric label="输出 Token" value={usage.current.output_token_count} />
             </section>
 
             <section className="account-usage-history">
               <div className="account-usage-history-wrap">
                 <table>
-                  <thead><tr><th>周期</th><th>任务数</th><th>API 请求</th><th>输入 Token</th><th>输出 Token</th></tr></thead>
+                  <thead><tr><th>周期</th><th>任务数</th><th>已检测照片</th><th>API 请求</th><th>输入 Token</th><th>输出 Token</th></tr></thead>
                   <tbody>
                     {[...visibleHistory].reverse().map((item) => (
                       <tr className={item.start_date === usage.current.start_date ? "current" : ""} key={item.start_date}>
                         <td><strong>{item.label}</strong>{item.start_date === usage.current.start_date ? <small>当前</small> : null}</td>
-                        <td><strong>{integerFormatter.format(item.task_count)}</strong><span>正式 {integerFormatter.format(item.formal_task_count)} · Trial {integerFormatter.format(item.trial_task_count)}</span></td>
+                        <td><strong>{integerFormatter.format(item.task_count)}</strong><span>专业 {integerFormatter.format(item.formal_task_count)} · 快速 {integerFormatter.format(item.trial_task_count)}</span></td>
+                        <td>{integerFormatter.format(item.detected_photo_count)} 张</td>
                         <td>{integerFormatter.format(item.api_request_count)} 次</td>
                         <td>{integerFormatter.format(item.input_token_count)} Token</td>
                         <td>{integerFormatter.format(item.output_token_count)} Token</td>
@@ -394,169 +459,10 @@ function AccountUsageModal({ account, onClose }: { account: AccountUser; onClose
   );
 }
 
-function UsageMetric({ icon, label, value, detail }: { icon: ReactNode; label: string; value: number; detail: string }) {
+function UsageMetric({ label, value }: { label: string; value: number }) {
   return (
     <article>
-      <span className="account-usage-metric-icon">{icon}</span>
-      <div><span>{label}</span><strong>{integerFormatter.format(value)}</strong><small>{detail}</small></div>
+      <div><span>{label}</span><strong>{integerFormatter.format(value)}</strong></div>
     </article>
-  );
-}
-
-interface AccountEditorModalProps {
-  error: string;
-  initialForm: AccountFormState;
-  isResetting: boolean;
-  isPending: boolean;
-  mode: "create" | "edit";
-  notice: string;
-  onClose: () => void;
-  onOpenUsage?: () => void;
-  onResetPassword: () => void;
-  onSubmit: (form: AccountFormState) => void;
-}
-
-function AccountEditorModal({
-  error,
-  initialForm,
-  isPending,
-  isResetting,
-  mode,
-  notice,
-  onClose,
-  onOpenUsage,
-  onResetPassword,
-  onSubmit
-}: AccountEditorModalProps) {
-  const [form, setForm] = useState(initialForm);
-
-  useEffect(() => setForm(initialForm), [initialForm]);
-
-  useEffect(() => {
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !isPending && !isResetting) onClose();
-    };
-    document.body.classList.add("auth-modal-open");
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.body.classList.remove("auth-modal-open");
-      document.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [isPending, isResetting, onClose]);
-
-  function updateField<TKey extends keyof AccountFormState>(field: TKey, value: AccountFormState[TKey]) {
-    setForm((current) => ({ ...current, [field]: value }));
-  }
-
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    onSubmit(form);
-  }
-
-  function handleClose() {
-    if (!isPending && !isResetting) onClose();
-  }
-
-  return (
-    <div aria-labelledby="account-editor-title" aria-modal="true" className="auth-modal account-editor-modal is-open" role="dialog">
-      <button aria-label="关闭账号编辑弹窗" className="auth-modal-backdrop" type="button" onClick={handleClose} />
-      <section className="auth-dialog account-editor-dialog">
-        <button aria-label="关闭账号编辑弹窗" className="auth-close" disabled={isPending || isResetting} type="button" onClick={handleClose}>
-          <X aria-hidden="true" />
-        </button>
-        <div className="auth-dialog-heading">
-          <h2 id="account-editor-title">{mode === "create" ? "新建账号" : "编辑账号"}</h2>
-        </div>
-        <form className="auth-form account-editor-form" onSubmit={handleSubmit}>
-          <div className="account-form-grid">
-            <label className="auth-field">
-              <span>用户名</span>
-              <input
-                autoComplete="username"
-                placeholder="请输入用户名"
-                required
-                value={form.username}
-                onChange={(event) => updateField("username", event.target.value)}
-              />
-            </label>
-            {mode === "create" ? (
-              <label className="auth-field">
-                <span>初始密码</span>
-                <input
-                  autoComplete="new-password"
-                  minLength={8}
-                  placeholder="至少 8 位"
-                  required
-                  type="password"
-                  value={form.password}
-                  onChange={(event) => updateField("password", event.target.value)}
-                />
-              </label>
-            ) : null}
-            <label className="auth-field">
-              <span>姓名</span>
-              <input
-                autoComplete="name"
-                placeholder="请输入姓名"
-                value={form.real_name}
-                onChange={(event) => updateField("real_name", event.target.value)}
-              />
-            </label>
-            <label className="auth-field">
-              <span>所属单位</span>
-              <input
-                placeholder="请输入单位名称"
-                value={form.organization}
-                onChange={(event) => updateField("organization", event.target.value)}
-              />
-            </label>
-            <label className="auth-field">
-              <span>手机</span>
-              <input
-                autoComplete="tel"
-                placeholder="请输入手机号"
-                value={form.phone}
-                onChange={(event) => updateField("phone", event.target.value)}
-              />
-            </label>
-            <label className="auth-field">
-              <span>系统权限</span>
-              <select value={form.role} onChange={(event) => updateField("role", event.target.value as UserRole)}>
-                <option value="customer">客户用户</option>
-                <option value="reviewer">内部审核</option>
-                <option value="admin">管理员</option>
-              </select>
-            </label>
-            <label className="auth-field">
-              <span>账号状态</span>
-              <select value={form.status} onChange={(event) => updateField("status", event.target.value as UserStatus)}>
-                <option value="active">启用</option>
-                <option value="disabled">停用</option>
-              </select>
-            </label>
-          </div>
-          {notice ? <p className="account-editor-notice" role="status">{notice}</p> : null}
-          {error ? <p className="auth-status auth-status-error" role="alert">{error}</p> : null}
-          <div className="account-editor-actions">
-            {mode === "edit" ? (
-              <button className="button primary-action-button" disabled={isPending || isResetting} type="button" onClick={onResetPassword}>
-                <KeyRound aria-hidden="true" />{isResetting ? "正在重置…" : "重置密码"}
-              </button>
-            ) : null}
-            <div className={`account-editor-primary-actions${mode === "edit" ? " is-editing" : ""}`}>
-              {mode === "edit" && onOpenUsage ? (
-                <button className="back-cancel-button account-editor-usage-button" disabled={isPending || isResetting} type="button" onClick={onOpenUsage}>
-                  <BarChart3 aria-hidden="true" />用量
-                </button>
-              ) : null}
-              <button className="back-cancel-button" disabled={isPending || isResetting} type="button" onClick={handleClose}>取消</button>
-              <button className="button primary-action-button" disabled={isPending || isResetting} type="submit">
-                <Save aria-hidden="true" />{isPending ? "正在保存…" : "保存账号"}
-              </button>
-            </div>
-          </div>
-        </form>
-      </section>
-    </div>
   );
 }

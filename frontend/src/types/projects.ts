@@ -20,9 +20,10 @@ export type DroneType =
   | "autel_evo_max_4t"
   | "other_professional";
 
-export type FacadeType = "tile" | "coating" | "stone";
+export type FacadeType = "tile" | "coating" | "plaster" | "panel" | "curtain_wall" | "stone";
+export type SelectableFacadeType = Exclude<FacadeType, "stone">;
 
-export type DefectType = "crack" | "spalling" | "moisture" | "hollow";
+export type DefectType = "crack" | "spalling" | "peeling" | "damage" | "detachment" | "moisture" | "hollow";
 export type PhotoType = "visible" | "thermal" | "dji" | "other";
 export type UploadMode = "dji" | "visible" | "thermal" | "mixed";
 export type PhotoStatus = "uploaded" | "detecting" | "detected" | "failed";
@@ -32,7 +33,7 @@ export type DetectionTaskStatus = "pending" | "running" | "success" | "failed" |
 export interface ProjectCreatePayload {
   name: string;
   drone_type?: DroneType | null;
-  facade_type?: FacadeType;
+  facade_type?: SelectableFacadeType;
   description?: string | null;
   client_name?: string | null;
   province?: string | null;
@@ -201,12 +202,12 @@ export interface DetectionTask {
 
 export interface StartDetectionPayload {
   generate_building_model: boolean;
-  model_types: Array<"crack" | "spalling" | "hollow">;
+  model_types: Array<"crack" | "spalling" | "peeling" | "damage" | "detachment" | "hollow">;
 }
 
 export interface ProjectFinalizePayload {
   name: string;
   drone_type?: DroneType | null;
-  facade_type: FacadeType;
+  facade_type: SelectableFacadeType;
   description?: string | null;
 }

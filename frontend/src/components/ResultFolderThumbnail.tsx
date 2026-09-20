@@ -36,7 +36,7 @@ export function ResultFolderThumbnail({
           <ImageIcon aria-hidden="true" />
         </span>
       )}
-      <span className="result-folder-thumbnail-count">{Math.max(0, photoCount)}张</span>
+      <span className="result-folder-thumbnail-count">{Math.max(0, photoCount)}</span>
     </span>
   );
 }

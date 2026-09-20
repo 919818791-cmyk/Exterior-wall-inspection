@@ -93,8 +93,9 @@ class TrialGenerateRequest(ApiSchema):
     @field_validator("models")
     @classmethod
     def validate_models(cls, models: list[str]) -> list[str]:
+        aliases = {"脱落": "剥落"}
         allowed_models = {"裂缝", "剥落", "空鼓"}
-        unique_models = list(dict.fromkeys(models))
+        unique_models = list(dict.fromkeys(aliases.get(model, model) for model in models))
         if any(model not in allowed_models for model in unique_models):
             raise ValueError("models contains an unsupported defect type")
         if not unique_models:

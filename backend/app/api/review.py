@@ -735,6 +735,9 @@ def save_review_detection_annotations(
     allowed_defect_types = {
         DefectType.CRACK.value,
         DefectType.SPALLING.value,
+        DefectType.PEELING.value,
+        DefectType.DAMAGE.value,
+        DefectType.DETACHMENT.value,
         DefectType.HOLLOW.value,
     }
     if any(
@@ -743,7 +746,7 @@ def save_review_detection_annotations(
     ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Review annotations only support crack, spalling, and hollow.",
+            detail="Review annotations only support configured formal defect types.",
         )
     result = _review_result_detail(db, request, report)
     if payload.photo_key not in _valid_photo_keys(result):
@@ -1197,6 +1200,9 @@ def _apply_review_annotation_edits(
                 or defect_type not in {
                     DefectType.CRACK.value,
                     DefectType.SPALLING.value,
+                    DefectType.PEELING.value,
+                    DefectType.DAMAGE.value,
+                    DefectType.DETACHMENT.value,
                     DefectType.HOLLOW.value,
                 }
             ):

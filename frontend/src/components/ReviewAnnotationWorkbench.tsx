@@ -48,6 +48,9 @@ import { formatDefectNumber } from "@/utils/trialDefectDisplay";
 const DEFECT_OPTIONS = [
   { value: "crack", label: "裂缝", color: "#ef4444" },
   { value: "spalling", label: "剥落", color: "#f97316" },
+  { value: "peeling", label: "起皮", color: "#d97706" },
+  { value: "damage", label: "面板破损", color: "#dc2626" },
+  { value: "detachment", label: "脱落", color: "#f97316" },
   { value: "moisture", label: "潮湿", color: "#0ea5e9" },
   { value: "corrosion", label: "锈蚀", color: "#a16207" },
   { value: "hollow", label: "空鼓", color: "#7c3aed" }
@@ -723,7 +726,7 @@ function AnnotationPhotoEditor({
     detections: row.detections
   }), [imageHeight, imageWidth, row.detections, row.filename, row.imageUrl, row.tileHeight, row.tileOverlapRatio, row.tileWidth]);
   const dirty = JSON.stringify(cleanAnnotations(annotations)) !== JSON.stringify(cleanAnnotations(savedAnnotations));
-  const defectOptions = DEFECT_OPTIONS.filter((option) => ["crack", "spalling", "hollow"].includes(option.value));
+  const defectOptions = DEFECT_OPTIONS.filter((option) => ["crack", "spalling", "peeling", "damage", "detachment", "hollow"].includes(option.value));
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["review", "detections"] });
   const saveMutation = useMutation({

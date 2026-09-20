@@ -2,11 +2,21 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.enums.status import DetectionTaskStatus, DroneType, FacadeType, ProjectStatus
+
+
+SelectableFacadeType = Literal[
+    FacadeType.TILE,
+    FacadeType.COATING,
+    FacadeType.PLASTER,
+    FacadeType.PANEL,
+    FacadeType.CURTAIN_WALL,
+]
 
 
 class ApiSchema(BaseModel):
@@ -16,7 +26,7 @@ class ApiSchema(BaseModel):
 class ProjectCreateRequest(ApiSchema):
     name: str = Field(min_length=1, max_length=128)
     drone_type: DroneType | None = None
-    facade_type: FacadeType = FacadeType.TILE
+    facade_type: SelectableFacadeType = FacadeType.TILE
     description: str | None = Field(default=None, max_length=500)
     client_name: str | None = Field(default=None, max_length=128)
     province: str | None = Field(default=None, max_length=64)
@@ -34,7 +44,7 @@ class ProjectDraftCreateRequest(ProjectCreateRequest):
 class ProjectUpdateRequest(ApiSchema):
     name: str | None = Field(default=None, max_length=128)
     drone_type: DroneType | None = None
-    facade_type: FacadeType = FacadeType.TILE
+    facade_type: SelectableFacadeType = FacadeType.TILE
     description: str | None = Field(default=None, max_length=500)
     client_name: str | None = Field(default=None, max_length=128)
     province: str | None = Field(default=None, max_length=64)
@@ -89,7 +99,7 @@ class ProjectDetailRead(ProjectListItem):
 class ProjectFinalizeRequest(ApiSchema):
     name: str = Field(min_length=1, max_length=128)
     drone_type: DroneType | None = None
-    facade_type: FacadeType
+    facade_type: SelectableFacadeType
     description: str | None = Field(default=None, max_length=500)
 
 

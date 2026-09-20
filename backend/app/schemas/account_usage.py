@@ -11,6 +11,7 @@ class AccountUsageTotals(BaseModel):
     task_count: int
     formal_task_count: int
     trial_task_count: int
+    detected_photo_count: int
     api_request_count: int
     token_count: int
     input_token_count: int
@@ -46,6 +47,7 @@ class CurrentAccountUsageResponse(BaseModel):
     period_start: date
     period_end: date
     usage: AccountUsageTotals
-    trial_daily_photo_upload_balance: AccountQuotaBalance
     trial_monthly_photo_upload_balance: AccountQuotaBalance
-    formal_monthly_photo_upload_balance: AccountQuotaBalance
+    basic_formal_monthly_photo_upload_balance: AccountQuotaBalance
+    professional_formal_monthly_photo_upload_balance: AccountQuotaBalance
+    professional_trial_monthly_photo_upload_balance: AccountQuotaBalance

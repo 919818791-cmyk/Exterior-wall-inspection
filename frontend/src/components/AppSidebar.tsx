@@ -1,4 +1,3 @@
-import { useQuery } from "@tanstack/react-query";
 import {
   BriefcaseBusiness,
   Gauge,
@@ -6,22 +5,22 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   ScanSearch,
+  Settings,
   Sparkles,
+  Tags,
+  Users,
   UserRound
 } from "lucide-react";
-import { useMemo, type ReactNode, type RefObject } from "react";
+import { type ReactNode, type RefObject } from "react";
 import { Link, NavLink } from "react-router-dom";
 
-import { projectsQueryOptions } from "@/api/projects";
-import { reportsQueryOptions } from "@/api/reports";
 import type { AuthUser } from "@/types/auth";
-
-const RECENT_PROJECT_LIMIT = 6;
 
 interface AppSidebarProps {
   accountMenu: ReactNode;
   accountMenuOpen: boolean;
   accountMenuRef: RefObject<HTMLElement>;
+  canAccessAdmin: boolean;
   canAccessReview: boolean;
   canToggle: boolean;
   collapsed: boolean;
@@ -30,16 +29,57 @@ interface AppSidebarProps {
   onLogin: () => void;
   onLogout: () => void;
   onPersonalInfo: () => void;
-  quotaValueLabel: string;
+  quotaItems: ReadonlyArray<{ label: string; value: string }>;
   quotaLabel: string;
-  quotaPeriodLabel: string;
   user: AuthUser | null;
+}
+
+interface AppSidebarUserMenuContentProps {
+  onLogout: () => void;
+  onPersonalInfo: () => void;
+  quotaItems: ReadonlyArray<{ label: string; value: string }>;
+  quotaLabel: string;
+}
+
+export function AppSidebarUserMenuContent({
+  onLogout,
+  onPersonalInfo,
+  quotaItems,
+  quotaLabel
+}: AppSidebarUserMenuContentProps) {
+  return (
+    <div className="app-sidebar-user-expanded">
+      {quotaItems.length ? (
+        <>
+          <div className="app-sidebar-user-row app-sidebar-user-quota-title">
+            <Gauge aria-hidden="true" />
+            <span>{quotaLabel}</span>
+          </div>
+          {quotaItems.map((item) => (
+            <div aria-label={`${item.label}照片检测额度 ${item.value}`} className="app-sidebar-user-quota-value" key={item.label}>
+              <span>{item.label}</span>
+              <strong>{item.value}</strong>
+            </div>
+          ))}
+        </>
+      ) : null}
+      <button className="app-sidebar-user-row app-sidebar-user-action" type="button" onClick={onPersonalInfo}>
+        <UserRound aria-hidden="true" />
+        <span>个人信息</span>
+      </button>
+      <button className="app-sidebar-user-row app-sidebar-user-action" type="button" onClick={onLogout}>
+        <LogOut aria-hidden="true" />
+        <span>退出登录</span>
+      </button>
+    </div>
+  );
 }
 
 export function AppSidebar({
   accountMenu,
   accountMenuOpen,
   accountMenuRef,
+  canAccessAdmin,
   canAccessReview,
   canToggle,
   collapsed,
@@ -48,46 +88,10 @@ export function AppSidebar({
   onLogin,
   onLogout,
   onPersonalInfo,
-  quotaValueLabel,
+  quotaItems,
   quotaLabel,
-  quotaPeriodLabel,
   user
 }: AppSidebarProps) {
-  const projectsQuery = useQuery({
-    ...projectsQueryOptions(user),
-    enabled: Boolean(user) && !collapsed
-  });
-  const reportsQuery = useQuery({
-    ...reportsQueryOptions(user),
-    enabled: Boolean(user) && !collapsed
-  });
-  const recentProjects = useMemo(() => {
-    const projects = (projectsQuery.data ?? []).map((project) => ({
-      id: project.id,
-      isExample: project.is_example,
-      name: project.name,
-      sourceLabel: "专业检测",
-      to: `/detections/${project.id}`,
-      updatedAt: project.updated_at
-    }));
-    const trialReports = (reportsQuery.data ?? [])
-      .filter((report) => report.source_type === "trial")
-      .map((report) => ({
-        id: report.id,
-        isExample: report.is_example,
-        name: report.title,
-        sourceLabel: "快速体验",
-        to: `/trials/${report.id}`,
-        updatedAt: report.updated_at
-      }));
-    return [...projects, ...trialReports]
-      .sort((left, right) => (
-        Number(left.isExample) - Number(right.isExample)
-        || right.updatedAt.localeCompare(left.updatedAt)
-      ))
-      .slice(0, RECENT_PROJECT_LIMIT);
-  }, [projectsQuery.data, reportsQuery.data]);
-  const recentProjectsLoading = projectsQuery.isLoading || reportsQuery.isLoading;
   const collapseLabel = canToggle
     ? (collapsed ? "展开左侧栏" : "收纳左侧栏")
     : "当前窗口宽度下左侧栏已自动收纳";
@@ -119,36 +123,29 @@ export function AppSidebar({
           <Sparkles aria-hidden="true" />
           <span className="app-sidebar-label">快速体验</span>
         </NavLink>
+        <NavLink aria-label="定价" className={({ isActive }) => `app-sidebar-menu-item${isActive ? " is-active" : ""}`} title="定价" to="/pricing">
+          <Tags aria-hidden="true" />
+          <span className="app-sidebar-label">定价</span>
+        </NavLink>
         {canAccessReview ? (
           <NavLink aria-label="工作台" className={({ isActive }) => `app-sidebar-menu-item${isActive ? " is-active" : ""}`} title="工作台" to="/review">
             <BriefcaseBusiness aria-hidden="true" />
             <span className="app-sidebar-label">工作台</span>
           </NavLink>
         ) : null}
+        {canAccessAdmin ? (
+          <>
+            <NavLink aria-label="账号管理" className={({ isActive }) => `app-sidebar-menu-item${isActive ? " is-active" : ""}`} title="账号管理" to="/accounts">
+              <Users aria-hidden="true" />
+              <span className="app-sidebar-label">账号管理</span>
+            </NavLink>
+            <NavLink aria-label="推理设置" className={({ isActive }) => `app-sidebar-menu-item${isActive ? " is-active" : ""}`} title="推理设置" to="/system-settings">
+              <Settings aria-hidden="true" />
+              <span className="app-sidebar-label">推理设置</span>
+            </NavLink>
+          </>
+        ) : null}
       </nav>
-
-      <section aria-label="最近项目" className="app-sidebar-recent">
-        <div className="app-sidebar-section-heading">
-          <span className="app-sidebar-label">最近</span>
-        </div>
-        <div className="app-sidebar-project-list">
-          {user && recentProjectsLoading ? <span className="app-sidebar-project-state">正在加载…</span> : null}
-          {user && !recentProjectsLoading && recentProjects.length === 0 ? (
-            <span className="app-sidebar-project-state">暂无最近项目</span>
-          ) : null}
-          {recentProjects.map((project) => (
-            <Link
-              aria-label={`打开${project.sourceLabel}项目 ${project.name}`}
-              className="app-sidebar-project"
-              key={`${project.sourceLabel}-${project.id}`}
-              title={`${project.sourceLabel} · ${project.name}`}
-              to={project.to}
-            >
-              <span className="app-sidebar-project-name">{project.name}</span>
-            </Link>
-          ))}
-        </div>
-      </section>
 
       <section
         ref={accountMenuRef}
@@ -171,24 +168,12 @@ export function AppSidebar({
             {accountMenu}
           </>
         ) : (
-          <div className="app-sidebar-user-expanded">
-            <div className="app-sidebar-user-row app-sidebar-user-quota-title">
-              <Gauge aria-hidden="true" />
-              <span>{quotaLabel}</span>
-            </div>
-            <div aria-label={`${quotaPeriodLabel}照片上传额度 ${quotaValueLabel}`} className="app-sidebar-user-quota-value">
-              <span>{quotaPeriodLabel}</span>
-              <strong>{quotaValueLabel}</strong>
-            </div>
-            <button className="app-sidebar-user-row app-sidebar-user-action" type="button" onClick={onPersonalInfo}>
-              <UserRound aria-hidden="true" />
-              <span>个人信息</span>
-            </button>
-            <button className="app-sidebar-user-row app-sidebar-user-action" type="button" onClick={onLogout}>
-              <LogOut aria-hidden="true" />
-              <span>退出登录</span>
-            </button>
-          </div>
+          <AppSidebarUserMenuContent
+            onLogout={onLogout}
+            onPersonalInfo={onPersonalInfo}
+            quotaItems={quotaItems}
+            quotaLabel={quotaLabel}
+          />
         )) : (
           <button aria-label="登录" className="nav-cta auth-trigger app-sidebar-login" title="登录" type="button" onClick={onLogin}>
             <UserRound aria-hidden="true" />

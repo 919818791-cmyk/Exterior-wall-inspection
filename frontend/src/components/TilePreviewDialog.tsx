@@ -76,7 +76,7 @@ export function TilePreviewDialog({ source, onClose }: TilePreviewDialogProps) {
             <h2 id="trial-tile-dialog-title">照片 TILE</h2>
             <p>{source.filename} · {tileWidth} × {tileHeight}px · {Math.round(overlapRatio * 100)}% 重叠 · 共 {tiles.length || "-"} 片</p>
           </div>
-          <button type="button" aria-label="关闭 TILE 预览" onClick={onClose}>
+          <button className="back-cancel-button" type="button" aria-label="关闭 TILE 预览" onClick={onClose}>
             <X aria-hidden="true" />
           </button>
         </header>
@@ -189,9 +189,13 @@ function tileDetectionLabel(detection: ModelOutputDetection) {
 
 function tileDetectionType(detection: ModelOutputDetection) {
   const type = (detection.type ?? "").trim();
-  if (["crack", "spalling", "corrosion", "hollow"].includes(type)) return type;
+  if (type === "detachment") return "spalling";
+  if (["crack", "spalling", "peeling", "damage", "corrosion", "hollow"].includes(type)) return type;
   const model = (detection.model ?? "").trim();
   if (model === "裂缝") return "crack";
+  if (model === "起皮") return "peeling";
+  if (model === "面板破损") return "damage";
+  if (model === "脱落") return "spalling";
   if (model === "锈蚀") return "corrosion";
   if (model === "空鼓") return "hollow";
   return "spalling";

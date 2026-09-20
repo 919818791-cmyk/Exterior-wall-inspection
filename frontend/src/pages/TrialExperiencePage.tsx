@@ -5,16 +5,16 @@
   ModalFooter,
   ModalHeader
 } from "@heroui/react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  ArrowLeft,
+  ArrowRight,
   Check,
   CircleCheckBig,
+  FileText,
   Home,
   Images,
   LoaderCircle,
   RefreshCcw,
-  ScanSearch,
   Send,
   ShieldCheck,
   TriangleAlert,
@@ -36,6 +36,7 @@ import {
 import { Link, useBeforeUnload, useBlocker, useNavigate } from "react-router-dom";
 
 import { ApiError } from "@/api/client";
+import { currentAccountUsageQueryOptions } from "@/api/accounts";
 import {
   archiveTrialResult,
   deleteTrialPhoto,
@@ -49,6 +50,7 @@ import {
 import { ListPagination } from "@/components/ListPagination";
 import { PhotoUploadThumbnail } from "@/components/project/PhotoUploadThumbnail";
 import { DetectionGuidePanel } from "@/components/project/DetectionCreateWorkbench";
+import { ErrorNoticeModal } from "@/components/project/PhotoLimitModal";
 import { ProjectPhotoUploader } from "@/components/project/ProjectPhotoUploader";
 import { ProjectWorkbenchShell } from "@/components/project/ProjectWorkbenchShell";
 import { StartDetectionModal } from "@/components/project/StartDetectionModal";
@@ -57,7 +59,7 @@ import type { StartDetectionPayload } from "@/types/projects";
 import { createAsyncLimiter } from "@/utils/asyncLimiter";
 import { createClientId } from "@/utils/id";
 import {
-  PROFESSIONAL_PHOTO_UPLOAD_HINT,
+  MAX_PHOTO_UPLOAD_SIZE_BYTES,
   PHOTO_UPLOAD_WINDOW_WARNING,
   validatePhotoUpload
 } from "@/utils/photoUpload";
@@ -65,9 +67,8 @@ import { trialDefectBoxLabel, trialDefectDisplayFromModel } from "@/utils/trialD
 import { readTrialPhotoMetadata, type TrialPhotoMetadata } from "@/utils/photoMetadata";
 
 const MODEL_OPTIONS = ["裂缝", "剥落", "空鼓"] as const;
-const MAX_TRIAL_PHOTO_COUNT = 30;
 const TRIAL_PHOTO_PAGE_SIZE = 12;
-const MAX_TRIAL_PHOTO_SIZE_BYTES = 5 * 1024 * 1024;
+const TRIAL_PHOTO_UPLOAD_BASE_HINT = `仅支持建筑外墙相关的原始照片，支持可见光与热红外照片，支持 JPG、JPEG、PNG 格式，单张不超过 ${MAX_PHOTO_UPLOAD_SIZE_BYTES / 1024 / 1024}MB`;
 const TRIAL_RESULT_CONFIDENCE_THRESHOLD = 0.6;
 const PHOTO_PREVIEW_DEFAULT_ZOOM = 1;
 const PHOTO_PREVIEW_MIN_ZOOM = 1;
@@ -81,6 +82,7 @@ const GENERATION_STEP_MESSAGES = [
   "正在生成标注结果"
 ] as const;
 const TRIAL_REQUEST_STORAGE_PREFIX = "exterior-wall:active-trial-request:";
+const HIDE_TRIAL_VERSION_NOTICE_STORAGE_KEY = "exterior-wall:hide-trial-version-notice";
 const EMPTY_TRIAL_PHOTO_METADATA: TrialPhotoMetadata = {
   xmpDroneDjiImageSource: null,
   ifd0ImageDescription: null,
@@ -135,6 +137,16 @@ export function TrialExperiencePage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const user = useAuthStore((state) => state.user);
+  const accountUsageQuery = useQuery({
+    ...currentAccountUsageQueryOptions,
+    enabled: user?.role === "customer"
+  });
+  const trialQuotaRemaining = user?.account_plan === "professional"
+    ? accountUsageQuery.data?.professional_trial_monthly_photo_upload_balance.remaining
+    : accountUsageQuery.data?.trial_monthly_photo_upload_balance.remaining;
+  const trialPhotoUploadHint = trialQuotaRemaining === undefined
+    ? TRIAL_PHOTO_UPLOAD_BASE_HINT
+    : `照片数量最多 ${trialQuotaRemaining} 张，${TRIAL_PHOTO_UPLOAD_BASE_HINT}`;
   const previewViewportRef = useRef<HTMLDivElement | null>(null);
   const resultPanelRef = useRef<HTMLElement | null>(null);
   const previewDragRef = useRef<{ pointerId: number; x: number; y: number; distance: number } | null>(null);
@@ -162,7 +174,14 @@ export function TrialExperiencePage() {
   const [detectionDialogStage, setDetectionDialogStage] = useState<TrialDetectionDialogStage | null>(null);
   const [detectionDialogMessage, setDetectionDialogMessage] = useState("");
   const [preparedDetection, setPreparedDetection] = useState<PreparedTrialDetection | null>(null);
-  const [isVersionNoticeOpen, setIsVersionNoticeOpen] = useState(true);
+  const [isVersionNoticeOpen, setIsVersionNoticeOpen] = useState(() => {
+    try {
+      return window.localStorage.getItem(HIDE_TRIAL_VERSION_NOTICE_STORAGE_KEY) !== "true";
+    } catch {
+      return true;
+    }
+  });
+  const [hideVersionNotice, setHideVersionNotice] = useState(false);
   const [guideExampleTab, setGuideExampleTab] = useState<"original" | "annotated">("original");
   const [activeTrialRequestId, setActiveTrialRequestId] = useState<string | null>(() => {
     if (!user) return null;
@@ -315,7 +334,6 @@ export function TrialExperiencePage() {
         setIsGenerating(false);
         setActionHint("");
         const requestError = requestStatus.error || "此前提交的检测任务失败，请重新发起。";
-        setError(requestError);
         setDetectionDialogMessage(requestError);
         setDetectionDialogStage("error");
       } catch (statusError) {
@@ -390,7 +408,7 @@ export function TrialExperiencePage() {
     setActionHint("");
     const rejectionMessages: string[] = [];
     const selected = fileList.filter((file) => {
-      const message = validatePhotoUpload(file, { maxSizeBytes: MAX_TRIAL_PHOTO_SIZE_BYTES });
+      const message = validatePhotoUpload(file, { maxSizeBytes: MAX_PHOTO_UPLOAD_SIZE_BYTES });
       if (message) {
         rejectionMessages.push(`${file.name}: ${message}`);
         return false;
@@ -398,24 +416,32 @@ export function TrialExperiencePage() {
       return true;
     });
 
-    const remainingSlots = MAX_TRIAL_PHOTO_COUNT - pendingPhotos.length;
-    if (remainingSlots <= 0) {
-      setError(`单次最多上传 ${MAX_TRIAL_PHOTO_COUNT} 张照片。`);
-      return;
-    }
-    const accepted = selected.slice(0, remainingSlots);
-    if (!accepted.length) {
+    if (!selected.length) {
       setError(rejectionMessages[0] ?? "未选择可上传的照片。");
       return;
     }
 
-    const limitMessage = selected.length > accepted.length
-      ? `单次最多上传 ${MAX_TRIAL_PHOTO_COUNT} 张照片，已添加前 ${remainingSlots} 张。`
-      : "";
-    setError(rejectionMessages[0] ?? limitMessage);
+    const quotaBalance = user?.account_plan === "professional"
+      ? accountUsageQuery.data?.professional_trial_monthly_photo_upload_balance
+      : accountUsageQuery.data?.trial_monthly_photo_upload_balance;
+    const pendingUploadCount = selectedPhotos.filter((photo) => (
+      !photo.isArchived && photo.uploadStatus !== "failed"
+    )).length;
+    const availableUploadCount = quotaBalance
+      ? Math.max(0, quotaBalance.remaining - pendingUploadCount)
+      : null;
+    if (availableUploadCount !== null && selected.length > availableUploadCount) {
+      setError(
+        `账号快速体验照片额度剩余 ${quotaBalance?.remaining ?? 0} 张，`
+        + `当前已有 ${pendingUploadCount} 张未送检照片，本次最多还能上传 ${availableUploadCount} 张。`
+      );
+      return;
+    }
+
+    setError(rejectionMessages[0] ?? "");
 
     const nextPhotos = await Promise.all(
-      accepted.map(createSelectedTrialPhoto)
+      selected.map(createSelectedTrialPhoto)
     );
     const startIndex = selectedPhotos.length;
 
@@ -717,7 +743,6 @@ export function TrialExperiencePage() {
         : keepRecovering
           ? "连接中断，但检测任务可能仍在执行；系统正在自动查询结果，请勿重复提交。"
         : generateError instanceof Error ? generateError.message : "生成检测结果失败。";
-      setError(message);
       if (keepRecovering) {
         setDetectionDialogMessage(message);
       } else {
@@ -726,6 +751,7 @@ export function TrialExperiencePage() {
         setDetectionDialogStage("error");
       }
     } finally {
+      void queryClient.invalidateQueries({ queryKey: ["current-account-usage"] });
       if (!keepRecovering) setIsGenerating(false);
     }
   }
@@ -791,7 +817,6 @@ export function TrialExperiencePage() {
       setSelectedPhotos((current) => current.map((currentPhoto) => (
         currentPhoto.id === photo.id ? photoWithUploadResult(currentPhoto, uploadResult) : currentPhoto
       )));
-      void queryClient.invalidateQueries({ queryKey: ["current-account-usage"] });
       return uploadResult;
     } catch (uploadError) {
       const message = trialUploadErrorMessage(uploadError);
@@ -865,7 +890,22 @@ export function TrialExperiencePage() {
     (photo) => photo.uploadStatus === "ready" || photo.uploadStatus === "uploading"
   ).length;
 
+  function rememberVersionNoticePreference() {
+    if (!hideVersionNotice) return;
+    try {
+      window.localStorage.setItem(HIDE_TRIAL_VERSION_NOTICE_STORAGE_KEY, "true");
+    } catch {
+      // Continue normally when browser storage is unavailable.
+    }
+  }
+
+  function closeVersionNotice() {
+    rememberVersionNoticePreference();
+    setIsVersionNoticeOpen(false);
+  }
+
   function openProfessionalDetection() {
+    rememberVersionNoticePreference();
     allowNavigationRef.current = true;
     navigate("/detections/new");
   }
@@ -901,7 +941,7 @@ export function TrialExperiencePage() {
                   disabled={isPhotoEditingLocked}
                   emptyHint={(
                     <span className="professional-drone-upload-hint">
-                      {PROFESSIONAL_PHOTO_UPLOAD_HINT}
+                      {trialPhotoUploadHint}
                       {activePhotoUploadCount ? (
                         <>
                           <br />
@@ -996,10 +1036,11 @@ export function TrialExperiencePage() {
               </section>
             </div>
 
-            <section className="trial-project-feedback" aria-live="polite">
-              {error ? <p className="create-form-error">{error}</p> : null}
-              {actionHint ? <p className="trial-action-hint">{actionHint}</p> : null}
-            </section>
+            {actionHint ? (
+              <section className="trial-project-feedback" aria-live="polite">
+                <p className="trial-action-hint">{actionHint}</p>
+              </section>
+            ) : null}
         </section>
         </form>
         <DetectionGuidePanel
@@ -1017,7 +1058,7 @@ export function TrialExperiencePage() {
         >
           <figure>
             <button
-              className="trial-photo-preview-close"
+              className="trial-photo-preview-close back-cancel-button"
               type="button"
               aria-label="关闭照片预览"
               onClick={closePhotoPreview}
@@ -1091,6 +1132,12 @@ export function TrialExperiencePage() {
           </figure>
         </div>
       ) : null}
+      <ErrorNoticeModal
+        message={detectionDialogStage === "progress" || detectionDialogStage === "error" ? "" : error}
+        onOpenChange={(isOpen) => {
+          if (!isOpen) setError("");
+        }}
+      />
       <StartDetectionModal
         isOpen={detectionDialogStage === "confirmation" && Boolean(preparedDetection)}
         isPending={false}
@@ -1162,6 +1209,10 @@ export function TrialExperiencePage() {
                   <CircleCheckBig />
                 </span>
                 <h2>已完成</h2>
+                <p className="trial-detection-completed-description">
+                  快速体验适用于外墙照片的快速缺陷识别；如需更多类型的检测、项目管理及正式检测报告，可使用{" "}
+                  <Link to="/detections/new">专业检测</Link>
+                </p>
               </ModalHeader>
               <ModalFooter className="trial-detection-modal-footer">
                 <button
@@ -1170,16 +1221,15 @@ export function TrialExperiencePage() {
                   type="button"
                   onClick={returnToTrialList}
                 >
-                  <ArrowLeft aria-hidden="true" />
                   返回列表
                 </button>
                 <button
-                  className="button primary-action-button trial-view-result-button"
+                  className="button primary-action-button professional-create-result-action"
                   disabled={!archivedReportId || isArchiving}
                   type="button"
                   onClick={viewDetectionResult}
                 >
-                  <ScanSearch aria-hidden="true" />
+                  <FileText aria-hidden="true" />
                   {archivedReportId ? "查看结果" : "结果归档中"}
                 </button>
               </ModalFooter>
@@ -1231,6 +1281,14 @@ export function TrialExperiencePage() {
             </p>
           </ModalBody>
           <ModalFooter className="trial-version-modal-footer">
+            <label className="trial-version-modal-preference">
+              <input
+                checked={hideVersionNotice}
+                type="checkbox"
+                onChange={(event) => setHideVersionNotice(event.target.checked)}
+              />
+              <span>不再显示</span>
+            </label>
             <button
               className="back-cancel-button"
               type="button"
@@ -1241,9 +1299,10 @@ export function TrialExperiencePage() {
             <button
               className="button primary-action-button"
               type="button"
-              onClick={() => setIsVersionNoticeOpen(false)}
+              onClick={closeVersionNotice}
             >
               继续快速体验
+              <ArrowRight aria-hidden="true" className="professional-create-action-arrow" />
             </button>
           </ModalFooter>
         </ModalContent>

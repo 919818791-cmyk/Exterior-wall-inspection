@@ -22,7 +22,7 @@ from app.api.dependencies import (
 from app.core.config import get_settings
 from app.core.security import create_access_token, hash_password, verify_password
 from app.db.session import get_db
-from app.enums.status import UserRole, UserStatus
+from app.enums.status import AccountPlan, UserRole, UserStatus
 from app.models.tables import QuickDetectionPhoto, TrialDetectionResult, UsageEvent, UserAccount
 from app.schemas.auth import (
     AccountDeletionRequest,
@@ -65,6 +65,7 @@ def _to_user_read(user: AuthenticatedUser) -> AuthUserRead:
         phone=user.phone,
         role=user.role,
         organization=user.organization,
+        account_plan=user.account_plan,
     )
 
 
@@ -601,6 +602,7 @@ def create_trial_application(
         real_name=real_name,
         phone=phone,
         role=UserRole.CUSTOMER.value,
+        account_plan=AccountPlan.BASIC.value,
         organization=organization,
         status=UserStatus.ACTIVE.value,
     )

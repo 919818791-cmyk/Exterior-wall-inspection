@@ -23,6 +23,7 @@ from app.api.projects import _get_project_or_404
 from app.core.config import get_settings
 from app.db.session import get_db
 from app.enums.status import (
+    AccountPlan,
     AiResultStatus,
     DetectionTaskStatus,
     InspectionReportStatus,
@@ -31,6 +32,7 @@ from app.enums.status import (
     PhotoType,
     ProjectStatus,
     ReviewResultStatus,
+    UserRole,
 )
 from app.models.tables import (
     AiDetectionResult,
@@ -52,7 +54,11 @@ from app.schemas.phase5 import (
     DetectionStartRequest,
     DetectionTaskRead,
 )
-from app.services.formal_detection_prompts import formal_detection_prompts
+from app.services.formal_detection_prompts import (
+    FACADE_DEFECT_TYPES,
+    FACADE_TYPE_NAMES,
+    formal_detection_prompts,
+)
 from app.services.inference_scheduling import (
     InferenceUsageReservation,
     reserve_inference_usage,
@@ -60,6 +66,10 @@ from app.services.inference_scheduling import (
 from app.services.local_qwen_lifecycle import start_local_qwen
 from app.services.object_storage import get_object_bytes, presigned_get_url
 from app.services.photo_metadata import extract_photo_metadata
+from app.services.photo_upload_quota import (
+    refund_photo_detection_quota,
+    reserve_photo_detection_quota,
+)
 from app.services.report_data import build_report_data
 from app.services.trial_inference_provider import (
     active_trial_inference_runtime,
@@ -79,7 +89,10 @@ from app.services.trial_qwen_inference import (
     estimate_trial_api_request_count,
     infer_trial_images,
 )
-from app.services.usage_tracking import add_inference_usage_event
+from app.services.usage_tracking import (
+    add_inference_usage_event,
+    add_photo_detection_event,
+)
 
 router = APIRouter(tags=["detection-tasks"])
 logger = logging.getLogger(__name__)
@@ -88,10 +101,23 @@ MIN_VISIBLE_CONFIDENCE = 0.6
 DEFECT_TYPE_NAMES = {
     "crack": "裂缝",
     "spalling": "剥落",
+    "peeling": "起皮",
+    "damage": "面板破损",
+    "detachment": "脱落",
     "moisture": "潮湿",
     "hollow": "空鼓",
 }
-FORMAL_VISIBLE_DEFECT_TYPES = frozenset({"crack", "spalling"})
+FORMAL_VISIBLE_DEFECT_TYPES = frozenset(
+    {"crack", "spalling", "peeling", "damage", "detachment"}
+)
+FORMAL_DEFECT_TYPE_ORDER = (
+    "crack",
+    "spalling",
+    "peeling",
+    "damage",
+    "detachment",
+    "hollow",
+)
 FORMAL_BACKEND_WORKER_ID = "formal-backend-queue"
 _formal_detection_jobs: set[asyncio.Task[None]] = set()
 
@@ -248,8 +274,37 @@ def _validate_formal_photo_model_compatibility(
     if visible_photo_count and not FORMAL_VISIBLE_DEFECT_TYPES.intersection(selected):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="可见光图片只执行裂缝或剥落检测，请至少勾选其中一项或移除可见光图片。",
+            detail=(
+                "可见光图片需要选择一种与当前外墙类型匹配的可见缺陷，"
+                "请勾选后重试或移除可见光图片。"
+            ),
         )
+
+
+def _validate_facade_model_compatibility(
+    facade_type: str,
+    selected_model_types: list[str],
+) -> frozenset[str]:
+    allowed_models = FACADE_DEFECT_TYPES.get(facade_type)
+    if allowed_models is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="项目外墙类型不受支持，请先更新项目资料。",
+        )
+    unsupported_models = set(selected_model_types).difference(allowed_models)
+    if unsupported_models:
+        unsupported_labels = "、".join(
+            DEFECT_TYPE_NAMES.get(model, model)
+            for model in sorted(unsupported_models)
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"{FACADE_TYPE_NAMES[facade_type]}外墙不支持"
+                f"{unsupported_labels}检测，请调整检测类型。"
+            ),
+        )
+    return allowed_models
 
 
 def _formal_compatible_inference(
@@ -265,7 +320,7 @@ def _formal_compatible_inference(
         **inference,
         "requested_models": [
             defect_type
-            for defect_type in ("crack", "spalling", "hollow")
+            for defect_type in FORMAL_DEFECT_TYPE_ORDER
             if defect_type in allowed_defect_types
         ],
         "detections": [
@@ -277,6 +332,65 @@ def _formal_compatible_inference(
             )
         ],
     }
+
+
+def _merge_formal_inference_passes(
+    inference_passes: list[list[dict[str, Any]]],
+) -> list[dict[str, Any]]:
+    if not inference_passes:
+        return []
+    merged_results: list[dict[str, Any]] = []
+    for per_image_results in zip(*inference_passes, strict=True):
+        merged = dict(per_image_results[0])
+        merged["requested_models"] = list(dict.fromkeys(
+            model
+            for result in per_image_results
+            for model in result.get("requested_models") or []
+        ))
+        merged["executed_models"] = list(dict.fromkeys(
+            model
+            for result in per_image_results
+            for model in result.get("executed_models") or []
+        ))
+        merged["detections"] = [
+            detection
+            for result in per_image_results
+            for detection in result.get("detections") or []
+        ]
+        inference_details = dict(merged.get("inference") or {})
+        for count_key in (
+            "tile_count",
+            "api_request_count",
+            "pre_merge_detection_count",
+            "post_merge_detection_count",
+            "pre_nms_detection_count",
+            "post_nms_detection_count",
+        ):
+            inference_details[count_key] = sum(
+                int((result.get("inference") or {}).get(count_key) or 0)
+                for result in per_image_results
+            )
+        merged["inference"] = inference_details
+        token_usage_keys = {
+            key
+            for result in per_image_results
+            for key, value in (result.get("token_usage") or {}).items()
+            if isinstance(value, (int, float)) and not isinstance(value, bool)
+        }
+        merged["token_usage"] = {
+            key: sum(
+                float((result.get("token_usage") or {}).get(key) or 0)
+                for result in per_image_results
+            )
+            for key in token_usage_keys
+        }
+        merged["tile_token_usages"] = [
+            usage
+            for result in per_image_results
+            for usage in result.get("tile_token_usages") or []
+        ]
+        merged_results.append(merged)
+    return merged_results
 
 
 def _formal_inference_prompts(
@@ -327,7 +441,7 @@ def _raw_model_output_for_photo(
         "model_version": model_output.get("model_version") or model_version,
         "requested_models": [
             DEFECT_TYPE_NAMES.get(defect_type, defect_type)
-            for defect_type in ("crack", "spalling", "hollow")
+            for defect_type in FORMAL_DEFECT_TYPE_ORDER
             if defect_type in allowed_defect_types
         ],
         "executed_models": model_output.get("executed_models") or [],
@@ -476,6 +590,16 @@ async def start_detection(
 ) -> DetectionTaskRead:
     project = _get_project_or_404(db, project_id)
     ensure_project_write_access(project, current_user)
+    if (
+        payload is not None
+        and payload.generate_building_model
+        and current_user.role == UserRole.CUSTOMER.value
+        and current_user.account_plan != AccountPlan.PROFESSIONAL.value
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="使用此功能需提升到专业版",
+        )
     if project.status != ProjectStatus.DRAFT.value:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -558,12 +682,18 @@ async def start_detection(
         )
     all_photos = qualified_photos
 
+    facade_type = getattr(project, "facade_type", None) or "tile"
+    allowed_facade_models = _validate_facade_model_compatibility(facade_type, [])
     selected_model_types = [
         _defect_type_value(value)
         for value in (
             payload.model_types
-            if payload is not None
-            else ["crack", "spalling", "hollow"]
+            if payload is not None and payload.model_types is not None
+            else [
+                defect_type
+                for defect_type in FORMAL_DEFECT_TYPE_ORDER
+                if defect_type in allowed_facade_models
+            ]
         )
     ]
     if not selected_model_types:
@@ -571,6 +701,7 @@ async def start_detection(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="请至少选择一种检测类型。",
         )
+    _validate_facade_model_compatibility(facade_type, selected_model_types)
     _validate_formal_photo_model_compatibility(
         qualified_photos,
         selected_model_types,
@@ -584,17 +715,18 @@ async def start_detection(
         for value in selected_model_types
         if value in FORMAL_VISIBLE_DEFECT_TYPES
     ]
-    facade_type = getattr(project, "facade_type", None) or "tile"
     specialized_prompts = formal_detection_prompts(
         facade_type,
         selected_model_types,
         db=db,
     )
+    dedicated_visible_prompts = specialized_prompts.visible_prompts
     visible_prompt = (
         specialized_prompts.visible_prompt
         if specialized_prompts is not None
         and specialized_prompts.visible_prompt is not None
-        else prompts.visible_prompt_for_models(visible_model_labels)
+        else next(iter(dedicated_visible_prompts.values()), None)
+        or prompts.visible_prompt_for_models(visible_model_labels)
     )
     thermal_prompt = (
         specialized_prompts.thermal_prompt
@@ -635,9 +767,10 @@ async def start_detection(
         "scheduling": {
             "global_job_concurrency": scheduling.global_job_concurrency,
             "request_concurrency": runtime.max_concurrency,
-            "daily_photo_upload_limit": scheduling.daily_photo_upload_limit,
             "monthly_photo_upload_limit": scheduling.monthly_photo_upload_limit,
-            "formal_monthly_photo_upload_limit": scheduling.formal_monthly_photo_upload_limit,
+            "basic_formal_monthly_photo_upload_limit": scheduling.basic_formal_monthly_photo_upload_limit,
+            "professional_monthly_photo_upload_limit": scheduling.professional_monthly_photo_upload_limit,
+            "professional_trial_monthly_photo_upload_limit": scheduling.professional_trial_monthly_photo_upload_limit,
             "generate_limit_per_user": scheduling.generate_limit_per_user,
             "request_timeout_seconds": runtime.timeout_seconds,
         },
@@ -649,6 +782,7 @@ async def start_detection(
         "prompts": {
             "visible": visible_prompt,
             "thermal": thermal_prompt,
+            "visible_by_defect": dedicated_visible_prompts,
         },
         "prompt_files": {
             "visible": (
@@ -661,6 +795,7 @@ async def start_detection(
                 if specialized_prompts is not None
                 else None
             ),
+            "visible_by_defect": specialized_prompts.visible_files,
         },
         "qualified_photo_count": len(qualified_photos),
         "rejected_photo_count": rejected_photo_count,
@@ -743,7 +878,30 @@ async def start_detection(
     project.started_at = now
     project.updated_at = now
 
-    db.commit()
+    quota_reservation = reserve_photo_detection_quota(
+        current_user.id,
+        source="formal",
+        role=current_user.role,
+        account_plan=current_user.account_plan,
+        amount=len(qualified_photos),
+        db=db,
+    )
+    try:
+        add_photo_detection_event(
+            db,
+            source_type="formal",
+            detection_run_id=f"{task.id}:{task.retry_count}",
+            actor_id=current_user.id,
+            photo_count=len(qualified_photos),
+            occurred_at=now,
+        )
+        db.commit()
+    except BaseException:
+        refund_photo_detection_quota(
+            quota_reservation,
+            amount=len(qualified_photos),
+        )
+        raise
 
     _schedule_formal_project_inference(
         project_id=project.id,
@@ -845,7 +1003,13 @@ async def _run_formal_project_inference(
             )
         ]
         settings = get_settings()
-        estimated_api_requests = estimate_trial_api_request_count(
+        prompt_snapshot = inference_snapshot.get("prompts") or {}
+        dedicated_visible_prompts = (
+            prompt_snapshot.get("visible_by_defect")
+            if isinstance(prompt_snapshot.get("visible_by_defect"), dict)
+            else {}
+        )
+        estimated_api_requests_per_pass = estimate_trial_api_request_count(
             [image for _, image in inference_pairs],
             max_image_pixels=getattr(
                 settings,
@@ -868,6 +1032,10 @@ async def _run_formal_project_inference(
                 DEFAULT_MAX_TILES_PER_REQUEST,
             ),
         )
+        estimated_api_requests = estimated_api_requests_per_pass * max(
+            1,
+            len(dedicated_visible_prompts),
+        )
         # The formal and TRIAL paths intentionally share the scheduler's
         # semaphore and per-account counters configured in 推理设置.
         usage_reservation = reserve_inference_usage(
@@ -877,20 +1045,19 @@ async def _run_formal_project_inference(
             generate_limit_detail="检测请求过于频繁，请稍后重试。",
             settings=settings,
         )
-        inferences = (
-            await infer_trial_images(
+        async def infer_with_prompt(
+            prompt: str,
+            defect_types: list[str],
+        ) -> list[dict[str, Any]]:
+            return await infer_trial_images(
                 [image for _, image in inference_pairs],
                 api_key=runtime.api_key,
                 base_url=runtime.base_url,
                 model=runtime.model,
                 provider=runtime.upstream_provider,
-                visible_prompt=visible_prompt,
+                visible_prompt=prompt,
                 thermal_prompt=thermal_prompt,
-                visible_defect_types=[
-                    value
-                    for value in selected_model_types
-                    if value in FORMAL_VISIBLE_DEFECT_TYPES
-                ],
+                visible_defect_types=defect_types,
                 timeout_seconds=runtime.timeout_seconds,
                 max_concurrency=runtime.max_concurrency,
                 max_image_pixels=getattr(
@@ -914,9 +1081,28 @@ async def _run_formal_project_inference(
                     DEFAULT_MAX_TILES_PER_REQUEST,
                 ),
             )
-            if inference_pairs
-            else []
-        )
+
+        if not inference_pairs:
+            inferences = []
+        elif dedicated_visible_prompts:
+            inference_passes = [
+                await infer_with_prompt(prompt, [defect_type])
+                for defect_type, prompt in dedicated_visible_prompts.items()
+            ]
+            inferences = (
+                inference_passes[0]
+                if len(inference_passes) == 1
+                else _merge_formal_inference_passes(inference_passes)
+            )
+        else:
+            inferences = await infer_with_prompt(
+                visible_prompt,
+                [
+                    value
+                    for value in selected_model_types
+                    if value in FORMAL_VISIBLE_DEFECT_TYPES
+                ],
+            )
         inference_by_photo_id = {
             photo.id: inference
             for (photo, _), inference in zip(

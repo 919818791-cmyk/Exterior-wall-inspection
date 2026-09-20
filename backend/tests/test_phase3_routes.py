@@ -19,6 +19,7 @@ from app.schemas.projects import (
     ProjectCreateRequest,
     ProjectDraftCreateRequest,
     ProjectFinalizeRequest,
+    ProjectListItem,
     ProjectUpdateRequest,
 )
 
@@ -61,6 +62,35 @@ def test_finalize_project_does_not_require_drone_type() -> None:
     )
 
     assert payload.drone_type is None
+
+
+@pytest.mark.parametrize(
+    "schema",
+    [ProjectCreateRequest, ProjectUpdateRequest, ProjectFinalizeRequest],
+)
+def test_project_writes_reject_removed_stone_facade_type(schema: type) -> None:
+    with pytest.raises(ValueError):
+        schema(name="石材旧项目", facade_type=FacadeType.STONE)
+
+
+def test_project_reads_keep_legacy_stone_facade_compatibility() -> None:
+    assert ProjectListItem.model_fields["facade_type"].annotation is FacadeType
+
+
+def test_project_writes_accept_plaster_facade_type() -> None:
+    payload = ProjectCreateRequest(name="抹灰外墙项目", facade_type=FacadeType.PLASTER)
+
+    assert payload.facade_type == FacadeType.PLASTER
+
+
+@pytest.mark.parametrize(
+    "facade_type",
+    [FacadeType.PANEL, FacadeType.CURTAIN_WALL],
+)
+def test_project_writes_accept_panel_facade_types(facade_type: FacadeType) -> None:
+    payload = ProjectCreateRequest(name="面板外墙项目", facade_type=facade_type)
+
+    assert payload.facade_type == facade_type
 
 
 def test_project_draft_requires_a_client_idempotency_key() -> None:

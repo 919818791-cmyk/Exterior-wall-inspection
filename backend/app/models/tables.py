@@ -26,6 +26,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
 from app.enums.status import (
+    AccountPlan,
     AiResultStatus,
     DefectType,
     DetectionTaskStatus,
@@ -61,6 +62,7 @@ class UserAccount(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     __tablename__ = "user_account"
     __table_args__ = (
         enum_check("role", UserRole, "role"),
+        enum_check("account_plan", AccountPlan, "account_plan"),
         enum_check("status", UserStatus, "status"),
         Index("uq_user_account_phone", "phone", unique=True),
         Index("idx_user_account_role", "role"),
@@ -72,9 +74,11 @@ class UserAccount(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     real_name: Mapped[str | None] = mapped_column(String(64))
     phone: Mapped[str | None] = mapped_column(String(32))
     role: Mapped[str] = status_column(UserRole.CUSTOMER)
+    account_plan: Mapped[str] = status_column(AccountPlan.BASIC)
     organization: Mapped[str | None] = mapped_column(String(128))
     status: Mapped[str] = status_column(UserStatus.ACTIVE)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    quota_reset_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class SystemSetting(TimestampMixin, Base):

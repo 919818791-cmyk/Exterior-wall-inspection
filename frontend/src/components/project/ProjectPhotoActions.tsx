@@ -24,8 +24,7 @@ import { createAsyncLimiter } from "@/utils/asyncLimiter";
 import { createClientId } from "@/utils/id";
 import { pairVisibleThermalPhotos, photoVariantFromFilename } from "@/utils/photoPairing";
 import {
-  MAX_PROJECT_PHOTO_COUNT,
-  MAX_PROJECT_PHOTO_SIZE_BYTES,
+  MAX_PHOTO_UPLOAD_SIZE_BYTES,
   validatePhotoUpload
 } from "@/utils/photoUpload";
 
@@ -250,7 +249,7 @@ export function ProjectPhotoActions({
 
     const rejectionMessages: string[] = [];
     const validFiles = files.filter((file) => {
-      const message = validatePhotoUpload(file, { maxSizeBytes: MAX_PROJECT_PHOTO_SIZE_BYTES });
+      const message = validatePhotoUpload(file, { maxSizeBytes: MAX_PHOTO_UPLOAD_SIZE_BYTES });
       if (!message) return true;
       rejectionMessages.push(`${file.name}：${message}`);
       return false;
@@ -260,19 +259,7 @@ export function ProjectPhotoActions({
       return;
     }
 
-    const remainingSlots = MAX_PROJECT_PHOTO_COUNT - projectPhotos.length - pendingUploadsRef.current.length;
-    if (remainingSlots <= 0) {
-      setLocalError(`每个项目最多上传 ${MAX_PROJECT_PHOTO_COUNT} 张照片。`);
-      return;
-    }
-    const acceptedFiles = validFiles.slice(0, remainingSlots);
-    if (acceptedFiles.length < validFiles.length) {
-      rejectionMessages.unshift(
-        `每个项目最多上传 ${MAX_PROJECT_PHOTO_COUNT} 张照片，已添加前 ${remainingSlots} 张。`
-      );
-    }
-
-    const entries = acceptedFiles.map((file): PendingUpload => ({
+    const entries = validFiles.map((file): PendingUpload => ({
       id: createClientId("project-photo"),
       file,
       previewUrl: URL.createObjectURL(file),
@@ -548,7 +535,7 @@ export function ProjectPhotoActions({
         >
           <figure>
             <button
-              className="trial-photo-preview-close"
+              className="trial-photo-preview-close back-cancel-button"
               type="button"
               aria-label="关闭照片预览"
               onClick={closePhotoPreview}

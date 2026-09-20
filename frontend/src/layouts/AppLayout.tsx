@@ -1,4 +1,4 @@
-import { ChevronDown, Gauge, LogOut, Menu, RefreshCw, UserRound, X } from "lucide-react";
+import { ChevronDown, Menu, UserRound, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -6,23 +6,22 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { currentAccountUsageQueryOptions } from "@/api/accounts";
 import { logout } from "@/api/auth";
 import { AUTH_UNAUTHORIZED_EVENT } from "@/api/client";
-import { AppSidebar } from "@/components/AppSidebar";
+import { AppSidebar, AppSidebarUserMenuContent } from "@/components/AppSidebar";
 import { AuthModal } from "@/components/auth/AuthModal";
 import { ChangePasswordModal } from "@/components/auth/ChangePasswordModal";
 import { getListPageHeader, ListPageHeader } from "@/components/ListPageHeader";
 import { PersonalInfoModal } from "@/components/auth/PersonalInfoModal";
 import { useAuthStore } from "@/stores/useAuthStore";
-import type { CurrentAccountUsageResponse } from "@/types/accountUsage";
 
 function pageClass(pathname: string) {
   if (pathname === "/") return "home-route";
+  if (pathname === "/pricing") return "pricing-route";
   if (pathname === "/trials/new") return "project-page new-project-page project-list-chrome trial-route";
   if (pathname === "/trials") return "project-page project-list-route report-list-route";
   if (pathname === "/detections") return "project-page project-list-route";
   if (/^\/review\/detections\/[^/]+\/model$/.test(pathname)) return "building-model-route";
   if (/^\/detections\/[^/]+\/model$/.test(pathname)) return "building-model-route";
   if (pathname.startsWith("/accounts")) return "project-page account-management-route";
-  if (pathname.startsWith("/data-management")) return "project-page data-management-route";
   if (pathname.startsWith("/system-settings")) return "project-page system-settings-route";
   if (pathname === "/review") return "project-page review-workbench-route review-workbench-list-route";
   if (/^\/review\/detections\/[^/]+$/.test(pathname)) return "project-page review-workbench-route review-workbench-detail-route";
@@ -31,7 +30,7 @@ function pageClass(pathname: string) {
   if (/^\/trials\/[^/]+$/.test(pathname) || /^\/reports\/[^/]+$/.test(pathname)) return "project-page report-detail-route formal-result-route";
   if (pathname === "/detections/new") return "project-page new-project-page project-list-chrome";
   if (/^\/detections\/[^/]+$/.test(pathname)) return "project-page project-detail-page project-list-chrome";
-  if (pathname.startsWith("/detections") || pathname.startsWith("/trials") || pathname.startsWith("/accounts") || pathname.startsWith("/data-management") || pathname.startsWith("/system-settings") || pathname.startsWith("/review")) {
+  if (pathname.startsWith("/detections") || pathname.startsWith("/trials") || pathname.startsWith("/accounts") || pathname.startsWith("/system-settings") || pathname.startsWith("/review")) {
     return "project-page";
   }
   if (pathname.startsWith("/capabilities")) return "detail-page";
@@ -47,7 +46,7 @@ function usesAppSidebar(pathname: string) {
   return pathname === "/detections"
     || pathname === "/trials"
     || pathname === "/review"
-    || pathname === "/accounts";
+    || pathname.startsWith("/accounts");
 }
 
 function sidebarCompactBreakpoint(pathname: string) {
@@ -69,20 +68,21 @@ export function AppLayout() {
   const user = useAuthStore((state) => state.user);
   const clearSession = useAuthStore((state) => state.clearSession);
   const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [authModalInitialMode, setAuthModalInitialMode] = useState<"login" | "trial-application">("login");
   const [authNotice, setAuthNotice] = useState("");
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [personalInfoModalOpen, setPersonalInfoModalOpen] = useState(false);
   const [changePasswordModalOpen, setChangePasswordModalOpen] = useState(false);
-  const [managementMenuOpen, setManagementMenuOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [headerScrolled, setHeaderScrolled] = useState(false);
   const [homeNavigationVisible, setHomeNavigationVisible] = useState(true);
   const [projectDetailListChrome, setProjectDetailListChrome] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     try {
-      return window.localStorage.getItem("exterior-wall:sidebar-collapsed") === "true";
+      const storedPreference = window.localStorage.getItem("exterior-wall:sidebar-collapsed");
+      return storedPreference === null ? true : storedPreference === "true";
     } catch {
-      return false;
+      return true;
     }
   });
   const sidebarBreakpoint = sidebarCompactBreakpoint(location.pathname);
@@ -95,7 +95,6 @@ export function AppLayout() {
   });
   const accountMenuRef = useRef<HTMLDivElement>(null);
   const sidebarAccountMenuRef = useRef<HTMLElement>(null);
-  const managementMenuRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLElement>(null);
   const pendingAuthenticationActionRef = useRef<(() => void) | null>(null);
   const defectKey = location.pathname.match(/^\/capabilities\/(crack|spalling|missing|moisture|corrosion|hollow)$/)?.[1];
@@ -105,11 +104,10 @@ export function AppLayout() {
   const isStandaloneManagementRoute = (
     location.pathname === "/system-settings"
     || location.pathname.startsWith("/accounts")
-    || location.pathname.startsWith("/data-management")
     || location.pathname === "/review"
   );
-  const isManagementRoute = location.pathname.startsWith("/accounts") || location.pathname.startsWith("/data-management") || location.pathname.startsWith("/system-settings");
   const isHomeRoute = location.pathname === "/";
+  const isPricingRoute = location.pathname === "/pricing";
   const isCreationRoute = location.pathname === "/detections/new" || location.pathname === "/trials/new";
   const currentPageClass = pageClass(location.pathname);
   const resolvedPageClass = `${currentPageClass}${projectDetailListChrome ? " project-list-chrome" : ""}`;
@@ -120,6 +118,7 @@ export function AppLayout() {
   const showsSiteHeader = !isBuildingModelRoute
     && !isReviewBuildingModelRoute
     && !isReviewDetailRoute
+    && !isPricingRoute
     && (!isStandaloneManagementRoute || Boolean(listPageHeader))
     && !isDetectionInnerRoute
     && !isTrialInnerRoute
@@ -211,17 +210,15 @@ export function AppLayout() {
   }, [location.hash, location.pathname]);
 
   useEffect(() => {
-    setManagementMenuOpen(false);
     setMobileNavOpen(false);
     setAccountMenuOpen(false);
     if (!/^\/detections\/[^/]+$/.test(location.pathname)) setProjectDetailListChrome(false);
   }, [location.pathname]);
 
   useEffect(() => {
-    const desktopMedia = window.matchMedia("(min-width: 1301px)");
+    const desktopMedia = window.matchMedia("(min-width: 1501px)");
     const resetNavigationForLayoutChange = () => {
       setMobileNavOpen(false);
-      setManagementMenuOpen(false);
       setAccountMenuOpen(false);
     };
     desktopMedia.addEventListener("change", resetNavigationForLayoutChange);
@@ -265,28 +262,6 @@ export function AppLayout() {
     };
   }, [accountMenuOpen]);
 
-  useEffect(() => {
-    if (!managementMenuOpen) return;
-
-    const closeOnOutsidePointer = (event: PointerEvent) => {
-      const target = event.target as Node;
-      if (managementMenuOpen && !managementMenuRef.current?.contains(target)) {
-        setManagementMenuOpen(false);
-      }
-    };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setManagementMenuOpen(false);
-      }
-    };
-    document.addEventListener("pointerdown", closeOnOutsidePointer);
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("pointerdown", closeOnOutsidePointer);
-      document.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [managementMenuOpen]);
-
   async function handleLogout() {
     if (!window.confirm("确认退出当前账号？未保存的页面内容可能丢失。")) return;
     try {
@@ -312,6 +287,13 @@ export function AppLayout() {
 
   function requestAuthentication(onAuthenticated?: () => void) {
     pendingAuthenticationActionRef.current = onAuthenticated ?? null;
+    setAuthModalInitialMode("login");
+    setAuthModalOpen(true);
+  }
+
+  function requestRegistration() {
+    pendingAuthenticationActionRef.current = null;
+    setAuthModalInitialMode("trial-application");
     setAuthModalOpen(true);
   }
 
@@ -340,38 +322,48 @@ export function AppLayout() {
   }
 
   const displayName = user?.real_name?.trim() || user?.username || "";
-  const sidebarShowsTrialQuota = location.pathname.startsWith("/trials");
-  const sidebarQuotaBalance = accountUsageQuery.data
-    ? (
-        sidebarShowsTrialQuota
-          ? accountUsageQuery.data.trial_daily_photo_upload_balance
-          : accountUsageQuery.data.formal_monthly_photo_upload_balance
-      )
-    : undefined;
-  const sidebarQuotaValueLabel = sidebarQuotaBalance
-    ? `${sidebarQuotaBalance.remaining} / ${sidebarQuotaBalance.limit} 张`
-    : "--";
-  const sidebarQuotaLabel = sidebarShowsTrialQuota ? "快速体验额度" : "专业检测额度";
-  const sidebarQuotaPeriodLabel = sidebarShowsTrialQuota ? "今日" : "本月";
-  const managementLinks = [
-    ...(canAccessAdmin ? [{ label: "账号管理", to: "/accounts" }, { label: "数据管理", to: "/data-management" }, { label: "推理设置", to: "/system-settings" }] : [])
+  const isProfessionalCustomer = user?.role === "customer" && user.account_plan === "professional";
+  const formatSidebarBalance = (balance: { remaining: number; limit: number } | undefined) => (
+    balance ? `${balance.remaining} / ${balance.limit} 张` : "--"
+  );
+  const sidebarQuotaItems = user?.role !== "customer"
+    ? []
+    : isProfessionalCustomer
+      ? [
+          {
+            label: "专业检测",
+            value: formatSidebarBalance(accountUsageQuery.data?.professional_formal_monthly_photo_upload_balance)
+          },
+          {
+            label: "快速体验",
+            value: formatSidebarBalance(accountUsageQuery.data?.professional_trial_monthly_photo_upload_balance)
+          }
+        ]
+      : [
+          {
+            label: "专业检测",
+            value: formatSidebarBalance(accountUsageQuery.data?.basic_formal_monthly_photo_upload_balance)
+          },
+          {
+            label: "快速体验",
+            value: formatSidebarBalance(accountUsageQuery.data?.trial_monthly_photo_upload_balance)
+          }
+        ];
+  const adminLinks = [
+    ...(canAccessAdmin ? [{ label: "账号管理", to: "/accounts" }, { label: "推理设置", to: "/system-settings" }] : [])
   ];
   const renderAccountDropdown = (id: string) => (
-    <div id={id} className="account-dropdown" role="dialog" aria-label="本账号用量、余额和账户操作">
-      <AccountUsageSummary
-        isError={accountUsageQuery.isError}
-        isLoading={accountUsageQuery.isLoading}
-        onRetry={() => void accountUsageQuery.refetch()}
-        usage={accountUsageQuery.data}
+    <div id={id} className="account-dropdown" role="dialog" aria-label="本账号照片检测额度和账户操作">
+      <AppSidebarUserMenuContent
+        onLogout={() => void handleLogout()}
+        onPersonalInfo={() => {
+          setAccountMenuOpen(false);
+          setMobileNavOpen(false);
+          setPersonalInfoModalOpen(true);
+        }}
+        quotaItems={sidebarQuotaItems}
+        quotaLabel="照片检测额度"
       />
-      <div className="account-menu-actions">
-        <button type="button" onClick={() => { setAccountMenuOpen(false); setMobileNavOpen(false); setPersonalInfoModalOpen(true); }}>
-          <UserRound aria-hidden="true" />个人信息
-        </button>
-        <button type="button" onClick={() => void handleLogout()}>
-          <LogOut aria-hidden="true" />退出登录
-        </button>
-      </div>
     </div>
   );
   const accountControl = user ? (
@@ -406,6 +398,7 @@ export function AppLayout() {
           accountMenu={renderAccountDropdown("sidebar-account-dropdown")}
           accountMenuOpen={accountMenuOpen}
           accountMenuRef={sidebarAccountMenuRef}
+          canAccessAdmin={canAccessAdmin}
           canAccessReview={canAccessReview}
           canToggle={!sidebarViewportCompact}
           collapsed={isSidebarCollapsed}
@@ -420,9 +413,8 @@ export function AppLayout() {
             setMobileNavOpen(false);
             setPersonalInfoModalOpen(true);
           }}
-          quotaValueLabel={sidebarQuotaValueLabel}
-          quotaLabel={sidebarQuotaLabel}
-          quotaPeriodLabel={sidebarQuotaPeriodLabel}
+          quotaItems={sidebarQuotaItems}
+          quotaLabel="照片检测额度"
           user={user}
         />
       ) : null}
@@ -448,7 +440,6 @@ export function AppLayout() {
           onClick={() => {
             setMobileNavOpen((open) => !open);
             setAccountMenuOpen(false);
-            setManagementMenuOpen(false);
           }}
         >
           {mobileNavOpen ? <X aria-hidden="true" /> : <Menu aria-hidden="true" />}
@@ -456,37 +447,22 @@ export function AppLayout() {
 
         {!listPageHeader ? <div id="mobile-navigation-panel" className="mobile-nav-panel">
           <nav className="main-nav" aria-label="主导航">
-          <NavLink className={({ isActive }) => (isActive ? "active" : "")} end to="/" onClick={() => setMobileNavOpen(false)}>首页</NavLink>
-          <NavLink className={({ isActive }) => (isActive ? "active" : "")} to="/detections" onClick={() => { setManagementMenuOpen(false); setMobileNavOpen(false); }}>专业检测</NavLink>
-          <NavLink className={({ isActive }) => (isActive ? "active" : "")} to="/trials" onClick={() => { setManagementMenuOpen(false); setMobileNavOpen(false); }}>快速体验</NavLink>
+          <NavLink className={({ isActive }) => (isActive ? "active" : "")} to="/detections" onClick={() => setMobileNavOpen(false)}>专业检测</NavLink>
+          <NavLink className={({ isActive }) => (isActive ? "active" : "")} to="/trials" onClick={() => setMobileNavOpen(false)}>快速体验</NavLink>
+          <NavLink className={({ isActive }) => (isActive ? "active" : "")} to="/pricing" onClick={() => setMobileNavOpen(false)}>定价</NavLink>
           {canAccessReview ? (
-            <NavLink className={({ isActive }) => (isActive ? "active" : "")} to="/review" onClick={() => { setManagementMenuOpen(false); setMobileNavOpen(false); }}>工作台</NavLink>
+            <NavLink className={({ isActive }) => (isActive ? "active" : "")} to="/review" onClick={() => setMobileNavOpen(false)}>工作台</NavLink>
           ) : null}
-          {managementLinks.length > 0 ? (
-            <div ref={managementMenuRef} className={`nav-menu ${managementMenuOpen ? "is-open" : ""}`}>
-              <button
-                aria-controls="management-submenu"
-                aria-expanded={managementMenuOpen}
-                className={`nav-menu-trigger ${isManagementRoute ? "current" : ""}`}
-                type="button"
-                onClick={() => setManagementMenuOpen((open) => !open)}
-              >
-                管理中心 <ChevronDown aria-hidden="true" />
-              </button>
-              <div id="management-submenu" className="nav-submenu" role="menu" aria-label="管理中心">
-                {managementLinks.map((item) => (
-                  <NavLink
-                    key={item.to}
-                    role="menuitem"
-                    to={item.to}
-                    onClick={() => { setManagementMenuOpen(false); setMobileNavOpen(false); }}
-                  >
-                    {item.label}
-                  </NavLink>
-                ))}
-              </div>
-            </div>
-          ) : null}
+          {adminLinks.map((item) => (
+            <NavLink
+              className={({ isActive }) => (isActive ? "active" : "")}
+              key={item.to}
+              to={item.to}
+              onClick={() => setMobileNavOpen(false)}
+            >
+              {item.label}
+            </NavLink>
+          ))}
           </nav>
 
           {accountControl}
@@ -494,9 +470,11 @@ export function AppLayout() {
       </header>
 
       <main className="app-main">
-        <Outlet context={{ requestAuthentication, setProjectDetailListChrome }} />
+        <Outlet context={{ requestAuthentication, requestRegistration, setProjectDetailListChrome }} />
       </main>
       <AuthModal
+        key={authModalInitialMode}
+        initialMode={authModalInitialMode}
         isOpen={authModalOpen}
         notice={authNotice}
         onAuthenticated={handleAuthenticated}
@@ -518,58 +496,6 @@ export function AppLayout() {
         onClose={() => setChangePasswordModalOpen(false)}
         onPasswordChanged={handlePasswordChanged}
       />
-    </div>
-  );
-}
-
-function AccountUsageSummary({
-  isError,
-  isLoading,
-  onRetry,
-  usage
-}: {
-  isError: boolean;
-  isLoading: boolean;
-  onRetry: () => void;
-  usage: CurrentAccountUsageResponse | undefined;
-}) {
-  if (isError) {
-    return (
-      <section className="account-popover-state" role="alert">
-        <span>用量与余额加载失败</span>
-        <button type="button" onClick={onRetry}><RefreshCw aria-hidden="true" />重试</button>
-      </section>
-    );
-  }
-
-  if (isLoading || !usage) {
-    return (
-      <section className="account-popover-state account-popover-loading" aria-label="正在加载账号用量与余额">
-        <span className="account-popover-spinner" aria-hidden="true" />
-        <span>正在加载用量与余额…</span>
-      </section>
-    );
-  }
-
-  return (
-    <section className="account-popover-summary" aria-label="本账号用量与余额">
-      <div className="account-popover-heading account-balance-heading">
-        <span><Gauge aria-hidden="true" />照片上传额度</span>
-        <small>北京时间重置</small>
-      </div>
-      <QuotaBalanceRow label="快速体验 · 今日" {...usage.trial_daily_photo_upload_balance} />
-      <QuotaBalanceRow label="快速体验 · 本月" {...usage.trial_monthly_photo_upload_balance} />
-      <QuotaBalanceRow label="专业检测 · 本月" {...usage.formal_monthly_photo_upload_balance} />
-    </section>
-  );
-}
-
-function QuotaBalanceRow({ label, limit, remaining }: { label: string; limit: number; remaining: number }) {
-  return (
-    <div className="account-balance-row">
-      <strong aria-label={`${label}照片上传额度余额 ${remaining} 张，总额度 ${limit} 张`}>
-        {label} · 剩余 {remaining} / {limit} 张
-      </strong>
     </div>
   );
 }

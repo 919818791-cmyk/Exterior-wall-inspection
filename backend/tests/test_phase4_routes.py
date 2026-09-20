@@ -8,8 +8,9 @@ import pytest
 from app.api.dependencies import AuthenticatedUser
 from fastapi import HTTPException
 
-from app.api.photos import FORMAL_MAX_FILE_SIZE_BYTES, upload_photo
-from app.enums.status import PhotoType, ProjectStatus, UploadMode, UserRole
+from app.api.photos import upload_photo
+from app.services.photo_upload_validation import MAX_PHOTO_FILE_SIZE_BYTES
+from app.enums.status import AccountPlan, PhotoType, ProjectStatus, UploadMode, UserRole
 from app.main import app
 from app.models.tables import Photo, Project, UploadBatch, UsageEvent
 from app.schemas.phase4 import DetectionConfigUpdateRequest, UploadBatchCreateRequest
@@ -91,7 +92,7 @@ def test_upload_batch_has_no_building_dimension() -> None:
     assert "building_id" not in UploadBatchCreateRequest.model_fields
 
 
-def test_photo_upload_rejects_files_larger_than_five_megabytes(monkeypatch) -> None:
+def test_photo_upload_rejects_files_larger_than_twenty_megabytes(monkeypatch) -> None:
     monkeypatch.setattr("app.api.photos.put_object", lambda **_: "test-bucket")
     monkeypatch.setattr("app.api.photos.presigned_get_url", lambda bucket, key: f"https://storage.local/{key}" if key else None)
 
@@ -112,7 +113,7 @@ def test_photo_upload_rejects_files_larger_than_five_megabytes(monkeypatch) -> N
         uploaded_by=owner_id,
     )
     file = SimpleNamespace(
-        file=SizedUploadStream(FORMAL_MAX_FILE_SIZE_BYTES + 1),
+        file=SizedUploadStream(MAX_PHOTO_FILE_SIZE_BYTES + 1),
         filename="large.jpg",
         content_type="image/jpeg",
     )
@@ -136,58 +137,11 @@ def test_photo_upload_rejects_files_larger_than_five_megabytes(monkeypatch) -> N
         )
 
     assert raised.value.status_code == 400
-    assert raised.value.detail == "单张图片最大 10MB。"
+    assert raised.value.detail == "单张图片最大 20MB。"
     assert fake_db.usage_events == []
 
 
-def test_photo_upload_rejects_more_than_thirty_photos_per_project() -> None:
-    owner_id = uuid4()
-    project = Project(
-        id=uuid4(),
-        project_no="PRJ-PHOTO-COUNT-LIMIT",
-        name="照片数量限制项目",
-        status=ProjectStatus.DRAFT.value,
-        created_by=owner_id,
-    )
-    batch = UploadBatch(
-        id=uuid4(),
-        project_id=project.id,
-        batch_no="UP-PHOTO-COUNT-LIMIT",
-        upload_mode=UploadMode.VISIBLE.value,
-        photo_count=30,
-        uploaded_by=owner_id,
-    )
-    current_user = AuthenticatedUser(
-        id=owner_id,
-        username="admin",
-        real_name="平台管理员",
-        role=UserRole.ADMIN.value,
-        organization=None,
-    )
-    file = SimpleNamespace(
-        file=SizedUploadStream(1024),
-        filename="photo-031.jpg",
-        content_type="image/jpeg",
-    )
-    fake_db = FakePhotoUploadDb(project, batch)
-    fake_db.photos = [SimpleNamespace() for _ in range(30)]
-
-    with pytest.raises(HTTPException) as raised:
-        upload_photo(
-            project_id=project.id,
-            upload_batch_id=batch.id,
-            photo_type=PhotoType.VISIBLE,
-            file=file,
-            db=fake_db,
-            current_user=current_user,
-        )
-
-    assert raised.value.status_code == 400
-    assert raised.value.detail == "每个项目最多上传 30 张照片。"
-    assert fake_db.usage_events == []
-
-
-def test_formal_non_drone_rejection_keeps_stored_original(monkeypatch) -> None:
+def test_basic_customer_upload_does_not_consume_detection_quota(monkeypatch) -> None:
     owner_id = uuid4()
     project = Project(
         id=uuid4(),
@@ -201,15 +155,16 @@ def test_formal_non_drone_rejection_keeps_stored_original(monkeypatch) -> None:
         project_id=project.id,
         batch_no="UP-GUARD-REJECT",
         upload_mode=UploadMode.VISIBLE.value,
-        photo_count=0,
+        photo_count=50,
         uploaded_by=owner_id,
     )
     current_user = AuthenticatedUser(
         id=owner_id,
-        username="admin",
-        real_name="平台管理员",
-        role=UserRole.ADMIN.value,
+        username="basic-customer",
+        real_name="基础版客户",
+        role=UserRole.CUSTOMER.value,
         organization=None,
+        account_plan=AccountPlan.BASIC.value,
     )
     file = SimpleNamespace(
         file=SizedUploadStream(1024),
@@ -217,6 +172,7 @@ def test_formal_non_drone_rejection_keeps_stored_original(monkeypatch) -> None:
         content_type="image/jpeg",
     )
     stored = False
+    capacity_checks: list[dict[str, object]] = []
 
     def put(**kwargs) -> str:
         nonlocal stored
@@ -227,6 +183,10 @@ def test_formal_non_drone_rejection_keeps_stored_original(monkeypatch) -> None:
         raise AssertionError("non-drone photos must not enter the building-photo precheck")
 
     monkeypatch.setattr("app.api.photos.run_stored_photo_precheck", fail_if_called)
+    monkeypatch.setattr(
+        "app.api.photos.ensure_photo_upload_capacity",
+        lambda _db, _actor_id, **kwargs: capacity_checks.append(kwargs),
+    )
     monkeypatch.setattr("app.api.photos.put_object", put)
     monkeypatch.setattr(
         "app.api.photos.presigned_get_url",
@@ -234,6 +194,7 @@ def test_formal_non_drone_rejection_keeps_stored_original(monkeypatch) -> None:
     )
 
     fake_db = FakePhotoUploadDb(project, batch)
+    fake_db.photos = [SimpleNamespace() for _ in range(50)]
     uploaded = upload_photo(
         project_id=project.id,
         upload_batch_id=batch.id,
@@ -248,7 +209,13 @@ def test_formal_non_drone_rejection_keeps_stored_original(monkeypatch) -> None:
     assert uploaded.precheck_category == "NON_DRONE"
     assert "无人机拍摄元数据" in (uploaded.precheck_reason or "")
     assert "无人机机型信息" in (uploaded.precheck_reason or "")
-    assert len(fake_db.photos) == 1
+    assert len(fake_db.photos) == 51
+    assert [event.event_type for event in fake_db.usage_events] == ["photo_upload"]
+    assert capacity_checks == [{
+        "source": "formal",
+        "role": UserRole.CUSTOMER.value,
+        "account_plan": AccountPlan.BASIC.value,
+    }]
 
 
 def test_formal_drone_metadata_runs_building_precheck_and_records_model(monkeypatch) -> None:

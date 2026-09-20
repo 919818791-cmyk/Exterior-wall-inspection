@@ -22,13 +22,13 @@ import {
   projectQueryOptions,
   startDetection
 } from "@/api/projects";
+import { ErrorNoticeModal } from "@/components/project/PhotoLimitModal";
 import { ProjectPhotoActions } from "@/components/project/ProjectPhotoActions";
 import { ProjectWorkbenchShell } from "@/components/project/ProjectWorkbenchShell";
 import { StartDetectionModal } from "@/components/project/StartDetectionModal";
 import { WorkspaceTitleBar } from "@/components/WorkspaceTitleBar";
 import { useAuthStore } from "@/stores/useAuthStore";
 import type { StartDetectionPayload } from "@/types/projects";
-import { MAX_PROJECT_PHOTO_COUNT } from "@/utils/photoUpload";
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "操作失败，请稍后重试。";
@@ -67,7 +67,8 @@ export function ProjectDetailPage() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["projects"] }),
         queryClient.invalidateQueries({ queryKey: ["projects", id] }),
-        queryClient.invalidateQueries({ queryKey: ["projects", id, "photos"] })
+        queryClient.invalidateQueries({ queryKey: ["projects", id, "photos"] }),
+        queryClient.invalidateQueries({ queryKey: ["current-account-usage"] })
       ]);
     }
   });
@@ -123,7 +124,6 @@ export function ProjectDetailPage() {
   const isEditable = Boolean(canManageProject && project.status === "draft");
   const hasResult = (project.status === "reviewed" || project.status === "completed")
     && Boolean(project.current_report_id);
-  const canAddPhoto = isEditable && photos.length < MAX_PROJECT_PHOTO_COUNT;
   const primaryActionLabel = project.status === "draft" ? "开始检测" : "检测中";
   const detailActions = hasResult && project.current_report_id ? (
     <RouterLink className="button primary-action-button" to={`/detections/results/${project.current_report_id}`}>
@@ -147,9 +147,11 @@ export function ProjectDetailPage() {
         <button
           aria-controls={photoInputId}
           className="button secondary project-detail-add-photo-button"
-          disabled={!canAddPhoto}
+          disabled={!isEditable}
           type="button"
-          onClick={() => document.getElementById(photoInputId)?.click()}
+          onClick={() => {
+            document.getElementById(photoInputId)?.click();
+          }}
         >
           <ImagePlus aria-hidden="true" />
           <span className="workspace-title-bar-action-label">继续添加照片</span>
@@ -168,9 +170,6 @@ export function ProjectDetailPage() {
         className="project-detail-title-bar"
         title={project.name || project.project_no}
       />
-      {activeError ? (
-        <p className="project-list-error">{getErrorMessage(activeError)}</p>
-      ) : null}
       <div className="trial-experience-shell trial-experience-content-shell trial-result-detail-shell project-detail-content-shell">
         <section className="trial-experience-grid">
           <aside className="trial-report-panel">
@@ -184,8 +183,15 @@ export function ProjectDetailPage() {
           </aside>
         </section>
       </div>
+      <ErrorNoticeModal
+        message={activeError ? getErrorMessage(activeError) : ""}
+        onOpenChange={(nextIsOpen) => {
+          if (!nextIsOpen) startDetectionMutation.reset();
+        }}
+      />
       <StartDetectionModal
-        error={activeError}
+        canGenerateBuildingModel={Boolean(user && (user.role !== "customer" || user.account_plan === "professional"))}
+        facadeType={project.facade_type}
         isProfessional
         isOpen={detectionModalOpen}
         isPending={startDetectionMutation.isPending}

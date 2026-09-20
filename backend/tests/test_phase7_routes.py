@@ -8,9 +8,11 @@ from uuid import UUID
 from zipfile import ZipFile
 
 import pytest
-from fastapi import HTTPException
+from fastapi import HTTPException, UploadFile
 from fastapi.testclient import TestClient
 from pytest import raises
+from sqlalchemy.orm import Session
+from starlette.datastructures import Headers
 
 from app.api import reports
 from app.api.dependencies import AuthenticatedUser, get_current_user
@@ -22,7 +24,11 @@ from app.api.reports import (
     create_trial_result,
     list_reports,
 )
-from app.services.photo_upload_quota import reserve_photo_upload_quota
+from app.services import photo_upload_quota
+from app.services.photo_upload_quota import (
+    ensure_photo_upload_capacity,
+    reserve_photo_detection_quota,
+)
 from app.db.session import get_db
 from app.enums.status import InspectionReportStatus, UserRole
 from app.main import app
@@ -465,6 +471,7 @@ def test_trial_photo_precheck_rejection_keeps_stored_original(monkeypatch) -> No
         content_type="image/jpeg",
     )
     stored = False
+    capacity_checks: list[dict[str, object]] = []
 
     def put(**kwargs) -> str:
         nonlocal stored
@@ -483,6 +490,11 @@ def test_trial_photo_precheck_rejection_keeps_stored_original(monkeypatch) -> No
 
     monkeypatch.setattr(reports, "run_stored_photo_precheck", reject_after_storage)
     monkeypatch.setattr(reports, "put_object", put)
+    monkeypatch.setattr(
+        reports,
+        "ensure_photo_upload_capacity",
+        lambda _db, _actor_id, **kwargs: capacity_checks.append(kwargs),
+    )
 
     fake_db = UploadedPhotoDb([])
     uploaded = reports.upload_trial_photo(
@@ -494,6 +506,12 @@ def test_trial_photo_precheck_rejection_keeps_stored_original(monkeypatch) -> No
     assert stored is True
     assert uploaded.precheck_status == "rejected"
     assert len(fake_db.photos) == 1
+    assert [event.event_type for event in fake_db.usage_events] == ["photo_upload"]
+    assert capacity_checks == [{
+        "source": "trial",
+        "role": UserRole.CUSTOMER.value,
+        "account_plan": "basic",
+    }]
 
 
 def test_trial_detection_rejects_request_containing_non_building_photo() -> None:
@@ -927,8 +945,11 @@ def test_trial_generate_records_inference_usage_for_stored_photos(monkeypatch) -
         app.dependency_overrides.clear()
 
     assert response.status_code == 200
-    assert len(fake_db.usage_events) == 1
-    event = fake_db.usage_events[0]
+    assert len(fake_db.usage_events) == 2
+    quota_event, event = fake_db.usage_events
+    assert quota_event.event_type == "photo_detection"
+    assert quota_event.source_type == "trial"
+    assert quota_event.photo_count == 1
     assert event.event_type == "inference"
     assert event.source_type == "trial"
     assert event.photo_count == 1
@@ -1378,93 +1399,174 @@ def test_trial_generate_rejects_mismatched_image_content() -> None:
     assert response.json()["message"] == "图片格式与文件内容不匹配。"
 
 
-def test_trial_generate_rejects_more_than_thirty_files() -> None:
-    response = _post_trial_generate(
-        [
-            ("files", (f"trial-{index:03d}.png", TRIAL_PNG_BYTES, "image/png"))
-            for index in range(31)
-        ]
-    )
-
-    assert response.status_code == 400
-    assert response.json()["message"] == "单次最多上传 30 张照片。"
-
-
-def test_trial_generate_rejects_more_than_thirty_uploaded_photo_ids() -> None:
-    app.dependency_overrides[get_current_user] = _trial_customer
-    app.dependency_overrides[get_db] = lambda: UploadedPhotoDb([])
-    try:
-        response = client.post(
-            "/api/trial/generate",
-            json={
-                "models": ["裂缝", "剥落"],
-                "photo_ids": [str(UUID(int=index + 1)) for index in range(31)],
-            },
+def test_trial_file_entries_accepts_more_than_thirty_files() -> None:
+    uploaded_files = [
+        UploadFile(
+            BytesIO(TRIAL_PNG_BYTES),
+            filename=f"trial-{index:03d}.png",
+            headers=Headers({"content-type": "image/png"}),
         )
-    finally:
-        app.dependency_overrides.clear()
+        for index in range(31)
+    ]
 
-    assert response.status_code == 400
-    assert response.json()["message"] == "单次最多上传 30 张照片。"
+    assert len(reports._trial_file_entries(uploaded_files)) == 31
 
 
-def test_trial_daily_photo_upload_limit_allows_ten_per_account(monkeypatch) -> None:
-    monkeypatch.setattr(
-        "app.services.photo_upload_quota.get_settings",
-        lambda: SimpleNamespace(
-            trial_daily_photo_upload_limit=10,
-            trial_monthly_photo_upload_limit=50,
-            formal_monthly_photo_upload_limit=50,
-        ),
+def test_trial_generate_accepts_more_than_thirty_uploaded_photo_ids() -> None:
+    photos = [_uploaded_photo(UUID(int=index + 1)) for index in range(31)]
+    photo_ids = [photo.id for photo in photos]
+
+    selected = reports._quick_detection_photos_for_user(
+        UploadedPhotoDb(photos),
+        _trial_customer(),
+        photo_ids,
     )
 
-    for _ in range(10):
-        reserve_photo_upload_quota(_trial_customer().id, source="trial")
+    assert [photo.id for photo in selected] == photo_ids
+
+
+def test_upload_capacity_rejects_photos_beyond_remaining_detection_balance(monkeypatch) -> None:
+    db = Session()
+    monkeypatch.setattr(photo_upload_quota, "_lock_account_quota", lambda *_: None)
+    monkeypatch.setattr(
+        photo_upload_quota,
+        "_quota_limit_and_baseline",
+        lambda *_args, **_kwargs: (50, 45),
+    )
+    monkeypatch.setattr(photo_upload_quota, "_pending_photo_count", lambda *_: 4)
 
     with raises(HTTPException) as raised:
-        reserve_photo_upload_quota(_trial_customer().id, source="trial")
+        ensure_photo_upload_capacity(
+            db,
+            _trial_customer().id,
+            source="trial",
+            amount=2,
+        )
 
-    assert raised.value.status_code == 429
-    assert raised.value.detail == "快速体验每账号每天最多上传 10 张照片。"
+    assert raised.value.status_code == 409
+    assert raised.value.detail == (
+        "账号当前快速体验照片额度剩余 5 张，"
+        "已有 4 张未送检照片，本次最多还能上传 1 张。"
+    )
 
 
-def test_trial_monthly_photo_upload_limit_allows_fifty_per_account(monkeypatch) -> None:
+def test_upload_capacity_allows_photos_within_remaining_detection_balance(monkeypatch) -> None:
+    db = Session()
+    monkeypatch.setattr(photo_upload_quota, "_lock_account_quota", lambda *_: None)
+    monkeypatch.setattr(
+        photo_upload_quota,
+        "_quota_limit_and_baseline",
+        lambda *_args, **_kwargs: (50, 45),
+    )
+    monkeypatch.setattr(photo_upload_quota, "_pending_photo_count", lambda *_: 4)
+
+    ensure_photo_upload_capacity(
+        db,
+        _trial_customer().id,
+        source="trial",
+        amount=1,
+    )
+
+
+def test_basic_trial_lifetime_photo_detection_limit_allows_fifty_per_account(monkeypatch) -> None:
     monkeypatch.setattr(
         "app.services.photo_upload_quota.get_settings",
         lambda: SimpleNamespace(
-            trial_daily_photo_upload_limit=100,
             trial_monthly_photo_upload_limit=50,
-            formal_monthly_photo_upload_limit=50,
+            basic_formal_monthly_photo_upload_limit=50,
+            professional_monthly_photo_upload_limit=1000,
+            professional_trial_monthly_photo_upload_limit=500,
         ),
     )
 
     for _ in range(50):
-        reserve_photo_upload_quota(_trial_customer().id, source="trial")
+        reserve_photo_detection_quota(_trial_customer().id, source="trial")
 
     with raises(HTTPException) as raised:
-        reserve_photo_upload_quota(_trial_customer().id, source="trial")
+        reserve_photo_detection_quota(_trial_customer().id, source="trial")
 
-    assert raised.value.detail == "快速体验每账号每月最多上传 50 张照片。"
+    assert raised.value.detail == (
+        "账号当前快速体验照片额度剩余 0 张，"
+        "本次检测包含 1 张照片，请减少照片数量后重试。"
+    )
+    assert raised.value.headers is None
 
 
-def test_formal_monthly_quota_is_separate_from_trial(monkeypatch) -> None:
+def test_basic_formal_lifetime_photo_detection_limit_allows_fifty_per_account(monkeypatch) -> None:
     monkeypatch.setattr(
         "app.services.photo_upload_quota.get_settings",
         lambda: SimpleNamespace(
-            trial_daily_photo_upload_limit=10,
             trial_monthly_photo_upload_limit=50,
-            formal_monthly_photo_upload_limit=50,
+            basic_formal_monthly_photo_upload_limit=50,
+            professional_monthly_photo_upload_limit=1000,
+            professional_trial_monthly_photo_upload_limit=500,
         ),
     )
 
     for _ in range(50):
-        reserve_photo_upload_quota(_trial_customer().id, source="formal")
+        reserve_photo_detection_quota(_trial_customer().id, source="formal")
 
     with raises(HTTPException) as raised:
-        reserve_photo_upload_quota(_trial_customer().id, source="formal")
+        reserve_photo_detection_quota(_trial_customer().id, source="formal")
 
-    assert raised.value.detail == "专业检测每账号每月最多上传 50 张照片。"
-    reserve_photo_upload_quota(_trial_customer().id, source="trial")
+    assert raised.value.detail == (
+        "账号当前专业检测照片额度剩余 0 张，"
+        "本次检测包含 1 张照片，请减少照片数量后重试。"
+    )
+    assert raised.value.headers is None
+
+
+def test_detection_quota_error_reports_current_remaining_balance(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.services.photo_upload_quota.get_settings",
+        lambda: SimpleNamespace(
+            trial_monthly_photo_upload_limit=50,
+            basic_formal_monthly_photo_upload_limit=50,
+            professional_monthly_photo_upload_limit=1000,
+            professional_trial_monthly_photo_upload_limit=500,
+        ),
+    )
+
+    reserve_photo_detection_quota(_trial_customer().id, source="formal", amount=48)
+
+    with raises(HTTPException) as raised:
+        reserve_photo_detection_quota(_trial_customer().id, source="formal", amount=3)
+
+    assert raised.value.detail == (
+        "账号当前专业检测照片额度剩余 2 张，"
+        "本次检测包含 3 张照片，请减少照片数量后重试。"
+    )
+
+
+def test_professional_formal_and_trial_monthly_quotas_are_independent(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.services.photo_upload_quota.get_settings",
+        lambda: SimpleNamespace(
+            trial_monthly_photo_upload_limit=50,
+            basic_formal_monthly_photo_upload_limit=50,
+            professional_monthly_photo_upload_limit=1000,
+            professional_trial_monthly_photo_upload_limit=500,
+        ),
+    )
+
+    for _ in range(1000):
+        reserve_photo_detection_quota(_trial_customer().id, source="formal", account_plan="professional")
+    for _ in range(500):
+        reserve_photo_detection_quota(_trial_customer().id, source="trial", account_plan="professional")
+
+    with raises(HTTPException) as formal_raised:
+        reserve_photo_detection_quota(_trial_customer().id, source="formal", account_plan="professional")
+    with raises(HTTPException) as trial_raised:
+        reserve_photo_detection_quota(_trial_customer().id, source="trial", account_plan="professional")
+
+    assert formal_raised.value.detail == (
+        "账号当前专业检测照片额度剩余 0 张，"
+        "本次检测包含 1 张照片，请减少照片数量后重试。"
+    )
+    assert trial_raised.value.detail == (
+        "账号当前快速体验照片额度剩余 0 张，"
+        "本次检测包含 1 张照片，请减少照片数量后重试。"
+    )
 
 
 def test_trial_generate_rate_limit_allows_five_per_ten_minutes(monkeypatch) -> None:
@@ -1473,9 +1575,10 @@ def test_trial_generate_rate_limit_allows_five_per_ten_minutes(monkeypatch) -> N
         lambda: SimpleNamespace(
             trial_generate_limit_per_user=5,
             trial_generate_window_seconds=600,
-            trial_daily_photo_upload_limit=10,
             trial_monthly_photo_upload_limit=50,
-            formal_monthly_photo_upload_limit=50,
+            basic_formal_monthly_photo_upload_limit=50,
+            professional_monthly_photo_upload_limit=1000,
+            professional_trial_monthly_photo_upload_limit=500,
             trial_job_lock_seconds=900,
             trial_global_job_concurrency=4,
         ),
@@ -1497,12 +1600,12 @@ def test_model_api_request_count_is_not_limited() -> None:
     reservation.release(successful=True, actual_api_request_count=1_000_000)
 
 
-def test_trial_generate_rejects_files_larger_than_five_mb() -> None:
-    oversized_jpeg = b"\xff\xd8\xff" + (b"0" * (5 * 1024 * 1024))
+def test_trial_generate_rejects_files_larger_than_twenty_mb() -> None:
+    oversized_jpeg = b"\xff\xd8\xff" + (b"0" * (20 * 1024 * 1024))
     response = _post_trial_photo("trial-oversized.jpg", oversized_jpeg, "image/jpeg")
 
     assert response.status_code == 400
-    assert response.json()["message"] == "单张图片最大 5MB。"
+    assert response.json()["message"] == "单张图片最大 20MB。"
 
 
 def test_trial_photo_metadata_detects_thermal_available() -> None:

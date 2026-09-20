@@ -36,19 +36,12 @@ class DetectionTaskRead(ApiSchema):
 
 class DetectionStartRequest(ApiSchema):
     generate_building_model: bool = False
-    model_types: list[DefectType] = Field(
-        default_factory=lambda: [
-            DefectType.CRACK,
-            DefectType.SPALLING,
-            DefectType.HOLLOW,
-        ],
-        min_length=1,
-    )
+    model_types: list[DefectType] | None = Field(default=None, min_length=1)
 
     @field_validator("model_types")
     @classmethod
-    def deduplicate_values(cls, values: list) -> list:
-        return list(dict.fromkeys(values))
+    def deduplicate_values(cls, values: list | None) -> list | None:
+        return list(dict.fromkeys(values)) if values is not None else None
 
 
 class AlgorithmTaskPhoto(ApiSchema):

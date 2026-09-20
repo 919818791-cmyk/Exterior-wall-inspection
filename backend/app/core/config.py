@@ -40,8 +40,8 @@ class Settings(BaseSettings):
         "@127.0.0.1:5433/building_exterior"
     )
 
-    minio_endpoint: str = "localhost:9002"
-    minio_public_url: str = "http://localhost:9002"
+    minio_endpoint: str = "127.0.0.1:9002"
+    minio_public_url: str = "http://127.0.0.1:9002"
     minio_access_key: str = "building_exterior_minio"
     minio_secret_key: str = "building_exterior_minio_secret"
     minio_bucket: str = "building-exterior"
@@ -75,10 +75,10 @@ class Settings(BaseSettings):
     sms_verification_check_window_seconds: int = Field(default=600, ge=60, le=3600)
     sms_verification_request_timeout_seconds: int = Field(default=10, ge=3, le=30)
 
-    trial_daily_photo_upload_limit: int = Field(default=10, ge=1)
     trial_monthly_photo_upload_limit: int = Field(default=50, ge=1)
-    formal_monthly_photo_upload_limit: int = Field(default=50, ge=1)
-    trial_max_file_size_bytes: int = Field(default=5 * 1024 * 1024, ge=1024)
+    basic_formal_monthly_photo_upload_limit: int = Field(default=50, ge=1)
+    professional_monthly_photo_upload_limit: int = Field(default=1000, ge=1)
+    professional_trial_monthly_photo_upload_limit: int = Field(default=500, ge=1)
     trial_max_image_pixels: int = Field(default=64_000_000, ge=1_000_000)
     trial_inference_max_image_pixels: int = Field(default=64_000_000, ge=1_000_000)
     trial_max_tiles_per_image: int = Field(default=100, ge=1)

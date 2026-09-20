@@ -1,7 +1,12 @@
 import { queryOptions } from "@tanstack/react-query";
 
 import { apiRequest } from "@/api/client";
-import type { TrialInferenceDisclosure, TrialInferenceSetting, TrialInferenceSettingUpdate } from "@/types/systemSettings";
+import type { PricingQuotaSetting, TrialInferenceDisclosure, TrialInferenceSetting, TrialInferenceSettingUpdate } from "@/types/systemSettings";
+
+export const pricingQuotaSettingQueryOptions = queryOptions({
+  queryKey: ["system-settings", "pricing-quotas"],
+  queryFn: () => apiRequest<PricingQuotaSetting>("/system-settings/pricing-quotas")
+});
 
 export const trialInferenceSettingQueryOptions = queryOptions({
   queryKey: ["system-settings", "trial-inference"],

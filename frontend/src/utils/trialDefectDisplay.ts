@@ -20,6 +20,21 @@ const TRIAL_DEFECT_DISPLAY_BY_TYPE: Record<string, TrialDefectDisplay> = {
     descriptionClassName: "trial-report-description-spalling",
     boxClassName: "trial-defect-box-spalling"
   },
+  peeling: {
+    label: "起皮",
+    descriptionClassName: "trial-report-description-default",
+    boxClassName: "trial-defect-box-default"
+  },
+  damage: {
+    label: "面板破损",
+    descriptionClassName: "trial-report-description-default",
+    boxClassName: "trial-defect-box-default"
+  },
+  detachment: {
+    label: "脱落",
+    descriptionClassName: "trial-report-description-spalling",
+    boxClassName: "trial-defect-box-spalling"
+  },
   moisture: {
     label: "潮湿",
     descriptionClassName: "trial-report-description-moisture",
@@ -44,9 +59,17 @@ const TRIAL_MODEL_TO_DEFECT_TYPE: Record<string, string> = {
   missing: "spalling",
   "面砖剥落": "spalling",
   "瓷砖剥落": "spalling",
-  "面砖缺失": "spalling",
   spalling: "spalling",
   "剥落": "spalling",
+  "面砖缺失": "detachment",
+  "面砖脱落": "detachment",
+  "瓷砖脱落": "detachment",
+  "脱落": "detachment",
+  peeling: "peeling",
+  "起皮": "peeling",
+  damage: "damage",
+  "面板破损": "damage",
+  detachment: "detachment",
   moisture: "moisture",
   "潮湿": "moisture",
   corrosion: "corrosion",

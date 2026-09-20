@@ -7,22 +7,28 @@ import {
 } from "react";
 
 interface PasswordInputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "type"> {
+  errorMessage?: string;
+  floatingLabel?: boolean;
   label: string;
 }
 
 export const PasswordInput = forwardRef<HTMLInputElement, PasswordInputProps>(
-  function PasswordInput({ id, label, ...props }, ref) {
+  function PasswordInput({ errorMessage = "", floatingLabel = false, id, label, ...props }, ref) {
     const generatedId = useId();
     const inputId = id ?? generatedId;
+    const errorId = `${inputId}-error`;
     const [isVisible, setIsVisible] = useState(false);
 
     return (
-      <label className="auth-field" htmlFor={inputId}>
-        <span>{label}</span>
+      <label className={`auth-field${floatingLabel ? " floating-line-field" : ""}`} htmlFor={inputId}>
+        {!floatingLabel ? <span>{label}</span> : null}
         <div className="auth-secret-control">
           <input
             {...props}
             ref={ref}
+            aria-describedby={props["aria-describedby"] ?? (errorMessage ? errorId : undefined)}
+            aria-invalid={props["aria-invalid"] ?? (errorMessage ? true : undefined)}
+            aria-label={props["aria-label"] ?? (floatingLabel ? label : undefined)}
             id={inputId}
             type={isVisible ? "text" : "password"}
           />
@@ -36,6 +42,8 @@ export const PasswordInput = forwardRef<HTMLInputElement, PasswordInputProps>(
             {isVisible ? <EyeOff aria-hidden="true" /> : <Eye aria-hidden="true" />}
           </button>
         </div>
+        {floatingLabel ? <span>{label}</span> : null}
+        {floatingLabel && errorMessage ? <small className="floating-line-field-error" id={errorId}>{errorMessage}</small> : null}
       </label>
     );
   }

@@ -5,7 +5,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.enums.status import UserRole, UserStatus
+from app.enums.status import AccountPlan, UserRole, UserStatus
 
 
 class LoginRequest(BaseModel):
@@ -67,6 +67,7 @@ class AuthUserRead(BaseModel):
     phone: str | None
     role: UserRole
     organization: str | None
+    account_plan: AccountPlan = AccountPlan.BASIC
 
 
 class CurrentUserUpdateRequest(BaseModel):
@@ -95,6 +96,7 @@ class AccountRead(BaseModel):
     real_name: str | None
     phone: str | None
     role: UserRole
+    account_plan: AccountPlan = AccountPlan.BASIC
     organization: str | None
     status: UserStatus
     last_login_at: datetime | None
@@ -107,12 +109,18 @@ class AccountPasswordResetResponse(BaseModel):
     temporary_password: str
 
 
+class AccountQuotaResetResponse(BaseModel):
+    ok: bool = True
+    reset_at: datetime
+
+
 class AccountCreateRequest(BaseModel):
     username: str = Field(min_length=1, max_length=64)
     password: str = Field(min_length=8, max_length=128)
     real_name: str | None = Field(default=None, max_length=64)
     phone: str | None = Field(default=None, max_length=32)
     role: UserRole = UserRole.CUSTOMER
+    account_plan: AccountPlan = AccountPlan.BASIC
     organization: str | None = Field(default=None, max_length=128)
     status: UserStatus = UserStatus.ACTIVE
 
@@ -122,6 +130,7 @@ class AccountUpdateRequest(BaseModel):
     real_name: str | None = Field(default=None, max_length=64)
     phone: str | None = Field(default=None, max_length=32)
     role: UserRole | None = None
+    account_plan: AccountPlan | None = None
     organization: str | None = Field(default=None, max_length=128)
     status: UserStatus | None = None
 

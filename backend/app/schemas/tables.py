@@ -8,6 +8,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict
 
 from app.enums.status import (
+    AccountPlan,
     AiResultStatus,
     DefectType,
     DetectionTaskStatus,
@@ -38,6 +39,7 @@ class UserAccountCreate(OrmSchema):
     real_name: str | None = None
     phone: str | None = None
     role: UserRole = UserRole.CUSTOMER
+    account_plan: AccountPlan = AccountPlan.BASIC
     organization: str | None = None
     status: UserStatus = UserStatus.ACTIVE
 
@@ -48,6 +50,7 @@ class UserAccountRead(OrmSchema):
     real_name: str | None
     phone: str | None
     role: UserRole
+    account_plan: AccountPlan = AccountPlan.BASIC
     organization: str | None
     status: UserStatus
     last_login_at: datetime | None

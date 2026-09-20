@@ -1,5 +1,6 @@
 export type UserRole = "customer" | "reviewer" | "admin";
 export type UserStatus = "active" | "disabled";
+export type AccountPlan = "basic" | "professional";
 
 export interface AuthUser {
   id: string;
@@ -7,6 +8,7 @@ export interface AuthUser {
   real_name: string | null;
   phone: string | null;
   role: UserRole;
+  account_plan: AccountPlan;
   organization: string | null;
 }
 
@@ -28,6 +30,7 @@ export interface AccountCreatePayload {
   real_name?: string | null;
   phone?: string | null;
   role: UserRole;
+  account_plan: AccountPlan;
   organization?: string | null;
   status: UserStatus;
 }

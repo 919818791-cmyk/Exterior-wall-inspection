@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  ArrowRight,
   Box,
   Check,
   FileText,
@@ -20,18 +21,20 @@ import {
   updateProject,
   uploadPhoto
 } from "@/api/projects";
+import { currentAccountUsageQueryOptions } from "@/api/accounts";
 import { ListPagination } from "@/components/ListPagination";
+import { ErrorNoticeModal } from "@/components/project/PhotoLimitModal";
 import { PhotoUploadThumbnail } from "@/components/project/PhotoUploadThumbnail";
 import { ProjectPhotoUploader } from "@/components/project/ProjectPhotoUploader";
 import { ProjectWorkbenchShell } from "@/components/project/ProjectWorkbenchShell";
 import { StartDetectionModal } from "@/components/project/StartDetectionModal";
 import { useAuthStore } from "@/stores/useAuthStore";
 import type {
-  FacadeType,
   Photo,
   PhotoPrecheckStatus,
   PhotoType,
   ProjectDetail,
+  SelectableFacadeType,
   StartDetectionPayload,
   UploadBatch
 } from "@/types/projects";
@@ -39,8 +42,7 @@ import { createAsyncLimiter } from "@/utils/asyncLimiter";
 import { getDroneTypeLabel } from "@/utils/droneTypes";
 import { createClientId } from "@/utils/id";
 import {
-  MAX_PROJECT_PHOTO_COUNT,
-  MAX_PROJECT_PHOTO_SIZE_BYTES,
+  MAX_PHOTO_UPLOAD_SIZE_BYTES,
   PROFESSIONAL_PHOTO_UPLOAD_HINT,
   PHOTO_UPLOAD_WINDOW_WARNING,
   validatePhotoUpload
@@ -62,22 +64,24 @@ interface PendingPhoto {
   precheckCategory?: string | null;
   precheckReason?: string | null;
   status: PendingPhotoStatus;
-  uploadError?: string;
 }
 
 interface ProjectWizardDraft {
   name: string;
-  facadeType: FacadeType | "";
+  facadeType: SelectableFacadeType | "";
   description: string;
   photos: PendingPhoto[];
 }
 
 const DESCRIPTION_MAX_LENGTH = 500;
-const PHOTO_PAGE_SIZE = 30;
-const FACADE_TYPE_OPTIONS: ReadonlyArray<{ value: FacadeType; label: string }> = [
-  { value: "tile", label: "面砖" },
-  { value: "coating", label: "涂料" },
-  { value: "stone", label: "石材" }
+const PHOTO_PAGE_SIZE = 20;
+const PROFESSIONAL_PROJECT_PHOTO_UPLOAD_BASE_HINT = `${PROFESSIONAL_PHOTO_UPLOAD_HINT}，支持 JPG、JPEG、PNG 格式，单张不超过 ${MAX_PHOTO_UPLOAD_SIZE_BYTES / 1024 / 1024}MB`;
+const FACADE_TYPE_OPTIONS: ReadonlyArray<{ value: SelectableFacadeType; label: string }> = [
+  { value: "tile", label: "饰面砖" },
+  { value: "coating", label: "涂饰" },
+  { value: "plaster", label: "抹灰" },
+  { value: "panel", label: "饰面板" },
+  { value: "curtain_wall", label: "幕墙" }
 ];
 const runFormalPhotoUpload = createAsyncLimiter(6);
 const WIZARD_STEPS: ReadonlyArray<{ step: WizardStep; label: string }> = [
@@ -136,6 +140,16 @@ export function NewProjectPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const user = useAuthStore((state) => state.user);
+  const accountUsageQuery = useQuery({
+    ...currentAccountUsageQueryOptions,
+    enabled: user?.role === "customer"
+  });
+  const formalQuotaRemaining = user?.account_plan === "professional"
+    ? accountUsageQuery.data?.professional_formal_monthly_photo_upload_balance.remaining
+    : accountUsageQuery.data?.basic_formal_monthly_photo_upload_balance.remaining;
+  const professionalProjectPhotoUploadHint = formalQuotaRemaining === undefined
+    ? PROFESSIONAL_PROJECT_PHOTO_UPLOAD_BASE_HINT
+    : `照片数量最多 ${formalQuotaRemaining} 张，${PROFESSIONAL_PROJECT_PHOTO_UPLOAD_BASE_HINT}`;
   const projectQuery = useQuery(projectQueryOptions(id));
   const storedPhotosQuery = useQuery(projectPhotosQueryOptions(id));
   const clientDraftKeyRef = useRef(createClientId("draft").slice(0, 64));
@@ -154,6 +168,7 @@ export function NewProjectPage() {
     facadeType: false
   });
   const [pageError, setPageError] = useState("");
+  const [loadErrorOpen, setLoadErrorOpen] = useState(true);
   const [savePending, setSavePending] = useState(false);
   const [detectionModalOpen, setDetectionModalOpen] = useState(false);
   const [photoPage, setPhotoPage] = useState(1);
@@ -193,7 +208,7 @@ export function NewProjectPage() {
     previewUrlsRef.current.clear();
     replaceForm({
       name: project.name,
-      facadeType: project.facade_type,
+      facadeType: project.facade_type === "stone" ? "" : project.facade_type,
       description: project.description ?? "",
       photos: photos.map(storedPhotoToPending)
     });
@@ -206,7 +221,7 @@ export function NewProjectPage() {
     setPageError("");
   };
 
-  const updateFacadeType = (facadeType: FacadeType | "") => {
+  const updateFacadeType = (facadeType: SelectableFacadeType | "") => {
     replaceForm({ ...formRef.current, facadeType });
     setPageError("");
   };
@@ -269,9 +284,10 @@ export function NewProjectPage() {
 
   const uploadEntries = async (entries: PendingPhoto[]) => {
     let failedCount = 0;
+    let firstFailureMessage = "";
     let savedCount = 0;
     await Promise.all(entries.map((entry) => runFormalPhotoUpload(async () => {
-      updatePhoto(entry.localId, { status: "uploading", uploadError: undefined });
+      updatePhoto(entry.localId, { status: "uploading" });
       try {
         if (!entry.file) throw new Error("本地照片文件已失效，请重新选择。");
         const { project, batch } = await ensureDraftResources();
@@ -288,15 +304,13 @@ export function NewProjectPage() {
           precheckCategory: uploadedPhoto.precheck_category,
           precheckReason: uploadedPhoto.precheck_reason,
           remoteId: uploadedPhoto.id,
-          status: "saved",
-          uploadError: undefined
+          status: "saved"
         });
       } catch (error) {
+        const message = getErrorMessage(error);
         failedCount += 1;
-        updatePhoto(entry.localId, {
-          status: "failed",
-          uploadError: getErrorMessage(error)
-        });
+        firstFailureMessage ||= message;
+        updatePhoto(entry.localId, { status: "failed" });
       }
     })));
 
@@ -313,8 +327,7 @@ export function NewProjectPage() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["projects", "list"] }),
         queryClient.invalidateQueries({ queryKey: ["projects", project.id] }),
-        queryClient.invalidateQueries({ queryKey: ["projects", project.id, "photos"] }),
-        queryClient.invalidateQueries({ queryKey: ["current-account-usage"] })
+        queryClient.invalidateQueries({ queryKey: ["projects", project.id, "photos"] })
       ]);
       if (savedCount && !id) {
         hydratedProjectIdRef.current = project.id;
@@ -322,7 +335,7 @@ export function NewProjectPage() {
       }
     }
     if (failedCount && mountedRef.current) {
-      setPageError(`${failedCount} 张照片上传失败，请重试或移除后继续。`);
+      setPageError(firstFailureMessage || `${failedCount} 张照片上传失败，请移除后重新上传。`);
     }
   };
 
@@ -331,7 +344,7 @@ export function NewProjectPage() {
 
     const rejectionMessages: string[] = [];
     const validFiles = files.filter((file) => {
-      const message = validatePhotoUpload(file, { maxSizeBytes: MAX_PROJECT_PHOTO_SIZE_BYTES });
+      const message = validatePhotoUpload(file, { maxSizeBytes: MAX_PHOTO_UPLOAD_SIZE_BYTES });
       if (!message) return true;
       rejectionMessages.push(`${file.name}：${message}`);
       return false;
@@ -341,19 +354,22 @@ export function NewProjectPage() {
       return;
     }
 
-    const remainingSlots = MAX_PROJECT_PHOTO_COUNT - formRef.current.photos.length;
-    if (remainingSlots <= 0) {
-      setPageError(`每个项目最多上传 ${MAX_PROJECT_PHOTO_COUNT} 张照片。`);
+    const quotaBalance = user?.account_plan === "professional"
+      ? accountUsageQuery.data?.professional_formal_monthly_photo_upload_balance
+      : accountUsageQuery.data?.basic_formal_monthly_photo_upload_balance;
+    const pendingUploadCount = formRef.current.photos.filter((photo) => photo.status !== "failed").length;
+    const availableUploadCount = quotaBalance
+      ? Math.max(0, quotaBalance.remaining - pendingUploadCount)
+      : null;
+    if (availableUploadCount !== null && validFiles.length > availableUploadCount) {
+      setPageError(
+        `账号专业检测照片额度剩余 ${quotaBalance?.remaining ?? 0} 张，`
+        + `当前已有 ${pendingUploadCount} 张未送检照片，本次最多还能上传 ${availableUploadCount} 张。`
+      );
       return;
     }
-    const acceptedFiles = validFiles.slice(0, remainingSlots);
-    if (acceptedFiles.length < validFiles.length) {
-      rejectionMessages.unshift(
-        `每个项目最多上传 ${MAX_PROJECT_PHOTO_COUNT} 张照片，已添加前 ${remainingSlots} 张。`
-      );
-    }
 
-    const entries = acceptedFiles.map((file): PendingPhoto => {
+    const entries = validFiles.map((file): PendingPhoto => {
       const previewUrl = URL.createObjectURL(file);
       previewUrlsRef.current.add(previewUrl);
       return {
@@ -409,15 +425,6 @@ export function NewProjectPage() {
         });
       }
     }
-  };
-
-  const retryFailedUploads = () => {
-    const failedPhotos = formRef.current.photos.filter((photo) => (
-      photo.status === "failed" && photo.file
-    ));
-    if (!failedPhotos.length) return;
-    setPageError("");
-    void uploadEntries(failedPhotos);
   };
 
   const counts = useMemo(() => {
@@ -541,7 +548,7 @@ export function NewProjectPage() {
       return;
     }
     if (counts.failed) {
-      setPageError("存在上传失败的照片，请重试或移除后继续。");
+      setPageError("存在上传失败的照片，请移除后重新上传。");
       return;
     }
     if (counts.precheckError) {
@@ -594,7 +601,8 @@ export function NewProjectPage() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["projects", "list"] }),
         queryClient.invalidateQueries({ queryKey: ["projects", projectId] }),
-        queryClient.invalidateQueries({ queryKey: ["projects", projectId, "photos"] })
+        queryClient.invalidateQueries({ queryKey: ["projects", projectId, "photos"] }),
+        queryClient.invalidateQueries({ queryKey: ["current-account-usage"] })
       ]);
       const refreshedProject = await queryClient.fetchQuery(projectQueryOptions(projectId));
       setCurrentProject(refreshedProject);
@@ -692,17 +700,20 @@ export function NewProjectPage() {
   }
 
   if (id && (projectQuery.isError || storedPhotosQuery.isError || !project)) {
+    const loadErrorMessage = getErrorMessage(projectQuery.error ?? storedPhotosQuery.error);
     return (
       <ProjectWorkbenchShell actionLabel="返回" hideHeader>
         <main className="professional-create-wizard">
           <header className="professional-create-wizard-header"><h1>项目加载失败</h1></header>
-          <p className="professional-create-error" role="alert">
-            {getErrorMessage(projectQuery.error ?? storedPhotosQuery.error)}
-          </p>
           <footer className="professional-create-actions">
             <button className="back-cancel-button" type="button" onClick={() => navigate("/detections")}>返回列表</button>
           </footer>
         </main>
+        <ErrorNoticeModal
+          message={loadErrorOpen ? loadErrorMessage : ""}
+          title="项目加载失败"
+          onOpenChange={setLoadErrorOpen}
+        />
       </ProjectWorkbenchShell>
     );
   }
@@ -775,7 +786,7 @@ export function NewProjectPage() {
                     onBlur={() => setDetailsTouched((current) => ({ ...current, facadeType: true }))}
                     required
                     value={form.facadeType}
-                    onChange={(event) => updateFacadeType(event.target.value as FacadeType | "")}
+                    onChange={(event) => updateFacadeType(event.target.value as SelectableFacadeType | "")}
                   >
                     <option disabled hidden value="" />
                     {FACADE_TYPE_OPTIONS.map((option) => (
@@ -804,11 +815,11 @@ export function NewProjectPage() {
           {step === 2 ? (
             <div className="professional-create-photos">
               <ProjectPhotoUploader
-                addDisabled={!isEditable || busy || form.photos.length >= MAX_PROJECT_PHOTO_COUNT}
+                addDisabled={!isEditable || busy}
                 disabled={!isEditable || busy}
                 emptyHint={(
                   <span className="professional-drone-upload-hint">
-                    {PROFESSIONAL_PHOTO_UPLOAD_HINT}
+                    {professionalProjectPhotoUploadHint}
                     {counts.uploading ? (
                       <>
                         <br />
@@ -840,9 +851,6 @@ export function NewProjectPage() {
                         </>
                       )}
                       fileName={photo.fileName}
-                      footer={photo.status === "failed" ? (
-                        <span className="professional-photo-upload-error">{photo.uploadError ?? "上传失败"}</span>
-                      ) : null}
                       key={photo.localId}
                       precheckCategory={photo.precheckCategory}
                       precheckReason={photo.precheckReason}
@@ -868,12 +876,9 @@ export function NewProjectPage() {
                 })}
               </ProjectPhotoUploader>
 
-              {counts.precheckError || counts.failed ? (
+              {counts.precheckError ? (
                 <div className="professional-create-photo-counts" aria-label="照片检测汇总">
-                  {counts.precheckError ? <span className="is-error">预检失败 {counts.precheckError}</span> : null}
-                  {isEditable && counts.failed ? (
-                    <button type="button" onClick={retryFailedUploads}>重试 {counts.failed} 张失败照片</button>
-                  ) : null}
+                  <span className="is-error">预检失败 {counts.precheckError}</span>
                 </div>
               ) : null}
 
@@ -904,7 +909,6 @@ export function NewProjectPage() {
             </div>
           ) : null}
 
-          {pageError ? <p className="professional-create-error" role="alert">{pageError}</p> : null}
         </section>
 
         <footer className="professional-create-actions">
@@ -952,21 +956,23 @@ export function NewProjectPage() {
               {project
                 ? (detailsChanged ? "保存并继续" : "继续")
                 : "创建项目"}
+              <ArrowRight aria-hidden="true" className="professional-create-action-arrow" />
             </button>
           ) : null}
           {step === 2 && isEditable ? (
             <button
-              className="button primary-action-button"
+              className="button primary-action-button professional-create-next-action"
               disabled={busy || !isEditable || !canOpenSummary}
               type="button"
               onClick={() => void continueToSummary()}
             >
               继续
+              <ArrowRight aria-hidden="true" className="professional-create-action-arrow" />
             </button>
           ) : null}
           {step === 3 && hasResult && project?.current_report_id ? (
             <button
-              className="button primary-action-button professional-create-submit professional-create-result-action"
+              className="button primary-action-button professional-create-result-action"
               type="button"
               onClick={() => navigate(`/detections/results/${project.current_report_id}`)}
             >
@@ -987,8 +993,18 @@ export function NewProjectPage() {
         </footer>
       </main>
 
+      <ErrorNoticeModal
+        message={pageError}
+        title="错误提示"
+        onOpenChange={(isOpen) => {
+          if (!isOpen) {
+            setPageError("");
+          }
+        }}
+      />
       <StartDetectionModal
-        error={startDetectionMutation.error}
+        canGenerateBuildingModel={Boolean(user && (user.role !== "customer" || user.account_plan === "professional"))}
+        facadeType={form.facadeType || undefined}
         isProfessional
         isOpen={detectionModalOpen}
         isPending={startDetectionMutation.isPending}

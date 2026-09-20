@@ -24,6 +24,7 @@ function getErrorMessage(error: unknown) {
 }
 
 interface AuthModalProps {
+  initialMode?: "login" | "trial-application";
   isOpen: boolean;
   notice?: string;
   onClose: () => void;
@@ -101,9 +102,9 @@ function maskPhone(phone: string) {
 }
 
 /** The single sign-in surface for the whole application. It follows the prototype dialog. */
-export function AuthModal({ isOpen, notice, onClose, onAuthenticated }: AuthModalProps) {
+export function AuthModal({ initialMode = "login", isOpen, notice, onClose, onAuthenticated }: AuthModalProps) {
   const setAuthenticated = useAuthStore((state) => state.setAuthenticated);
-  const [mode, setMode] = useState<AuthMode>("login");
+  const [mode, setMode] = useState<AuthMode>(initialMode);
   const [loginMethod, setLoginMethod] = useState<LoginMethod>("username");
   const [identity, setIdentity] = useState("");
   const [password, setPassword] = useState("");
@@ -470,7 +471,7 @@ export function AuthModal({ isOpen, notice, onClose, onAuthenticated }: AuthModa
     >
       <div aria-hidden="true" className="auth-modal-backdrop" />
       <section className={`auth-dialog ${mode === "login" ? "auth-login-dialog" : mode === "forgot-password" ? "forgot-password-dialog" : "trial-application-dialog"} ${isTrialApplicationSuccess ? "auth-success-dialog" : ""}`}>
-        <button aria-label="关闭登录弹窗" className="auth-close" type="button" onClick={requestClose}>
+        <button aria-label="关闭登录弹窗" className="auth-close back-cancel-button" type="button" onClick={requestClose}>
           <X aria-hidden="true" />
         </button>
         {!isTrialApplicationSuccess ? (

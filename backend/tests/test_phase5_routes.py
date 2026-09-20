@@ -13,9 +13,10 @@ from app.api.detection_tasks import (
     _formal_compatible_inference,
     _remove_rejected_project_photos,
     _run_formal_project_inference,
+    _validate_facade_model_compatibility,
     _validate_formal_photo_model_compatibility,
 )
-from app.enums.status import PhotoPrecheckStatus, ProjectStatus, UserRole
+from app.enums.status import AccountPlan, PhotoPrecheckStatus, ProjectStatus, UserRole
 from app.main import app
 from app.schemas.phase5 import (
     AlgorithmResultPayload,
@@ -82,11 +83,11 @@ def test_algorithm_result_payload_accepts_fixed_json_contract() -> None:
     assert payload.results[0].detections[0].type == "crack"
 
 
-def test_detection_start_defaults_to_all_supported_report_types() -> None:
+def test_detection_start_defers_default_models_to_project_facade() -> None:
     payload = DetectionStartRequest.model_validate({})
 
     assert payload.generate_building_model is False
-    assert payload.model_types == ["crack", "spalling", "hollow"]
+    assert payload.model_types is None
 
 
 def test_detection_start_accepts_building_model_generation() -> None:
@@ -95,8 +96,103 @@ def test_detection_start_accepts_building_model_generation() -> None:
     assert payload.generate_building_model is True
 
 
+def test_basic_customer_cannot_request_building_model_generation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = SimpleNamespace(id=uuid4())
+    current_user = AuthenticatedUser(
+        id=uuid4(),
+        username="basic-customer",
+        real_name="基础版客户",
+        role=UserRole.CUSTOMER.value,
+        organization=None,
+        account_plan=AccountPlan.BASIC.value,
+    )
+    monkeypatch.setattr(detection_tasks, "_get_project_or_404", lambda *_: project)
+    monkeypatch.setattr(detection_tasks, "ensure_project_write_access", lambda *_: None)
+
+    with pytest.raises(HTTPException) as exc_info:
+        asyncio.run(
+            detection_tasks.start_detection(
+                project.id,
+                DetectionStartRequest(generate_building_model=True),
+                SimpleNamespace(),
+                current_user,
+            )
+        )
+
+    assert exc_info.value.status_code == 403
+    assert exc_info.value.detail == "使用此功能需提升到专业版"
+
+
 def test_detection_start_uses_project_facade_type_instead_of_request_payload() -> None:
     assert "facade_type" not in DetectionStartRequest.model_fields
+
+
+def test_coating_facade_rejects_spalling_detection() -> None:
+    with pytest.raises(HTTPException) as raised:
+        _validate_facade_model_compatibility("coating", ["crack", "spalling"])
+
+    assert raised.value.status_code == 400
+    assert raised.value.detail == "涂饰外墙不支持剥落检测，请调整检测类型。"
+
+
+def test_coating_facade_allows_crack_peeling_and_hollow() -> None:
+    allowed = _validate_facade_model_compatibility(
+        "coating",
+        ["crack", "peeling", "hollow"],
+    )
+
+    assert allowed == frozenset({"crack", "peeling", "hollow"})
+
+
+def test_tile_facade_allows_crack_detachment_and_hollow() -> None:
+    allowed = _validate_facade_model_compatibility(
+        "tile",
+        ["crack", "detachment", "hollow"],
+    )
+
+    assert allowed == frozenset({"crack", "detachment", "hollow"})
+
+
+def test_tile_facade_rejects_plaster_spalling_detection() -> None:
+    with pytest.raises(HTTPException) as raised:
+        _validate_facade_model_compatibility("tile", ["spalling"])
+
+    assert raised.value.status_code == 400
+    assert raised.value.detail == "饰面砖外墙不支持剥落检测，请调整检测类型。"
+
+
+def test_plaster_facade_allows_crack_spalling_and_hollow() -> None:
+    allowed = _validate_facade_model_compatibility(
+        "plaster",
+        ["crack", "spalling", "hollow"],
+    )
+
+    assert allowed == frozenset({"crack", "spalling", "hollow"})
+
+
+def test_panel_facade_allows_damage_and_detachment() -> None:
+    allowed = _validate_facade_model_compatibility(
+        "panel",
+        ["damage", "detachment"],
+    )
+
+    assert allowed == frozenset({"damage", "detachment"})
+
+
+def test_curtain_wall_facade_only_allows_damage() -> None:
+    allowed = _validate_facade_model_compatibility("curtain_wall", ["damage"])
+
+    assert allowed == frozenset({"damage"})
+
+
+def test_removed_stone_facade_cannot_start_new_detection() -> None:
+    with pytest.raises(HTTPException) as raised:
+        _validate_facade_model_compatibility("stone", ["crack"])
+
+    assert raised.value.status_code == 400
+    assert "外墙类型不受支持" in raised.value.detail
 
 
 def test_start_detection_requires_the_confirmation_step(
@@ -251,7 +347,8 @@ def test_formal_detection_routes_models_by_photo_type() -> None:
         (
             "visible",
             ["hollow"],
-            "可见光图片只执行裂缝或剥落检测，请至少勾选其中一项或移除可见光图片。",
+            "可见光图片需要选择一种与当前外墙类型匹配的可见缺陷，"
+            "请勾选后重试或移除可见光图片。",
         ),
     ],
 )

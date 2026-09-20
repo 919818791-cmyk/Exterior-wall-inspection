@@ -15,30 +15,47 @@ import { TimeRecommendationDialog } from "@/pages/CapabilityDetailPage";
 
 gsap.registerPlugin(ScrollTrigger);
 
-const defects = [
+type DefectCard = {
+  key: string;
+  title: string;
+  image?: string;
+  to?: string;
+};
+
+const defects: DefectCard[] = [
   {
     key: "crack",
     title: "裂缝识别",
-    image: "/images/optimized/defect-crack-card.webp"
+    image: "/images/optimized/defect-crack-card.webp",
+    to: "/capabilities/crack"
   },
   {
     key: "spalling",
     title: "剥落识别",
-    image: "/images/optimized/defect-spalling-card.webp"
-  },
-  {
-    key: "corrosion",
-    title: "锈蚀识别",
-    image: "/images/optimized/defect-corrosion-card.webp"
+    image: "/images/optimized/defect-spalling-card.webp",
+    to: "/capabilities/spalling"
   },
   {
     key: "hollow",
     title: "空鼓识别",
-    image: "/images/optimized/defect-hollow-card.webp"
+    image: "/images/optimized/defect-hollow-card.webp",
+    to: "/capabilities/hollow"
+  },
+  {
+    key: "peeling",
+    title: "起皮识别"
+  },
+  {
+    key: "detachment",
+    title: "脱落识别"
+  },
+  {
+    key: "damage",
+    title: "破损识别"
   }
 ];
 
-const heroVideos = ["/videos/MZ.mp4", "/videos/M2.mp4", "/videos/M3.mp4"];
+const heroVideos = ["/videos/N1.mp4", "/videos/N2.mp4", "/videos/N3.mp4"];
 
 type NetworkInformation = {
   effectiveType?: string;
@@ -291,15 +308,31 @@ export function DashboardPage() {
           <h2 id="home-ai-title">检测能力</h2>
         </div>
         <div className="defect-grid">
-          {defects.map((defect) => (
-            <Link key={defect.key} className="defect-card home-reveal-item" id={`defect-${defect.key}`} to={`/capabilities/${defect.key}`} aria-label={`查看${defect.title}详情`}>
-              <div className="defect-media"><img alt={`${defect.title}示意图`} decoding="async" loading="lazy" src={defect.image} /></div>
+          {defects.map((defect) => {
+            const content = (
+              <>
+              <div className={`defect-media${defect.image ? "" : " is-placeholder"}`}>
+                {defect.image
+                  ? <img alt={`${defect.title}示意图`} decoding="async" loading="lazy" src={defect.image} />
+                  : <span className="defect-media-placeholder">图片待补充</span>}
+              </div>
               <div className="defect-card-body">
                 <h3>{defect.title}</h3>
-                <span className="defect-detail-link">了解详情 <ChevronRight aria-hidden="true" /></span>
+                {defect.to ? <span className="defect-detail-link">了解详情 <ChevronRight aria-hidden="true" /></span> : null}
               </div>
-            </Link>
-          ))}
+              </>
+            );
+
+            return defect.to ? (
+              <Link key={defect.key} className="defect-card home-reveal-item" id={`defect-${defect.key}`} to={defect.to} aria-label={`查看${defect.title}详情`}>
+                {content}
+              </Link>
+            ) : (
+              <article key={defect.key} className="defect-card home-reveal-item" id={`defect-${defect.key}`} aria-label={defect.title}>
+                {content}
+              </article>
+            );
+          })}
         </div>
       </section>
 

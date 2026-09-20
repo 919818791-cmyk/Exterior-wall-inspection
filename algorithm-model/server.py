@@ -49,7 +49,7 @@ MODEL_TILE_NMS_IOU_THRESHOLD = _env_float("MODEL_TILE_NMS_IOU_THRESHOLD", 0.5, m
 DEFECT_CLASS_ORDER = ("crack", "spalling")
 DEFECT_LABELS = {
     "crack": "裂缝",
-    "spalling": "剥落",
+    "spalling": "脱落",
 }
 DEFAULT_MODEL_PATHS = {
     "crack": "/models/wall_crack_yolo11x.pt",
@@ -66,8 +66,11 @@ CLASS_ALIASES = {
     "tile-missing": "spalling",
     "spalling": "spalling",
     "剥落": "spalling",
+    "脱落": "spalling",
     "面砖剥落": "spalling",
+    "面砖脱落": "spalling",
     "瓷砖剥落": "spalling",
+    "瓷砖脱落": "spalling",
     "面砖缺失": "spalling",
 }
 

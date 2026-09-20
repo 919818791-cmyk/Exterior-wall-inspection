@@ -2,8 +2,16 @@ import { type ReactNode, useId, useState } from "react";
 
 import { ProjectWorkbenchShell } from "@/components/project/ProjectWorkbenchShell";
 
-const ORIGINAL_EXAMPLES = ["裂缝.jpeg", "剥落.jpg", "空鼓.JPG"] as const;
-const ANNOTATED_EXAMPLES = ["裂缝标注图.jpeg", "剥落标注图.png", "空鼓标注图.png"] as const;
+const ORIGINAL_EXAMPLES = [
+  { filename: "裂缝.jpeg", label: "裂缝" },
+  { filename: "剥落.jpg", label: "剥落" },
+  { filename: "空鼓.JPG", label: "空鼓" }
+] as const;
+const ANNOTATED_EXAMPLES = [
+  { filename: "裂缝标注图.jpeg", label: "裂缝" },
+  { filename: "剥落标注图.png", label: "剥落" },
+  { filename: "空鼓标注图.png", label: "空鼓" }
+] as const;
 
 export function DetectionCreateWorkbench({
   ariaLabel,
@@ -147,16 +155,16 @@ export function DetectionGuidePanel({ description }: { description: ReactNode })
               id={originalPanelId}
               role="tabpanel"
             >
-              {ORIGINAL_EXAMPLES.map((filename) => (
+              {ORIGINAL_EXAMPLES.map(({ filename, label }) => (
                 <figure className="trial-guide-example-item" key={filename}>
                   <div className="trial-guide-example-image-frame">
                     <img
-                      alt={`${filename.replace(/\.[^.]+$/, "")}检测原图示例`}
+                      alt={`${label}检测原图示例`}
                       loading="lazy"
                       src={`/images/trial/examples/original/${filename}`}
                     />
                   </div>
-                  <figcaption>{filename.replace(/\.[^.]+$/, "")}原图</figcaption>
+                  <figcaption>{label}原图</figcaption>
                 </figure>
               ))}
             </div>
@@ -167,16 +175,16 @@ export function DetectionGuidePanel({ description }: { description: ReactNode })
               id={annotatedPanelId}
               role="tabpanel"
             >
-              {ANNOTATED_EXAMPLES.map((filename) => (
+              {ANNOTATED_EXAMPLES.map(({ filename, label }) => (
                 <figure className="trial-guide-example-item" key={filename}>
                   <div className="trial-guide-example-image-frame">
                     <img
-                      alt={`${filename.replace("标注图", "").replace(/\.[^.]+$/, "")}检测标注结果示例`}
+                      alt={`${label}检测标注结果示例`}
                       loading="lazy"
                       src={`/images/trial/examples/annotated/${filename}`}
                     />
                   </div>
-                  <figcaption>{filename.replace(/\.[^.]+$/, "")}</figcaption>
+                  <figcaption>{label}标注图</figcaption>
                 </figure>
               ))}
             </div>

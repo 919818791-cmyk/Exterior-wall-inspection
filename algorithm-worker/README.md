@@ -17,7 +17,7 @@ Current defect type mapping:
 | Type | Label |
 | --- | --- |
 | `crack` | 裂缝 |
-| `spalling` | 剥落 |
+| `spalling` | 脱落 |
 
 ## Local Run
 

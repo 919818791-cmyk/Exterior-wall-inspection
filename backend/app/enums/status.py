@@ -7,6 +7,11 @@ class UserRole(StrEnum):
     ADMIN = "admin"
 
 
+class AccountPlan(StrEnum):
+    BASIC = "basic"
+    PROFESSIONAL = "professional"
+
+
 class UserStatus(StrEnum):
     ACTIVE = "active"
     DISABLED = "disabled"
@@ -39,6 +44,9 @@ class DroneType(StrEnum):
 class FacadeType(StrEnum):
     TILE = "tile"
     COATING = "coating"
+    PLASTER = "plaster"
+    PANEL = "panel"
+    CURTAIN_WALL = "curtain_wall"
     STONE = "stone"
 
 
@@ -72,6 +80,9 @@ class AiResultStatus(StrEnum):
 class DefectType(StrEnum):
     CRACK = "crack"
     SPALLING = "spalling"
+    PEELING = "peeling"
+    DAMAGE = "damage"
+    DETACHMENT = "detachment"
     MOISTURE = "moisture"
     HOLLOW = "hollow"
 

@@ -216,6 +216,9 @@ export function WorkbenchDefectSummary({
 const detectionTypeLabels: Record<string, string> = {
   crack: "裂缝",
   spalling: "剥落",
+  peeling: "起皮",
+  damage: "面板破损",
+  detachment: "脱落",
   hollow: "空鼓",
   moisture: "潮湿"
 };

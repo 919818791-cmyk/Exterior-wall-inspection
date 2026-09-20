@@ -65,9 +65,11 @@ from app.services.local_qwen_lifecycle import start_local_qwen
 from app.services.object_storage import get_object_bytes, presigned_get_url, put_object, remove_object, signed_object_url
 from app.services.photo_metadata import extract_photo_metadata
 from app.services.photo_upload_quota import (
-    refund_photo_upload_quota,
-    reserve_photo_upload_quota,
+    ensure_photo_upload_capacity,
+    refund_photo_detection_quota,
+    reserve_photo_detection_quota,
 )
+from app.services.photo_upload_validation import MAX_PHOTO_FILE_SIZE_BYTES
 from app.services.photo_precheck import run_stored_photo_precheck
 from app.services.photo_thumbnails import build_thumbnail, store_thumbnail
 from app.services.report_data import build_report_data
@@ -93,7 +95,11 @@ from app.services.usage_control import (
     SecurityStoreUnavailable,
     get_usage_store,
 )
-from app.services.usage_tracking import add_inference_usage_event, add_photo_upload_event
+from app.services.usage_tracking import (
+    add_inference_usage_event,
+    add_photo_detection_event,
+    add_photo_upload_event,
+)
 
 router = APIRouter(tags=["reports"])
 logger = logging.getLogger(__name__)
@@ -110,8 +116,11 @@ TRIAL_MODEL_TO_DEFECT_TYPE = {
     "missing": "spalling",
     "面砖剥落": "spalling",
     "瓷砖剥落": "spalling",
-    "面砖缺失": "spalling",
     "剥落": "spalling",
+    "面砖缺失": "detachment",
+    "面砖脱落": "detachment",
+    "瓷砖脱落": "detachment",
+    "脱落": "detachment",
     "潮湿": "moisture",
     "锈蚀": "corrosion",
     "空鼓": "hollow",
@@ -120,6 +129,7 @@ TRIAL_MODEL_TO_DEFECT_TYPE = {
 TRIAL_DEFECT_TYPE_TO_MODEL = {
     "crack": "裂缝",
     "spalling": "剥落",
+    "detachment": "脱落",
     "moisture": "潮湿",
     "corrosion": "锈蚀",
     "hollow": "空鼓",
@@ -127,8 +137,6 @@ TRIAL_DEFECT_TYPE_TO_MODEL = {
 TRIAL_DEFAULT_MODELS = ["裂缝", "剥落", "空鼓"]
 TRIAL_RESULT_CONFIDENCE_THRESHOLD = 0.6
 TRIAL_ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/png"}
-TRIAL_MAX_FILE_COUNT = 30
-TRIAL_MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024
 TRIAL_REQUEST_CACHE_TTL_SECONDS = 24 * 60 * 60
 TRIAL_RESULT_TIMEZONE = ZoneInfo("Asia/Shanghai")
 TRIAL_RESULT_DAILY_LIMIT = 999
@@ -758,14 +766,8 @@ def _trial_payload_from_form(payload: str) -> dict[str, Any]:
 
 
 def _trial_file_entries(uploaded_files: list[UploadFile]) -> list[dict[str, Any]]:
-    max_file_size = getattr(get_settings(), "trial_max_file_size_bytes", TRIAL_MAX_FILE_SIZE_BYTES)
     if not uploaded_files:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="请先上传照片。")
-    if len(uploaded_files) > TRIAL_MAX_FILE_COUNT:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"单次最多上传 {TRIAL_MAX_FILE_COUNT} 张照片。",
-        )
 
     file_entries: list[dict[str, Any]] = []
     for uploaded_file in uploaded_files:
@@ -781,10 +783,10 @@ def _trial_file_entries(uploaded_files: list[UploadFile]) -> list[dict[str, Any]
         uploaded_file.file.seek(0)
         if file_size <= 0:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded file is empty.")
-        if file_size > max_file_size:
+        if file_size > MAX_PHOTO_FILE_SIZE_BYTES:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"单张图片最大 {max_file_size // (1024 * 1024)}MB。",
+                detail=f"单张图片最大 {MAX_PHOTO_FILE_SIZE_BYTES // (1024 * 1024)}MB。",
             )
 
         header = uploaded_file.file.read(8)
@@ -860,11 +862,6 @@ def _quick_detection_photos_for_user(
 ) -> list[QuickDetectionPhoto]:
     if not photo_ids:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="请先上传照片。")
-    if len(photo_ids) > TRIAL_MAX_FILE_COUNT:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"单次最多上传 {TRIAL_MAX_FILE_COUNT} 张照片。",
-        )
 
     unique_photo_ids = list(dict.fromkeys(photo_ids))
     photos = db.scalars(
@@ -1428,7 +1425,6 @@ def upload_trial_photo(
     current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> TrialUploadedPhotoRead:
     file_entry = _trial_file_entries([file])[0]
-    quota_reservation = reserve_photo_upload_quota(current_user.id, source="trial", db=db)
     photo_id = uuid4()
     suffix = Path(file.filename or "").suffix.lower()
     object_key = f"quick-detection/{current_user.id}/photos/{photo_id}{suffix or '.bin'}"
@@ -1447,6 +1443,13 @@ def upload_trial_photo(
         )
         if thumbnail is not None:
             thumbnail_bucket = store_thumbnail(thumbnail)
+        ensure_photo_upload_capacity(
+            db,
+            current_user.id,
+            source="trial",
+            role=current_user.role,
+            account_plan=current_user.account_plan,
+        )
         photo = QuickDetectionPhoto(
             id=photo_id,
             original_filename=str(file_entry["filename"]),
@@ -1473,7 +1476,7 @@ def upload_trial_photo(
         committed = True
         db.refresh(photo)
     except Exception:
-        refund_photo_upload_quota(quota_reservation)
+        db.rollback()
         if bucket is not None and not committed:
             remove_object(bucket, object_key)
         if thumbnail_bucket is not None and thumbnail is not None and not committed:
@@ -1610,6 +1613,47 @@ async def generate_trial_result(
         except BaseException:
             reservation.release(successful=False)
             raise
+    quota_reservation = None
+    detection_run_id = uuid4()
+    try:
+        quota_reservation = reserve_photo_detection_quota(
+            current_user.id,
+            source="trial",
+            role=current_user.role,
+            account_plan=current_user.account_plan,
+            amount=len(photo_sources),
+            db=db,
+        )
+        add_photo_detection_event(
+            db,
+            source_type="trial",
+            detection_run_id=detection_run_id,
+            actor_id=current_user.id,
+            photo_count=len(photo_sources),
+        )
+        db.commit()
+    except BaseException:
+        if quota_reservation is not None:
+            refund_photo_detection_quota(
+                quota_reservation,
+                amount=len(photo_sources),
+            )
+        if request_id:
+            try:
+                _trial_request_cache_set(
+                    current_user,
+                    request_id,
+                    {
+                        "status": "failed",
+                        "fingerprint": request_fingerprint,
+                        "error": "检测任务未能启动，请重新发起。",
+                        "finished_at": datetime.now(UTC).isoformat(),
+                    },
+                )
+            except HTTPException:
+                pass
+        reservation.release(successful=False)
+        raise
     try:
         findings, raw_model_outputs = await _trial_outputs_for_images(
             images,

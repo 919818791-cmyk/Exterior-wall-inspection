@@ -4,6 +4,7 @@ export interface AccountUsageTotals {
   task_count: number;
   formal_task_count: number;
   trial_task_count: number;
+  detected_photo_count: number;
   api_request_count: number;
   token_count: number;
   input_token_count: number;
@@ -39,7 +40,8 @@ export interface CurrentAccountUsageResponse {
   period_start: string;
   period_end: string;
   usage: AccountUsageTotals;
-  trial_daily_photo_upload_balance: AccountQuotaBalance;
   trial_monthly_photo_upload_balance: AccountQuotaBalance;
-  formal_monthly_photo_upload_balance: AccountQuotaBalance;
+  basic_formal_monthly_photo_upload_balance: AccountQuotaBalance;
+  professional_formal_monthly_photo_upload_balance: AccountQuotaBalance;
+  professional_trial_monthly_photo_upload_balance: AccountQuotaBalance;
 }
