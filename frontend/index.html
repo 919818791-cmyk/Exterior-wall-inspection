@@ -3,13 +3,40 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>外墙巡检智能平台</title>
+    <meta name="format-detection" content="telephone=no" />
+    <title>外墙智能巡检平台</title>
+    <style>
+      html, body { min-height: 100%; margin: 0; }
+      #app-boot-loader {
+        position: fixed;
+        inset: 0;
+        z-index: 10000;
+        display: grid;
+        place-items: center;
+        background: #f4f7fb;
+      }
+      .app-boot-spinner {
+        width: 44px;
+        height: 44px;
+        border: 4px solid rgba(36, 92, 255, 0.16);
+        border-top-color: #245cff;
+        border-radius: 50%;
+        animation: app-boot-spin 720ms linear infinite;
+      }
+      @keyframes app-boot-spin { to { transform: rotate(360deg); } }
+    </style>
   </head>
   <body>
-    <div id="root"><main class="app-boot-fallback"><section><h1>外墙巡检智能平台</h1><p>页面正在加载。如果长时间没有显示内容，请刷新页面或检查浏览器是否阻止了脚本。</p></section></main></div>
+    <div id="root"></div>
+    <main id="app-boot-loader" aria-label="正在启动应用" role="status"><span class="app-boot-spinner" aria-hidden="true"></span></main>
     <script>
       (function () {
+        function removeBootLoader() {
+          var loader = document.getElementById("app-boot-loader");
+          if (loader) loader.remove();
+        }
         function showStartupError(message) {
+          removeBootLoader();
           var root = document.getElementById("root");
           if (!root) return;
           root.innerHTML = '<main class="app-startup-error" role="alert"><section><h1>页面加载失败</h1><p>前端脚本启动失败，请刷新页面；如果仍然失败，请把下面的错误信息发给维护人员。</p><pre></pre></section></main>';
@@ -23,6 +50,10 @@
           var reason = event.reason;
           showStartupError(reason && reason.message ? reason.message : String(reason || ""));
         });
+        // Module scripts finish evaluating before DOMContentLoaded. Releasing
+        // the boot screen here lets React render the shell without waiting for
+        // images, fonts, or other non-critical media.
+        window.addEventListener("DOMContentLoaded", removeBootLoader, { once: true });
       })();
     </script>
     <script type="module" src="/src/main.tsx"></script>

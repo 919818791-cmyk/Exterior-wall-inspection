@@ -12,22 +12,25 @@ from minio.error import S3Error
 from app.core.config import get_settings
 
 
-def _client() -> Minio:
+def _client(*, public: bool = False) -> Minio:
     settings = get_settings()
-    endpoint_value = settings.minio_endpoint
+    endpoint_value = (
+        settings.minio_public_url if public else settings.minio_endpoint
+    ).strip()
     parsed = urlparse(endpoint_value)
     if "://" in endpoint_value and parsed.scheme and parsed.netloc:
         endpoint = parsed.netloc
         secure = parsed.scheme == "https"
     else:
         endpoint = endpoint_value
-        secure = settings.minio_public_url.startswith("https://")
+        secure = False
 
     return Minio(
         endpoint,
         access_key=settings.minio_access_key,
         secret_key=settings.minio_secret_key,
         secure=secure,
+        region="us-east-1",
     )
 
 
@@ -78,7 +81,7 @@ def get_object_bytes(bucket: str, object_key: str) -> bytes:
 def presigned_get_url(bucket: str, object_key: str | None, expires_minutes: int = 60) -> str | None:
     if not object_key:
         return None
-    return _client().presigned_get_object(
+    return _client(public=True).presigned_get_object(
         bucket,
         object_key,
         expires=timedelta(minutes=expires_minutes),
@@ -94,7 +97,11 @@ def signed_object_url(
 ) -> str | None:
     if not bucket or not object_key:
         return None
-    expires_at = int(time.time()) + expires_minutes * 60
+    # Quantize expirations so repeated list requests reuse the same signed URL
+    # and the browser can cache the lightweight redirect and thumbnail.
+    ttl_seconds = max(60, expires_minutes * 60)
+    now = int(time.time())
+    expires_at = ((now + ttl_seconds + ttl_seconds - 1) // ttl_seconds) * ttl_seconds
     signature = sign_object_access(bucket, object_key, expires_at)
     encoded_bucket = quote(bucket, safe="")
     encoded_key = quote(object_key, safe="/")

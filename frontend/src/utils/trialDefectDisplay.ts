@@ -11,19 +11,39 @@ const TRIAL_DEFECT_DISPLAY_BY_TYPE: Record<string, TrialDefectDisplay> = {
     boxClassName: "trial-defect-box-crack"
   },
   missing: {
-    label: "面砖剥落",
-    descriptionClassName: "trial-report-description-missing",
-    boxClassName: "trial-defect-box-missing"
-  },
-  spalling: {
-    label: "剥落",
+    label: "脱落",
     descriptionClassName: "trial-report-description-spalling",
     boxClassName: "trial-defect-box-spalling"
+  },
+  spalling: {
+    label: "脱落",
+    descriptionClassName: "trial-report-description-spalling",
+    boxClassName: "trial-defect-box-spalling"
+  },
+  peeling: {
+    label: "起皮",
+    descriptionClassName: "trial-report-description-default",
+    boxClassName: "trial-defect-box-default"
+  },
+  damage: {
+    label: "面板破损",
+    descriptionClassName: "trial-report-description-default",
+    boxClassName: "trial-defect-box-default"
   },
   moisture: {
     label: "潮湿",
     descriptionClassName: "trial-report-description-moisture",
     boxClassName: "trial-defect-box-moisture"
+  },
+  corrosion: {
+    label: "锈蚀",
+    descriptionClassName: "trial-report-description-corrosion",
+    boxClassName: "trial-defect-box-corrosion"
+  },
+  hollow: {
+    label: "空鼓",
+    descriptionClassName: "trial-report-description-hollow",
+    boxClassName: "trial-defect-box-hollow"
   }
 };
 
@@ -31,13 +51,26 @@ const TRIAL_MODEL_TO_DEFECT_TYPE: Record<string, string> = {
   crack: "crack",
   "裂缝": "crack",
   "开裂": "crack",
-  missing: "missing",
-  "面砖剥落": "missing",
-  "面砖缺失": "missing",
+  missing: "spalling",
+  "面砖剥落": "spalling",
+  "瓷砖剥落": "spalling",
   spalling: "spalling",
   "剥落": "spalling",
+  "面砖缺失": "spalling",
+  "面砖脱落": "spalling",
+  "瓷砖脱落": "spalling",
+  "脱落": "spalling",
+  peeling: "peeling",
+  "起皮": "peeling",
+  damage: "damage",
+  "面板破损": "damage",
+  detachment: "spalling",
   moisture: "moisture",
-  "潮湿": "moisture"
+  "潮湿": "moisture",
+  corrosion: "corrosion",
+  "锈蚀": "corrosion",
+  hollow: "hollow",
+  "空鼓": "hollow"
 };
 
 function normalizeTrialDefectKey(value: string | null | undefined) {
@@ -66,13 +99,11 @@ export function trialDefectDescriptionFromType(defectType: string | null | undef
   };
 }
 
-export function trialDefectBoxLabel(display: TrialDefectDisplay, confidence?: number | string | null) {
-  const numericConfidence = Number(confidence);
-  const confidenceText = Number.isFinite(numericConfidence)
-    ? numericConfidence.toFixed(2)
-    : typeof confidence === "string" && confidence.trim()
-      ? confidence.trim()
-      : "";
+export function trialDefectBoxLabel(display: TrialDefectDisplay) {
+  return display.label;
+}
 
-  return confidenceText ? `${display.label} ${confidenceText}` : display.label;
+export function formatDefectNumber(defectType: string | null | undefined, sequence: number) {
+  const display = trialDefectDisplayFromType(defectType);
+  return `${display.label}-${String(Math.max(1, Math.trunc(sequence))).padStart(3, "0")}`;
 }

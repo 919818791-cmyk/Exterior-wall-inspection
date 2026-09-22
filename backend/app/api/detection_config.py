@@ -7,14 +7,18 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.dependencies import AuthenticatedUser, ensure_project_access, get_current_user, require_roles
+from app.api.dependencies import (
+    AuthenticatedUser,
+    ensure_project_access,
+    ensure_project_write_access,
+    get_current_user,
+)
 from app.api.projects import _ensure_project_editable, _get_project_or_404
 from app.db.session import get_db
-from app.enums.status import UserRole
 from app.models.tables import DetectionConfig
 from app.schemas.phase4 import DetectionConfigResponse, DetectionConfigUpdateRequest
 
-router = APIRouter(tags=["detection-config"], dependencies=[Depends(require_roles(UserRole.ADMIN))])
+router = APIRouter(tags=["detection-config"])
 
 
 def _enum_value(value: object) -> str:
@@ -61,7 +65,7 @@ def update_detection_config(
     current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> DetectionConfigResponse:
     project = _get_project_or_404(db, project_id)
-    ensure_project_access(project, current_user)
+    ensure_project_write_access(project, current_user)
     _ensure_project_editable(project)
     config = db.scalar(select(DetectionConfig).where(DetectionConfig.project_id == project_id))
 
@@ -69,14 +73,14 @@ def update_detection_config(
         config = DetectionConfig(
             project_id=project_id,
             model_types=[_enum_value(item) for item in payload.model_types],
-            high_precision=payload.high_precision,
+            high_precision=True,
             config_json=payload.config_json,
             created_by=current_user.id,
         )
         db.add(config)
     else:
         config.model_types = [_enum_value(item) for item in payload.model_types]
-        config.high_precision = payload.high_precision
+        config.high_precision = True
         config.config_json = payload.config_json
 
     project.updated_at = datetime.now(UTC)

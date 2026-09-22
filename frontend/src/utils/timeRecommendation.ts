@@ -17,6 +17,15 @@ const RC = {
   bias: 0.33239489574928477
 };
 
+const RECOMMENDATION_RULES = {
+  preferredThreshold: 1.2,
+  usableThreshold: 0.8,
+  preferredMinimumDuration: 1,
+  usableMinimumDuration: 0.5
+} as const;
+
+export type RecommendationLevel = "优选时段" | "可用时段" | "不推荐";
+
 export interface RecommendationWindow {
   start: number;
   end: number;
@@ -24,14 +33,19 @@ export interface RecommendationWindow {
   extremumTime: number;
   extremum: number;
   qualifies: boolean;
+  quality: Exclude<RecommendationLevel, "不推荐">;
+  threshold: number;
+  minimumDuration: number;
   label: string;
 }
 
 export interface TimeRecommendationResult {
-  status: "高置信度双窗口" | "单窗口可检测" | "短窗口，建议复测" | "当前条件不推荐检测";
+  recommendationLevel: RecommendationLevel;
+  status: "高置信度双窗口" | "单窗口可检测" | "可用时段，建议复测" | "当前条件不推荐检测";
   headline: string;
   reason: string;
   primaryWindow: RecommendationWindow | null;
+  usableWindow: RecommendationWindow | null;
   positiveWindow: RecommendationWindow | null;
   negativeWindow: RecommendationWindow | null;
   peakRadiationWm2: number;
@@ -41,6 +55,16 @@ export interface TimeRecommendationResult {
   weatherSummary: string;
   weatherSource: string;
   modelWarnings: string[];
+  calculation: {
+    evaluationRange: string;
+    temperatureModel: string;
+    radiationModel: string;
+    convectionModel: string;
+    positiveJudgement: string;
+    negativeJudgement: string;
+    finalJudgement: string;
+    criteria: string;
+  };
 }
 
 export interface CalculateRecommendationOptions {
@@ -120,8 +144,8 @@ export function calculateTimeRecommendation(options: CalculateRecommendationOpti
     defectSize: 7.5,
     dk: 6,
     h: weather.convection,
-    threshold: 1.2,
-    minimumDuration: 1,
+    threshold: RECOMMENDATION_RULES.preferredThreshold,
+    minimumDuration: RECOMMENDATION_RULES.preferredMinimumDuration,
     rh: weather.humidity,
     turbidity: 1,
     albedo: 0.2,
@@ -141,16 +165,38 @@ export function calculateTimeRecommendation(options: CalculateRecommendationOpti
   );
   const deltaT = calculateDeltaT(inputs, times, solar, air);
   const minimumStartHour = minimumRecommendationHour(options.date, options.now ?? new Date());
-  const positiveWindows = findWindows(times, deltaT, inputs.threshold, inputs.minimumDuration, true, minimumStartHour);
-  const negativeWindows = findWindows(times, deltaT, inputs.threshold, inputs.minimumDuration, false, minimumStartHour);
-  const positive = bestWindow(positiveWindows);
-  const negative = bestWindow(negativeWindows);
-  const status = classification(positive, negative, positiveWindows.length > 0 || negativeWindows.length > 0);
+  const preferredPositive = bestQualifiedWindow(findWindows(
+    times,
+    deltaT,
+    inputs.threshold,
+    inputs.minimumDuration,
+    true,
+    minimumStartHour,
+    "优选时段"
+  ));
+  const preferredNegative = bestQualifiedWindow(findWindows(
+    times,
+    deltaT,
+    inputs.threshold,
+    inputs.minimumDuration,
+    false,
+    minimumStartHour,
+    "优选时段"
+  ));
+  const usablePositive = bestUsableWindow(times, deltaT, true, minimumStartHour);
+  const usableNegative = bestUsableWindow(times, deltaT, false, minimumStartHour);
+  const positive = preferredPositive ?? usablePositive;
+  const negative = preferredNegative ?? usableNegative;
+  const status = classification(preferredPositive, preferredNegative, usablePositive, usableNegative);
+  const recommendationLevel = levelFor(status);
   const active = times.map((time, index) => ({ time, value: deltaT[index] })).filter(point => point.time >= minimumStartHour);
   const peakRadiation = solar.reduce((best, item) => (item.gwall > best.gwall ? item : best));
   const positivePeak = active.reduce((best, item) => (item.value > best.value ? item : best));
   const negativeValley = active.reduce((best, item) => (item.value < best.value ? item : best));
   const primaryWindow = pickPrimaryWindow(positive, negative);
+  const usableWindow = pickPrimaryWindow(usablePositive, usableNegative);
+  const peakHasPassed = options.date === formatDateOnly(options.now ?? new Date())
+    && peakRadiation.time < minimumStartHour;
   const weatherSummary = [
     `${weather.tmean.toFixed(1)} ℃`,
     `湿度 ${weather.humidity.toFixed(0)}%`,
@@ -159,10 +205,12 @@ export function calculateTimeRecommendation(options: CalculateRecommendationOpti
   ].join(" · ");
 
   return {
+    recommendationLevel,
     status,
     headline: headlineFor(status, options.orientationName),
-    reason: reasonFor(status, positive, negative, weather.source),
+    reason: reasonFor(status, positive, negative, weather.source, peakHasPassed),
     primaryWindow,
+    usableWindow,
     positiveWindow: positive ? withLabel(positive) : null,
     negativeWindow: negative ? withLabel(negative) : null,
     peakRadiationWm2: peakRadiation.gwall,
@@ -171,7 +219,22 @@ export function calculateTimeRecommendation(options: CalculateRecommendationOpti
     minNegativeDeltaC: negativeValley.value,
     weatherSummary,
     weatherSource: weather.source,
-    modelWarnings: modelWarnings(inputs, weather)
+    modelWarnings: [
+      ...(recommendationLevel === "可用时段"
+        ? ["可用时段未达到优选标准，建议缩短单次航线，并安排现场复核或补采。"]
+        : []),
+      ...modelWarnings(inputs, weather)
+    ],
+    calculation: {
+      evaluationRange: `${hourText(minimumStartHour)}-24:00，每 10 分钟计算 1 次${minimumStartHour > 6 ? "；当天已过时段不参与推荐" : ""}`,
+      temperatureModel: `最高 ${weather.tempMax.toFixed(1)} ℃，最低 ${weather.tempMin.toFixed(1)} ℃ → 均温 ${weather.tmean.toFixed(1)} ℃，日振幅 ${weather.tempAmplitude.toFixed(1)} ℃`,
+      radiationModel: `云量 ${weather.cloud.toFixed(0)}% + 降水 ${weather.precip.toFixed(1)} mm → 辐照保留 ${(weather.radiationScale * 100).toFixed(0)}%，墙面峰值 ${peakRadiation.gwall.toFixed(0)} W/m²（${hourText(peakRadiation.time)}）${peakHasPassed ? "，峰值已早于可推荐时段" : ""}`,
+      convectionModel: `风速 ${weather.windSpeedKmh.toFixed(1)} km/h → 对流换热系数 ${weather.convection.toFixed(1)} W/(m²·K)`,
+      positiveJudgement: judgementText("正温差", positivePeak.value, positive, true),
+      negativeJudgement: judgementText("负温差", negativeValley.value, negative, false),
+      finalJudgement: finalJudgementText(status, positive, negative),
+      criteria: "优选：|ΔT| ≥ 1.2 ℃且连续 ≥ 1 小时；可用：|ΔT| ≥ 0.8 ℃且连续 ≥ 30 分钟"
+    }
   };
 }
 
@@ -204,6 +267,8 @@ function deriveWeatherModel(
   const convection = clamp(5 + windSpeedMps * 2.2, 1, 17);
 
   return {
+    tempMax,
+    tempMin,
     tmean: (tempMax + tempMin) / 2,
     tempAmplitude: Math.max(0, (tempMax - tempMin) / 2),
     tempPeakHour: peakHour,
@@ -330,7 +395,8 @@ function findWindows(
   threshold: number,
   minimumDuration: number,
   positive: boolean,
-  minimumStartHour: number
+  minimumStartHour: number,
+  quality: RecommendationWindow["quality"]
 ) {
   const selected: number[] = [];
   for (let index = 0; index < times.length; index += 1) {
@@ -367,33 +433,60 @@ function findWindows(
       extremumTime: times[extremeIndex],
       extremum: valuesList[extremeIndex],
       qualifies: duration + 1e-9 >= minimumDuration,
+      quality,
+      threshold,
+      minimumDuration,
       label: ""
     });
   });
 }
 
-function bestWindow(windows: RecommendationWindow[]) {
-  if (!windows.length) return null;
+function bestQualifiedWindow(windows: RecommendationWindow[]) {
   const qualified = windows.filter(window => window.qualifies);
-  const pool = qualified.length ? qualified : windows;
-  return pool.reduce((best, item) => (Math.abs(item.extremum) > Math.abs(best.extremum) ? item : best));
+  if (!qualified.length) return null;
+  return qualified.reduce((best, item) => (Math.abs(item.extremum) > Math.abs(best.extremum) ? item : best));
+}
+
+function bestUsableWindow(
+  times: number[],
+  valuesList: number[],
+  positive: boolean,
+  minimumStartHour: number
+) {
+  const usableWindows = findWindows(
+    times,
+    valuesList,
+    RECOMMENDATION_RULES.usableThreshold,
+    RECOMMENDATION_RULES.usableMinimumDuration,
+    positive,
+    minimumStartHour,
+    "可用时段"
+  );
+  return bestQualifiedWindow(usableWindows);
 }
 
 function classification(
-  positive: RecommendationWindow | null,
-  negative: RecommendationWindow | null,
-  hasAny: boolean
+  preferredPositive: RecommendationWindow | null,
+  preferredNegative: RecommendationWindow | null,
+  usablePositive: RecommendationWindow | null,
+  usableNegative: RecommendationWindow | null
 ): TimeRecommendationResult["status"] {
-  if (positive?.qualifies && negative?.qualifies) return "高置信度双窗口";
-  if (positive?.qualifies || negative?.qualifies) return "单窗口可检测";
-  if (hasAny) return "短窗口，建议复测";
+  if (preferredPositive && preferredNegative) return "高置信度双窗口";
+  if (preferredPositive || preferredNegative) return "单窗口可检测";
+  if (usablePositive || usableNegative) return "可用时段，建议复测";
   return "当前条件不推荐检测";
+}
+
+function levelFor(status: TimeRecommendationResult["status"]): RecommendationLevel {
+  if (status === "高置信度双窗口" || status === "单窗口可检测") return "优选时段";
+  if (status === "可用时段，建议复测") return "可用时段";
+  return "不推荐";
 }
 
 function pickPrimaryWindow(positive: RecommendationWindow | null, negative: RecommendationWindow | null) {
   const candidates = [positive, negative].filter((item): item is RecommendationWindow => Boolean(item));
-  const qualified = candidates.filter(item => item.qualifies);
-  const pool = qualified.length ? qualified : candidates;
+  const preferred = candidates.filter(item => item.quality === "优选时段");
+  const pool = preferred.length ? preferred : candidates;
   if (!pool.length) return null;
   return pool.reduce((best, item) => (Math.abs(item.extremum) > Math.abs(best.extremum) ? item : best));
 }
@@ -401,26 +494,58 @@ function pickPrimaryWindow(positive: RecommendationWindow | null, negative: Reco
 function headlineFor(status: TimeRecommendationResult["status"], orientationName: string) {
   if (status === "高置信度双窗口") return `${orientationName}向墙面：正、负温差窗口均可用于采集`;
   if (status === "单窗口可检测") return `${orientationName}向墙面：当前条件下存在稳定检测窗口`;
-  if (status === "短窗口，建议复测") return "热异常达到阈值，但有效持续时间不足";
-  return "当前环境下热异常可能无法稳定超过阈值";
+  if (status === "可用时段，建议复测") return `${orientationName}向墙面：存在条件性可用窗口`;
+  return "当前环境下热异常无法形成可用窗口";
 }
 
 function reasonFor(
   status: TimeRecommendationResult["status"],
   positive: RecommendationWindow | null,
   negative: RecommendationWindow | null,
-  weatherSource: string
+  weatherSource: string,
+  peakHasPassed: boolean
 ) {
   const sourceText = `计算依据：${weatherSource}`;
   if (status === "高置信度双窗口") return `建议受热阶段获取正异常，并在降温阶段利用负异常复核。${sourceText}。`;
   if (status === "单窗口可检测") {
-    return positive?.qualifies
+    const preferred = [positive, negative].find(window => window?.quality === "优选时段");
+    return preferred === positive
       ? `正温差窗口达到阈值，适合获取空鼓区相对高温异常。${sourceText}。`
       : `负温差窗口达到阈值，适合在降温阶段获取空鼓区相对低温异常。${sourceText}。`;
   }
-  if (negative?.qualifies || positive?.qualifies) return `存在可用窗口，但需要结合现场任务时长复核。${sourceText}。`;
-  if (status === "短窗口，建议复测") return `窗口持续时间不足 1 小时，建议选择辐照更稳定或风速更低的日期。${sourceText}。`;
-  return `可尝试改选日期、朝向或降低最小目标尺寸要求。${sourceText}。`;
+  if (status === "可用时段，建议复测") {
+    return `温差和持续时间达到可用标准，但未同时满足优选温差与持续时间；建议缩短航线并现场复核。${sourceText}。`;
+  }
+  if (peakHasPassed) return `当天墙面辐照峰值已经过去，系统只判断当前时刻之后的时段；可改选未来日期重新计算。${sourceText}。`;
+  return `正、负温差均未形成可用窗口，可改选云量更低、风速更小的日期或调整立面朝向。${sourceText}。`;
+}
+
+function judgementText(
+  name: string,
+  extremum: number,
+  window: RecommendationWindow | null,
+  positive: boolean
+) {
+  const measured = `${extremum >= 0 ? "+" : ""}${extremum.toFixed(2)} ℃`;
+  if (!window) return `${name}极值 ${measured}，未形成满足优选或可用标准的连续窗口 → 不通过`;
+  const target = positive
+    ? `≥ +${window.threshold.toFixed(1)} ℃`
+    : `≤ -${window.threshold.toFixed(1)} ℃`;
+  const duration = `${window.duration.toFixed(1)} 小时`;
+  const minimumDuration = window.minimumDuration === 1 ? "1.0 小时" : "0.5 小时";
+  return `${name}极值 ${measured}，达到 ${target}；连续 ${duration}，达到 ≥ ${minimumDuration} → ${window.quality}`;
+}
+
+function finalJudgementText(
+  status: TimeRecommendationResult["status"],
+  positive: RecommendationWindow | null,
+  negative: RecommendationWindow | null
+) {
+  const preferredCount = [positive, negative].filter(window => window?.quality === "优选时段").length;
+  if (status === "可用时段，建议复测") return "没有优选窗口，但至少 1 个方向达到可用标准 → 可用时段，建议现场复核";
+  if (preferredCount === 2) return "正、负温差窗口均达到优选标准 → 高置信度双窗口";
+  if (preferredCount === 1) return "正、负温差窗口中有 1 个达到优选标准 → 单窗口可检测";
+  return "优选与可用标准均未通过 → 当前条件不推荐检测";
 }
 
 function modelWarnings(inputs: ModelInputs, weather: ReturnType<typeof deriveWeatherModel>) {
@@ -428,7 +553,6 @@ function modelWarnings(inputs: ModelInputs, weather: ReturnType<typeof deriveWea
   if (inputs.h < 1 || inputs.h > 17) warnings.push("对流换热系数超出当前标定范围。");
   if (weather.source !== "逐小时预报") warnings.push("目标日缺少完整逐小时温度，已使用逐日最高/最低温估算。");
   if (inputs.radiationScale < 0.75) warnings.push("云量或降水使辐照折减较明显，结果偏保守。");
-  warnings.push("墙体构造参数采用瓷砖饰面外墙 COMSOL 标定默认值。");
   return warnings;
 }
 

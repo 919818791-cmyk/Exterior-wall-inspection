@@ -7,6 +7,17 @@ class UserRole(StrEnum):
     ADMIN = "admin"
 
 
+class AccountPlan(StrEnum):
+    BASIC = "basic"
+    PROFESSIONAL = "professional"
+
+
+class ProfessionalApplicationStatus(StrEnum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
 class UserStatus(StrEnum):
     ACTIVE = "active"
     DISABLED = "disabled"
@@ -14,10 +25,35 @@ class UserStatus(StrEnum):
 
 class ProjectStatus(StrEnum):
     DRAFT = "draft"
+    QUEUED = "queued"
     DETECTING = "detecting"
     PENDING_REVIEW = "pending_review"
     REVIEWED = "reviewed"
     COMPLETED = "completed"
+
+
+class DroneType(StrEnum):
+    DJI_MAVIC_3_ENTERPRISE = "dji_mavic_3_enterprise"
+    DJI_MAVIC_3_THERMAL = "dji_mavic_3_thermal"
+    DJI_MATRICE_4E = "dji_matrice_4e"
+    DJI_MATRICE_4T = "dji_matrice_4t"
+    DJI_MATRICE_30 = "dji_matrice_30"
+    DJI_MATRICE_30T = "dji_matrice_30t"
+    DJI_MATRICE_300_RTK = "dji_matrice_300_rtk"
+    DJI_MATRICE_350_RTK = "dji_matrice_350_rtk"
+    DJI_MATRICE_400 = "dji_matrice_400"
+    DJI_PHANTOM_4_RTK = "dji_phantom_4_rtk"
+    AUTEL_EVO_MAX_4T = "autel_evo_max_4t"
+    OTHER_PROFESSIONAL = "other_professional"
+
+
+class FacadeType(StrEnum):
+    TILE = "tile"
+    COATING = "coating"
+    PLASTER = "plaster"
+    PANEL = "panel"
+    CURTAIN_WALL = "curtain_wall"
+    STONE = "stone"
 
 
 class DetectionTaskStatus(StrEnum):
@@ -49,9 +85,17 @@ class AiResultStatus(StrEnum):
 
 class DefectType(StrEnum):
     CRACK = "crack"
-    MISSING = "missing"
     SPALLING = "spalling"
+    PEELING = "peeling"
+    DAMAGE = "damage"
     MOISTURE = "moisture"
+    HOLLOW = "hollow"
+
+    @classmethod
+    def _missing_(cls, value: object) -> "DefectType | None":
+        if isinstance(value, str) and value.strip().lower() == "missing":
+            return cls.SPALLING
+        return None
 
 
 class PhotoType(StrEnum):
@@ -66,6 +110,14 @@ class PhotoStatus(StrEnum):
     DETECTING = "detecting"
     DETECTED = "detected"
     FAILED = "failed"
+
+
+class PhotoPrecheckStatus(StrEnum):
+    PENDING = "pending"
+    RUNNING = "running"
+    PASSED = "passed"
+    REJECTED = "rejected"
+    ERROR = "error"
 
 
 class UploadMode(StrEnum):

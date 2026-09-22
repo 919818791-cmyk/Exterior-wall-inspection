@@ -1,10 +1,12 @@
 .env
 .env.*
 !.env.example
+/AccessKey.csv
 
 # Local planning, prototype, and design-review artifacts
 /.agents/
 /.codex/
+/tmp/
 /原型/
 /assets/
 /design-qa.md
@@ -33,11 +35,12 @@ __pycache__/
 *.tmp
 *.tsbuildinfo
 *.pem
+.admin-bootstrap-password
+/.runtime/
 
 postgres_data/
 minio_data/
 redis_data/
 
-# Local or production model weights
-/models/*
-!/models/README.md
+# Local or production PyTorch model weights
+/models/**/*.pt

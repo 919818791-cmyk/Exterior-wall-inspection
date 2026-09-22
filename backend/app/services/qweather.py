@@ -238,12 +238,6 @@ class QWeatherClient:
         self._validate_config()
         location_value = location or self.settings.qweather_test_location
         lang_value = lang or self.settings.qweather_language
-        token = generate_qweather_jwt(
-            credential_id=self.settings.qweather_credential_id,
-            project_id=self.settings.qweather_project_id,
-            private_key_path=self.settings.qweather_private_key_path,
-            ttl_seconds=self.settings.qweather_jwt_ttl_seconds,
-        )
 
         client = self._http_client or httpx.Client(
             timeout=self.settings.qweather_request_timeout_seconds,
@@ -252,10 +246,7 @@ class QWeatherClient:
         try:
             response = client.get(
                 f"{self._api_base_url()}{path}",
-                headers={
-                    "Authorization": f"Bearer {token}",
-                    "Accept-Encoding": "gzip",
-                },
+                headers=self._auth_headers(),
                 params={
                     "location": location_value,
                     "lang": lang_value,
@@ -277,15 +268,23 @@ class QWeatherClient:
         return data
 
     def _validate_config(self) -> None:
-        required = {
-            "QWEATHER_API_HOST": self.settings.qweather_api_host,
+        if not self.settings.qweather_api_host.strip():
+            raise QWeatherConfigError("Missing QWeather config: QWEATHER_API_HOST")
+
+        if self.settings.qweather_api_key.strip():
+            return
+
+        jwt_required = {
             "QWEATHER_PROJECT_ID": self.settings.qweather_project_id,
             "QWEATHER_CREDENTIAL_ID": self.settings.qweather_credential_id,
             "QWEATHER_PRIVATE_KEY_PATH": self.settings.qweather_private_key_path,
         }
-        missing = [name for name, value in required.items() if not str(value).strip()]
+        missing = [name for name, value in jwt_required.items() if not str(value).strip()]
         if missing:
-            raise QWeatherConfigError(f"Missing QWeather config: {', '.join(missing)}")
+            raise QWeatherConfigError(
+                "Missing QWeather auth config: set QWEATHER_API_KEY, or configure "
+                + ", ".join(missing)
+            )
 
         private_key_path = Path(self.settings.qweather_private_key_path)
         if not private_key_path.is_file():
@@ -299,6 +298,25 @@ class QWeatherClient:
                     "QWEATHER_PUBLIC_KEY_SHA256 does not match QWEATHER_PUBLIC_KEY_PATH: "
                     f"expected {expected_sha256}, got {actual_sha256}"
                 )
+
+    def _auth_headers(self) -> dict[str, str]:
+        api_key = self.settings.qweather_api_key.strip()
+        if api_key:
+            return {
+                "X-QW-Api-Key": api_key,
+                "Accept-Encoding": "gzip",
+            }
+
+        token = generate_qweather_jwt(
+            credential_id=self.settings.qweather_credential_id,
+            project_id=self.settings.qweather_project_id,
+            private_key_path=self.settings.qweather_private_key_path,
+            ttl_seconds=self.settings.qweather_jwt_ttl_seconds,
+        )
+        return {
+            "Authorization": f"Bearer {token}",
+            "Accept-Encoding": "gzip",
+        }
 
     def _api_base_url(self) -> str:
         host = self.settings.qweather_api_host.strip().rstrip("/")

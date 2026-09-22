@@ -4,9 +4,9 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.enums.status import DefectType, DetectionTaskStatus
+from app.enums.status import DefectType, DetectionTaskStatus, PhotoType
 
 
 class ApiSchema(BaseModel):
@@ -34,14 +34,23 @@ class DetectionTaskRead(ApiSchema):
     updated_at: datetime
 
 
+class DetectionStartRequest(ApiSchema):
+    generate_building_model: bool = False
+    model_types: list[DefectType] | None = Field(default=None, min_length=1)
+
+    @field_validator("model_types")
+    @classmethod
+    def deduplicate_values(cls, values: list | None) -> list | None:
+        return list(dict.fromkeys(values)) if values is not None else None
+
+
 class AlgorithmTaskPhoto(ApiSchema):
     photo_id: UUID
     original_filename: str
     download_url: str
     storage_bucket: str
     storage_object_key: str
-    building_id: UUID | None
-    facade_id: UUID | None
+    photo_type: PhotoType
 
 
 class AlgorithmTaskLease(ApiSchema):

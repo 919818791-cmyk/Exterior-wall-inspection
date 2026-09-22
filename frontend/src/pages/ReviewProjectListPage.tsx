@@ -1,32 +1,130 @@
 import { useQuery } from "@tanstack/react-query";
-import { ClipboardCheck, Eye, FileText, Search, Timer } from "lucide-react";
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 
-import { reviewProjectsQueryOptions } from "@/api/review";
-import type { ProjectStatus } from "@/types/projects";
-import type { ReviewProjectListItem } from "@/types/review";
+import { reviewDetectionsQueryOptions } from "@/api/review";
+import { ListPagination } from "@/components/ListPagination";
+import { WorkbenchNameSearch } from "@/components/WorkbenchNameSearch";
+import { WorkbenchResultTable } from "@/components/WorkbenchResultTable";
+import type {
+  ReviewDetectionListItem,
+  ReviewDetectionStatus
+} from "@/types/review";
 import { formatDateTime } from "@/utils/projectDisplay";
 
-const statusLabels: Record<ProjectStatus, string> = { draft: "待检测", detecting: "AI检测中", pending_review: "待审核", reviewed: "已审核", completed: "已完成" };
-const statusClass: Record<ProjectStatus, string> = { draft: "neutral", detecting: "detecting", pending_review: "reviewed", reviewed: "ready", completed: "ready" };
+const statusMeta: Record<ReviewDetectionStatus, { className: string; label: string }> = {
+  detecting: { className: "status-tag detecting", label: "AI 检测中" },
+  pending_review: { className: "primary-action-button", label: "待推送" },
+  reviewed: { className: "back-cancel-button", label: "已推送" },
+  completed: { className: "back-cancel-button", label: "已推送" },
+  failed: { className: "status-tag danger", label: "检测失败" }
+};
 
-function actionFor(project: ReviewProjectListItem) {
-  if (project.status === "pending_review") return { label: "开始审核", to: `/review/projects/${project.id}`, Icon: ClipboardCheck, disabled: false };
-  if (project.status === "reviewed") return { label: "预览报告并推送", to: project.current_report_id ? `/reports/${project.current_report_id}?mode=review` : "/reports", Icon: FileText, disabled: false };
-  if (project.status === "completed") return { label: "查看结果", to: project.current_report_id ? `/reports/${project.current_report_id}` : "/reports", Icon: Eye, disabled: false };
-  return { label: project.status === "detecting" ? "等待 AI 结果" : "不可审核", to: `/review/projects/${project.id}`, Icon: Timer, disabled: true };
-}
+const PAGE_SIZE = 10;
 
 export function ReviewProjectListPage() {
-  const projectsQuery = useQuery(reviewProjectsQueryOptions);
-  const [keyword, setKeyword] = useState("");
-  const [status, setStatus] = useState<"all" | ProjectStatus>("all");
-  const projects = useMemo(() => (projectsQuery.data ?? []).filter((project) => (status === "all" || project.status === status) && `${project.name} ${project.project_no} ${project.client_name ?? ""}`.toLowerCase().includes(keyword.trim().toLowerCase())), [keyword, projectsQuery.data, status]);
-  return <div className="review-workbench-page"><div className="project-workspace">
-    <section className="project-hero"><div><h1>审核工作台</h1><p>查看 AI 检测任务状态，进入待审核项目复核缺陷并生成报告记录。</p></div></section>
-    <section className="project-toolbar" aria-label="审核项目筛选"><label className="select-control"><span className="sr-only">按状态筛选</span><select value={status} onChange={(event) => setStatus(event.target.value as "all" | ProjectStatus)}><option value="all">全部状态</option><option value="detecting">AI检测中</option><option value="pending_review">待审核</option><option value="reviewed">已审核</option><option value="completed">已完成</option></select></label><label className="search-control"><span className="sr-only">搜索项目名称或建筑地址</span><Search aria-hidden="true" /><input placeholder="搜索项目名称、编号或委托单位" value={keyword} onChange={(event) => setKeyword(event.target.value)} /></label></section>
-    {projectsQuery.isError ? <p className="project-list-error">审核项目加载失败，请稍后重试。</p> : null}
-    <section className="project-list-panel" aria-label="审核项目列表"><div className="project-table-wrap">{projectsQuery.isLoading ? <div className="project-empty"><strong>正在加载审核项目…</strong></div> : projects.length ? <table className="project-table"><thead><tr><th>项目名称</th><th>委托单位</th><th>AI识别</th><th>审核结果</th><th>当前状态</th><th>更新时间</th><th>操作</th></tr></thead><tbody>{projects.map((project) => { const action = actionFor(project); const Icon = action.Icon; return <tr key={project.id}><td data-label="项目名称"><strong>{project.name}</strong><small>{project.project_no}</small></td><td data-label="委托单位">{project.client_name || "-"}</td><td data-label="AI识别">{project.ai_result_count} 项</td><td data-label="审核结果">{project.review_result_count} 项</td><td data-label="当前状态"><span className={`status-tag ${statusClass[project.status]}`}>{statusLabels[project.status]}</span></td><td data-label="更新时间">{formatDateTime(project.updated_at)}</td><td data-label="操作">{action.disabled ? <span className="table-action is-disabled"><Icon aria-hidden="true" />{action.label}</span> : <Link className={`table-action ${project.status === "pending_review" ? "table-action-review" : ""}`} to={action.to}><Icon aria-hidden="true" />{action.label}</Link>}</td></tr>; })}</tbody></table> : <div className="project-empty"><strong>暂无审核项目</strong><span>项目启动 AI 检测后会进入这里。</span></div>}</div><div className="project-pagination"><span>共 <strong>{projects.length}</strong> 项</span><div><button aria-label="上一页" disabled type="button">‹</button><button aria-current="page" className="current-page" type="button">1</button><button aria-label="下一页" disabled type="button">›</button><span className="page-size">10 条/页</span></div></div></section>
-  </div></div>;
+  const navigate = useNavigate();
+  const [currentPage, setCurrentPage] = useState(1);
+  const [projectNameSearch, setProjectNameSearch] = useState("");
+  const resultsQuery = useQuery({
+    ...reviewDetectionsQueryOptions,
+    // Keep polling only while a task is still producing its AI result. The next
+    // response replaces this disabled placeholder with the reviewable result.
+    refetchInterval: (query) => (
+      query.state.data?.some((result) => result.review_status === "detecting")
+        ? 5_000
+        : false
+    )
+  });
+  const results = (resultsQuery.data ?? []).filter((result) => (
+    result.review_status === "detecting"
+    || result.review_status === "pending_review"
+    || result.review_status === "reviewed"
+    || result.review_status === "completed"
+  ));
+  const matchingResults = useMemo(() => {
+    const search = projectNameSearch.trim().toLocaleLowerCase();
+    if (!search) return results;
+    return results.filter((result) => result.project_name.toLocaleLowerCase().includes(search));
+  }, [projectNameSearch, results]);
+  const workbenchResults = useMemo(() => matchingResults.map((result) => ({
+    ...result,
+    first_photo_url: null,
+    generated_at: result.created_at,
+    title: result.project_name
+  })), [matchingResults]);
+  const totalPages = Math.max(1, Math.ceil(workbenchResults.length / PAGE_SIZE));
+  const visiblePage = Math.min(currentPage, totalPages);
+  const paginatedResults = useMemo(() => {
+    const startIndex = (visiblePage - 1) * PAGE_SIZE;
+    return workbenchResults.slice(startIndex, startIndex + PAGE_SIZE);
+  }, [visiblePage, workbenchResults]);
+
+  return (
+    <div className="review-workbench-page management-list-page">
+      <div className="project-workspace">
+        {resultsQuery.isError ? (
+          <p className="project-list-error">检测结果加载失败，请稍后重试。</p>
+        ) : null}
+
+        <section className="project-list-panel workbench-result-list-panel" aria-label="检测结果列表">
+          {results.length ? <WorkbenchNameSearch
+            label="搜索检测名称"
+            value={projectNameSearch}
+            onChange={(value) => {
+              setProjectNameSearch(value);
+              setCurrentPage(1);
+            }}
+          /> : null}
+          <div className="project-table-wrap project-workbench-table-wrap">
+            {resultsQuery.isLoading ? (
+              <div className="project-empty"><strong>正在加载检测结果…</strong></div>
+            ) : results.length && workbenchResults.length ? (
+              <WorkbenchResultTable
+                columnLabel="检测名称"
+                completionTimeLabel="更新时间"
+                detectionTypeLabel="当前状态"
+                getKey={(result) => result.id}
+                items={paginatedResults}
+                onOpen={(result) => navigate(`/review/detections/${result.id}`)}
+                openOnRowClick
+                renderCompletionTime={(result) => (
+                  <time dateTime={result.updated_at}>{formatDateTime(result.updated_at)}</time>
+                )}
+                renderDetectionType={(result) => (
+                  <span className={statusMeta[result.review_status].className}>
+                    {statusMeta[result.review_status].label}
+                  </span>
+                )}
+                renderLeadingIndicator={(result) => result.generate_building_model ? (
+                  <img alt="" aria-hidden="true" src="/icons/action-cube.png" />
+                ) : null}
+                renderTitleAccessory={(result) => (
+                  <time dateTime={result.created_at}>{formatDateTime(result.created_at)}</time>
+                )}
+                showThumbnail={false}
+                titleAccessoryLabel="创建时间"
+              />
+            ) : results.length ? (
+              <div className="project-empty project-search-empty-state">
+                <strong>未找到匹配的检测项目</strong>
+                <span>请尝试其他检测名称。</span>
+              </div>
+            ) : (
+              <div className="project-empty">
+                <strong>暂无检测结果</strong>
+                <span>项目完成 AI 检测后会在这里显示一条记录。</span>
+              </div>
+            )}
+          </div>
+          <ListPagination
+            currentPage={visiblePage}
+            onPageChange={setCurrentPage}
+            pageSize={PAGE_SIZE}
+            totalItems={workbenchResults.length}
+          />
+        </section>
+      </div>
+    </div>
+  );
 }
