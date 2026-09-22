@@ -100,7 +100,17 @@ def _quota_limit_and_baseline(
     settings: Settings | None = None,
 ) -> tuple[int, int]:
     scheduling = trial_scheduling_settings(db, settings or get_settings())
-    if account_plan == AccountPlan.PROFESSIONAL.value:
+    account = db.get(UserAccount, actor_id) if db is not None and hasattr(db, "get") else None
+    account_quota = getattr(account, "detection_quota", None)
+    if account_quota is not None:
+        limit = max(1, int(account_quota))
+        baseline = _photo_detection_count(
+            db,
+            actor_id,
+            source,
+            since=_current_month_start_utc() if account_plan == AccountPlan.PROFESSIONAL.value else None,
+        )
+    elif account_plan == AccountPlan.PROFESSIONAL.value:
         limit = (
             scheduling.professional_trial_monthly_photo_upload_limit
             if source == "trial"

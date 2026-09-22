@@ -38,6 +38,7 @@ from app.enums.status import (
     UserRole,
 )
 from app.models.tables import (
+    BuildingModelImage,
     DetectionTask,
     InspectionReport,
     Project,
@@ -117,10 +118,10 @@ TRIAL_MODEL_TO_DEFECT_TYPE = {
     "面砖剥落": "spalling",
     "瓷砖剥落": "spalling",
     "剥落": "spalling",
-    "面砖缺失": "detachment",
-    "面砖脱落": "detachment",
-    "瓷砖脱落": "detachment",
-    "脱落": "detachment",
+    "面砖缺失": "spalling",
+    "面砖脱落": "spalling",
+    "瓷砖脱落": "spalling",
+    "脱落": "spalling",
     "潮湿": "moisture",
     "锈蚀": "corrosion",
     "空鼓": "hollow",
@@ -128,13 +129,12 @@ TRIAL_MODEL_TO_DEFECT_TYPE = {
 }
 TRIAL_DEFECT_TYPE_TO_MODEL = {
     "crack": "裂缝",
-    "spalling": "剥落",
-    "detachment": "脱落",
+    "spalling": "脱落",
     "moisture": "潮湿",
     "corrosion": "锈蚀",
     "hollow": "空鼓",
 }
-TRIAL_DEFAULT_MODELS = ["裂缝", "剥落", "空鼓"]
+TRIAL_DEFAULT_MODELS = ["裂缝", "脱落", "空鼓"]
 TRIAL_RESULT_CONFIDENCE_THRESHOLD = 0.6
 TRIAL_ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/png"}
 TRIAL_REQUEST_CACHE_TTL_SECONDS = 24 * 60 * 60
@@ -408,6 +408,15 @@ def _data_with_photo_urls(data: dict[str, Any], request: Request | None = None) 
     photo_urls: dict[str, dict[str, str | None]] = {}
     photos_by_id: dict[str, dict[str, Any]] = {}
 
+    for image in enriched.get("building_model_images") or []:
+        if not isinstance(image, dict):
+            continue
+        image["url"] = _safe_photo_url(
+            request,
+            image.get("storage_bucket"),
+            image.get("storage_object_key"),
+        )
+
     for photo in enriched.get("photos") or []:
         if not isinstance(photo, dict):
             continue
@@ -557,9 +566,28 @@ def _trial_archive_data(
 
 
 def _report_data(db: Session, report: InspectionReport, project: Project, request: Request | None = None) -> dict[str, Any]:
-    data = report.report_data_json or {}
+    data = deepcopy(report.report_data_json or {})
     if "defects" not in data or "photos" not in data:
         data = build_report_data(db, project, report.detection_task_id)
+    current_model_images = list(
+        db.scalars(
+            select(BuildingModelImage)
+            .where(BuildingModelImage.project_id == project.id)
+            .order_by(BuildingModelImage.orientation, BuildingModelImage.image_kind)
+        )
+    )
+    if current_model_images:
+        data["building_model_images"] = [
+            {
+                "orientation": image.orientation,
+                "image_kind": image.image_kind,
+                "original_filename": image.original_filename,
+                "mime_type": image.mime_type,
+                "storage_bucket": image.storage_bucket,
+                "storage_object_key": image.storage_object_key,
+            }
+            for image in current_model_images
+        ]
     return _data_with_photo_urls(data, request)
 
 
@@ -646,6 +674,7 @@ def _detail_item(db: Session, report: InspectionReport, project: Project, reques
         summary=data.get("summary") or {},
         defects=data.get("defects") or [],
         photos=data.get("photos") or [],
+        building_model_images=data.get("building_model_images") or [],
         raw_model_outputs=data.get("raw_model_outputs") or [],
         docx_bucket=report.docx_bucket,
         docx_object_key=report.docx_object_key,
@@ -675,6 +704,7 @@ def _trial_detail_item(result: TrialDetectionResult, request: Request | None = N
         summary=data.get("summary") or {},
         defects=data.get("defects") or [],
         photos=data.get("photos") or [],
+        building_model_images=[],
         raw_model_outputs=data.get("raw_model_outputs") or [],
         docx_bucket=None,
         docx_object_key=None,
@@ -954,10 +984,10 @@ def _validate_trial_photo_model_compatibility(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="热成像图片只执行空鼓检测，请勾选空鼓或移除热成像图片。",
         )
-    if visible_photo_count and not selected_models.intersection({"裂缝", "剥落"}):
+    if visible_photo_count and not selected_models.intersection({"裂缝", "脱落"}):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="可见光图片只执行裂缝或剥落检测，请至少勾选其中一项或移除可见光图片。",
+            detail="可见光图片只执行裂缝或脱落检测，请至少勾选其中一项或移除可见光图片。",
         )
 
 
@@ -972,7 +1002,7 @@ async def _trial_inference_requests(
     visible_defect_types = [
         TRIAL_MODEL_TO_DEFECT_TYPE[model]
         for model in models
-        if model in {"裂缝", "剥落"}
+        if model in {"裂缝", "脱落"}
     ]
     if runtime.provider == "local_qwen":
         local_status = start_local_qwen(settings)

@@ -11,13 +11,17 @@ from sqlalchemy.orm import Session
 from app.enums.status import ReviewResultStatus
 from app.models.tables import (
     AiDetectionResult,
+    BuildingModelImage,
     DetectionConfig,
     DetectionTask,
     Photo,
     Project,
     ReviewResult,
 )
-from app.services.defect_area import approximate_bbox_area_m2, approximate_bbox_length_m
+from app.services.defect_area import (
+    approximate_bbox_area_m2,
+    approximate_bbox_length_m,
+)
 from app.services.defect_numbering import number_defects
 from app.services.photo_metadata import facade_orientation_from_yaw
 
@@ -59,6 +63,13 @@ def build_report_data(
         )
     )
     detection_config = db.scalar(select(DetectionConfig).where(DetectionConfig.project_id == project.id))
+    building_model_images = list(
+        db.scalars(
+            select(BuildingModelImage)
+            .where(BuildingModelImage.project_id == project.id)
+            .order_by(BuildingModelImage.orientation, BuildingModelImage.image_kind)
+        )
+    )
     detection_task_summary = (
         detection_task.result_summary
         if detection_task is not None and isinstance(detection_task.result_summary, dict)
@@ -182,6 +193,17 @@ def build_report_data(
             "completed_at": project.completed_at,
         },
         "photos": photo_items,
+        "building_model_images": [
+            {
+                "orientation": image.orientation,
+                "image_kind": image.image_kind,
+                "original_filename": image.original_filename,
+                "mime_type": image.mime_type,
+                "storage_bucket": image.storage_bucket,
+                "storage_object_key": image.storage_object_key,
+            }
+            for image in building_model_images
+        ],
         "detection_config": {
             "model_types": (
                 (

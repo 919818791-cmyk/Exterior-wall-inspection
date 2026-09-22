@@ -11,10 +11,10 @@ from app.services.formal_detection_prompts import (
 
 def test_every_facade_has_the_expected_distinct_defect_types() -> None:
     assert FACADE_DEFECT_TYPES == {
-        "tile": frozenset({"crack", "detachment", "hollow"}),
+        "tile": frozenset({"crack", "spalling", "hollow"}),
         "coating": frozenset({"crack", "peeling", "hollow"}),
         "plaster": frozenset({"crack", "spalling", "hollow"}),
-        "panel": frozenset({"damage", "detachment"}),
+        "panel": frozenset({"damage", "spalling"}),
         "curtain_wall": frozenset({"damage"}),
     }
 
@@ -23,19 +23,19 @@ def test_every_facade_has_the_expected_distinct_defect_types() -> None:
     ("facade_type", "models", "prompt_kind", "expected_file", "expected_text"),
     [
         ("tile", ["crack"], "visible", "饰面砖裂缝.txt", "type 只能是 crack"),
-        ("tile", ["detachment"], "visible", "饰面砖脱落.txt", "type 只能是 detachment"),
-        ("tile", ["crack", "detachment"], "visible", "饰面砖裂缝+脱落.txt", "crack 或 detachment"),
+        ("tile", ["spalling"], "visible", "饰面砖脱落.txt", "type 只能是 spalling"),
+        ("tile", ["crack", "spalling"], "visible", "饰面砖裂缝+脱落.txt", "crack 或 spalling"),
         ("tile", ["hollow"], "thermal", "饰面砖空鼓.txt", "type 只能是 hollow"),
         ("coating", ["crack"], "visible", "涂饰裂缝.txt", "type 只能是 crack"),
         ("coating", ["peeling"], "visible", "涂饰起皮.txt", "type 只能是 peeling"),
         ("coating", ["crack", "peeling"], "visible", "涂饰裂缝+起皮.txt", "crack 或 peeling"),
         ("coating", ["hollow"], "thermal", "涂饰空鼓.txt", "type 只能是 hollow"),
         ("plaster", ["crack"], "visible", "抹灰裂缝.txt", "抹灰层裂缝"),
-        ("plaster", ["spalling"], "visible", "抹灰剥落.txt", "抹灰层剥落"),
-        ("plaster", ["crack", "spalling"], "visible", "抹灰裂缝+剥落.txt", "crack 或 spalling"),
+        ("plaster", ["spalling"], "visible", "抹灰脱落.txt", "抹灰层脱落"),
+        ("plaster", ["crack", "spalling"], "visible", "抹灰裂缝+脱落.txt", "crack 或 spalling"),
         ("plaster", ["hollow"], "thermal", "抹灰空鼓.txt", "抹灰层空鼓"),
         ("panel", ["damage"], "visible", "饰面板—面板破损.txt", "饰面板板材本体"),
-        ("panel", ["detachment"], "visible", "饰面板—脱落.txt", "暴露出后方基层"),
+        ("panel", ["spalling"], "visible", "饰面板—脱落.txt", "暴露出后方基层"),
         ("curtain_wall", ["damage"], "visible", "幕墙—面板破损.txt", "幕墙面板或玻璃本体"),
     ],
 )
@@ -68,20 +68,15 @@ def test_coating_facade_rejects_spalling_prompt_selection() -> None:
         formal_detection_prompts("coating", ["spalling"])
 
 
-def test_tile_facade_rejects_plaster_spalling_prompt_selection() -> None:
-    with pytest.raises(ValueError, match="饰面砖外墙不支持"):
-        formal_detection_prompts("tile", ["spalling"])
-
-
 def test_panel_facade_keeps_each_document_prompt_separate() -> None:
-    selection = formal_detection_prompts("panel", ["damage", "detachment"])
+    selection = formal_detection_prompts("panel", ["damage", "spalling"])
 
     assert selection.visible_prompt is None
     assert selection.visible_prompts["damage"] == (
         formal_detection_prompts("panel", ["damage"]).visible_prompts["damage"]
     )
-    assert selection.visible_prompts["detachment"] == (
-        formal_detection_prompts("panel", ["detachment"]).visible_prompts["detachment"]
+    assert selection.visible_prompts["spalling"] == (
+        formal_detection_prompts("panel", ["spalling"]).visible_prompts["spalling"]
     )
 
 
@@ -93,7 +88,7 @@ def test_formal_inference_prefers_snapshot_prompts() -> None:
 
     visible_prompt, thermal_prompt = _formal_inference_prompts(
         generic_prompts,
-        ["裂缝", "剥落"],
+        ["裂缝", "脱落"],
         {
             "prompts": {
                 "visible": "快照可见光提示词",

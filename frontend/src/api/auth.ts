@@ -10,7 +10,11 @@ import type {
   UsernameAvailabilityResponse
 } from "@/types/auth";
 
-export function login(payload: { identity: string; password: string }) {
+type LoginPayload =
+  | { identity: string; password: string }
+  | { phone: string; verification_code: string };
+
+export function login(payload: LoginPayload) {
   return apiRequest<LoginResponse>("/auth/login", {
     method: "POST",
     body: JSON.stringify(payload)
@@ -46,6 +50,13 @@ export function checkRegistrationUsername(username: string) {
 
 export function sendRegistrationSmsCode(phone: string) {
   return apiRequest<RegistrationSmsCodeResponse>("/auth/registration/sms-code", {
+    method: "POST",
+    body: JSON.stringify({ phone })
+  });
+}
+
+export function sendLoginSmsCode(phone: string) {
+  return apiRequest<RegistrationSmsCodeResponse>("/auth/login/sms-code", {
     method: "POST",
     body: JSON.stringify({ phone })
   });

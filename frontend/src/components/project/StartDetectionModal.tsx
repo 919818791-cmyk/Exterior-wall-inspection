@@ -18,17 +18,16 @@ const DETECTION_TYPE_OPTIONS: Array<{
   label: string;
 }> = [
   { value: "crack", label: "裂缝" },
-  { value: "spalling", label: "剥落" },
+  { value: "spalling", label: "脱落" },
   { value: "peeling", label: "起皮" },
   { value: "damage", label: "面板破损" },
-  { value: "detachment", label: "脱落" },
   { value: "hollow", label: "空鼓" }
 ];
 
 function detectionTypesForFacade(facadeType?: FacadeType): DetectionModelType[] {
-  if (facadeType === "tile") return ["crack", "detachment", "hollow"];
+  if (facadeType === "tile") return ["crack", "spalling", "hollow"];
   if (facadeType === "coating") return ["crack", "peeling", "hollow"];
-  if (facadeType === "panel") return ["damage", "detachment"];
+  if (facadeType === "panel") return ["damage", "spalling"];
   if (facadeType === "curtain_wall") return ["damage"];
   return ["crack", "spalling", "hollow"];
 }

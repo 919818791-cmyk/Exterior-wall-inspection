@@ -25,7 +25,7 @@ const MODEL_OPTIONS: Array<{
     tone: "crack"
   },
   {
-    label: "剥落",
+    label: "脱落",
     value: "spalling",
     description: "面砖及其他外墙材料的脱落和局部剥离",
     Icon: ScanSearch,

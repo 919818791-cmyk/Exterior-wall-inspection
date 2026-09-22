@@ -30,7 +30,7 @@ from app.services.photo_upload_quota import (
     reserve_photo_detection_quota,
 )
 from app.db.session import get_db
-from app.enums.status import InspectionReportStatus, UserRole
+from app.enums.status import AccountPlan, InspectionReportStatus, UserRole
 from app.main import app
 from app.models.tables import (
     InspectionReport,
@@ -38,6 +38,7 @@ from app.models.tables import (
     QuickDetectionPhoto,
     TrialDetectionResult,
     UsageEvent,
+    UserAccount,
 )
 from app.schemas.phase7 import ReportListItem, TrialGeneratedResult, TrialReportRequest
 from app.services.docx_report import build_report_docx
@@ -268,7 +269,7 @@ def _post_trial_generate(files: list[tuple[str, tuple[str, bytes, str]]]):
                 "/api/trial/generate",
                 json={
                     "report_name": "东立面体验结果",
-                    "models": ["裂缝", "剥落"],
+                    "models": ["裂缝", "脱落"],
                     "photo_ids": [str(photo.id) for photo in stored_photos],
                 },
             )
@@ -757,7 +758,7 @@ def test_trial_report_request_accepts_optional_report_name() -> None:
         {
             "report_name": "东立面体验结果",
             "generated_at": "2026-06-30 10:00",
-            "models": ["裂缝", "剥落"],
+            "models": ["裂缝", "脱落"],
             "files": [{"filename": "trial-001.jpg", "size": 1200}],
             "findings": [{"filename": "trial-001.jpg", "model": "裂缝"}],
         }
@@ -771,7 +772,7 @@ def test_trial_generated_result_can_feed_archive_contract() -> None:
         {
             "report_name": "东立面体验结果",
             "generated_at": "2026-06-30T10:00:00+00:00",
-            "models": ["裂缝", "剥落"],
+            "models": ["裂缝", "脱落"],
             "files": [{"filename": "trial-001.jpg", "size": 1200}],
             "findings": [{"filename": "trial-001.jpg", "model": "裂缝"}],
             "raw_model_outputs": [
@@ -841,7 +842,7 @@ def test_trial_detection_result_can_append_a_later_detection_round() -> None:
         {
             "report_name": "东立面检测结果",
             "generated_at": now.isoformat(),
-            "models": ["裂缝", "剥落", "空鼓"],
+            "models": ["裂缝", "脱落", "空鼓"],
             "files": [
                 {"photo_id": str(added_photo_id), "filename": "second.jpg", "size": 1200}
             ],
@@ -888,7 +889,7 @@ def test_trial_generate_endpoint_returns_preview_payload(monkeypatch) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["report_name"] == "东立面体验结果"
-    assert payload["models"] == ["裂缝", "剥落"]
+    assert payload["models"] == ["裂缝", "脱落"]
     assert payload["files"] == [{
         "photo_id": str(UUID(int=10_001)),
         "filename": "trial-001.jpg",
@@ -898,7 +899,7 @@ def test_trial_generate_endpoint_returns_preview_payload(monkeypatch) -> None:
         {
             "photo_id": str(UUID(int=10_001)),
             "filename": "trial-001.jpg",
-            "model": "剥落",
+            "model": "脱落",
             "confidence": 0.67,
             "bbox": {"x": 100, "y": 50, "width": 240, "height": 80},
             "image_width": 1000,
@@ -1054,7 +1055,7 @@ def test_trial_generate_endpoint_hides_findings_at_point_six(monkeypatch) -> Non
             "detection_id": "det-low",
             "type": "spalling",
             "type_name": None,
-            "model": "剥落",
+            "model": "脱落",
             "confidence": 0.6,
             "bbox": {"x": 100, "y": 50, "width": 240, "height": 80},
             "severity": None,
@@ -1101,7 +1102,7 @@ def test_trial_generate_endpoint_accepts_uploaded_photo_ids(monkeypatch) -> None
         {
             "photo_id": str(photo_id),
             "filename": "quick-001.jpg",
-            "model": "剥落",
+            "model": "脱落",
             "confidence": 0.67,
             "bbox": {"x": 100, "y": 50, "width": 240, "height": 80},
             "image_width": 1000,
@@ -1179,7 +1180,7 @@ def test_trial_generate_endpoint_appends_to_archived_result(monkeypatch) -> None
     "selected_models",
     [
         ["空鼓"],
-        ["裂缝", "剥落", "空鼓"],
+        ["裂缝", "脱落", "空鼓"],
     ],
     ids=["hollow-only", "all-selected"],
 )
@@ -1214,7 +1215,7 @@ def test_trial_generate_routes_thermal_photo_to_hollow_only_inference(
                         "type": "spalling",
                         "confidence": 0.89,
                         "bbox": {"x": 300, "y": 100, "width": 120, "height": 90},
-                        "description": "不应保留的剥落",
+                        "description": "不应保留的脱落",
                     },
                     {
                         "id": "hollow-1",
@@ -1274,13 +1275,13 @@ def test_trial_generate_routes_thermal_photo_to_hollow_only_inference(
     [
         (
             True,
-            ["裂缝", "剥落"],
+            ["裂缝", "脱落"],
             "热成像图片只执行空鼓检测，请勾选空鼓或移除热成像图片。",
         ),
         (
             False,
             ["空鼓"],
-            "可见光图片只执行裂缝或剥落检测，请至少勾选其中一项或移除可见光图片。",
+            "可见光图片只执行裂缝或脱落检测，请至少勾选其中一项或移除可见光图片。",
         ),
     ],
     ids=["thermal-without-hollow", "visible-with-hollow-only"],
@@ -1353,7 +1354,7 @@ def test_trial_result_archive_accepts_generated_photo_ids() -> None:
             {
                 "photo_id": str(photo_id),
                 "filename": "quick-001.jpg",
-                "model": "剥落",
+                "model": "脱落",
                 "confidence": 0.6,
             },
         ],
@@ -1490,6 +1491,35 @@ def test_basic_trial_lifetime_photo_detection_limit_allows_fifty_per_account(mon
         "本次检测包含 1 张照片，请减少照片数量后重试。"
     )
     assert raised.value.headers is None
+
+
+def test_account_detection_quota_overrides_plan_default(monkeypatch) -> None:
+    actor_id = _trial_customer().id
+
+    class FakeDb:
+        def get(self, model: object, key: object) -> SimpleNamespace | None:
+            if model is UserAccount and key == actor_id:
+                return SimpleNamespace(detection_quota=7)
+            return None
+
+    monkeypatch.setattr(
+        photo_upload_quota,
+        "trial_scheduling_settings",
+        lambda *_: SimpleNamespace(
+            monthly_photo_upload_limit=50,
+            basic_formal_monthly_photo_upload_limit=50,
+            professional_monthly_photo_upload_limit=1000,
+            professional_trial_monthly_photo_upload_limit=500,
+        ),
+    )
+    monkeypatch.setattr(photo_upload_quota, "_photo_detection_count", lambda *_args, **_kwargs: 3)
+
+    assert photo_upload_quota._quota_limit_and_baseline(
+        FakeDb(),
+        actor_id,
+        "formal",
+        AccountPlan.BASIC.value,
+    ) == (7, 3)
 
 
 def test_basic_formal_lifetime_photo_detection_limit_allows_fifty_per_account(monkeypatch) -> None:
@@ -1704,6 +1734,45 @@ def test_formal_report_enrichment_replaces_legacy_crack_area_with_length() -> No
     assert enriched["defects"][0]["area_estimated"] is False
     assert enriched["defects"][0]["length"] == "0.223607"
     assert enriched["defects"][0]["length_estimated"] is True
+
+
+def test_report_data_exposes_current_building_model_images_with_urls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project_id = UUID("11111111-1111-1111-1111-111111111111")
+    image = SimpleNamespace(
+        orientation="east",
+        image_kind="elevation",
+        original_filename="east.jpg",
+        mime_type="image/jpeg",
+        storage_bucket="inspection",
+        storage_object_key="projects/1/east.jpg",
+    )
+    db = SimpleNamespace(scalars=lambda _: [image])
+    report = SimpleNamespace(
+        report_data_json={"photos": [], "defects": [], "building_model_images": []},
+        detection_task_id=None,
+    )
+    project = SimpleNamespace(id=project_id)
+    monkeypatch.setattr(
+        reports,
+        "_safe_photo_url",
+        lambda _request, bucket, object_key: f"signed://{bucket}/{object_key}",
+    )
+
+    data = reports._report_data(db, report, project)
+
+    assert data["building_model_images"] == [
+        {
+            "orientation": "east",
+            "image_kind": "elevation",
+            "original_filename": "east.jpg",
+            "mime_type": "image/jpeg",
+            "storage_bucket": "inspection",
+            "storage_object_key": "projects/1/east.jpg",
+            "url": "signed://inspection/projects/1/east.jpg",
+        }
+    ]
 
 
 def _jpeg_with_metadata(*, image_source: str, image_description: str) -> bytes:

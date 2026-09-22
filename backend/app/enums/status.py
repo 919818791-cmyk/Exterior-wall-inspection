@@ -12,6 +12,12 @@ class AccountPlan(StrEnum):
     PROFESSIONAL = "professional"
 
 
+class ProfessionalApplicationStatus(StrEnum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
 class UserStatus(StrEnum):
     ACTIVE = "active"
     DISABLED = "disabled"
@@ -82,7 +88,6 @@ class DefectType(StrEnum):
     SPALLING = "spalling"
     PEELING = "peeling"
     DAMAGE = "damage"
-    DETACHMENT = "detachment"
     MOISTURE = "moisture"
     HOLLOW = "hollow"
 

@@ -52,6 +52,7 @@ class ReportDetailRead(ApiSchema):
     summary: dict
     defects: list[dict]
     photos: list[dict]
+    building_model_images: list[dict] = Field(default_factory=list)
     raw_model_outputs: list[dict] = Field(default_factory=list)
     docx_bucket: str | None
     docx_object_key: str | None
@@ -86,15 +87,15 @@ class TrialReportFinding(ApiSchema):
 
 class TrialGenerateRequest(ApiSchema):
     report_name: str | None = Field(default=None, max_length=255)
-    models: list[str] = Field(default_factory=lambda: ["裂缝", "剥落"])
+    models: list[str] = Field(default_factory=lambda: ["裂缝", "脱落"])
     photo_ids: list[UUID] = Field(default_factory=list)
     archived_report_id: UUID | None = None
 
     @field_validator("models")
     @classmethod
     def validate_models(cls, models: list[str]) -> list[str]:
-        aliases = {"脱落": "剥落"}
-        allowed_models = {"裂缝", "剥落", "空鼓"}
+        aliases = {"剥落": "脱落"}
+        allowed_models = {"裂缝", "脱落", "空鼓"}
         unique_models = list(dict.fromkeys(aliases.get(model, model) for model in models))
         if any(model not in allowed_models for model in unique_models):
             raise ValueError("models contains an unsupported defect type")

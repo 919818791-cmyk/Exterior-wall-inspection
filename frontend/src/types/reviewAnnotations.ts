@@ -30,6 +30,9 @@ export interface AnnotationPhotoEdit {
 export interface ReviewAnnotationDetail {
   result: ReportDetail;
   edits: AnnotationPhotoEdit[];
+  generate_building_model: boolean;
+  has_building_model: boolean;
+  has_building_model_images: boolean;
 }
 
 export interface SaveReviewAnnotationsPayload {

@@ -23,8 +23,8 @@ export function RequireAuth() {
   if (status === "loading") return <LoadingScreen />;
   if (status !== "authenticated") {
     const redirect = `${location.pathname}${location.search}${location.hash}`;
-    const search = new URLSearchParams({ login: "1", redirect }).toString();
-    return <Navigate replace state={{ from: location }} to={`/?${search}`} />;
+    const search = new URLSearchParams({ redirect }).toString();
+    return <Navigate replace state={{ from: location }} to={`/login?${search}`} />;
   }
   return <Outlet context={outletContext} />;
 }

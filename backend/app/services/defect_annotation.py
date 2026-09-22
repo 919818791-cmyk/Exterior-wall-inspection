@@ -9,11 +9,10 @@ from PIL import Image, ImageDraw, ImageFont
 
 DEFECT_DISPLAY = {
     "crack": ("裂缝", "#DC2626"),
-    "missing": ("剥落", "#F97316"),
-    "spalling": ("剥落", "#F97316"),
+    "missing": ("脱落", "#F97316"),
+    "spalling": ("脱落", "#F97316"),
     "peeling": ("起皮", "#D97706"),
     "damage": ("面板破损", "#DC2626"),
-    "detachment": ("脱落", "#F97316"),
     "moisture": ("潮湿", "#0EA5E9"),
     "corrosion": ("锈蚀", "#A16207"),
     "hollow": ("空鼓", "#245CFF"),

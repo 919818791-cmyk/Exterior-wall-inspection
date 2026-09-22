@@ -189,7 +189,6 @@ function tileDetectionLabel(detection: ModelOutputDetection) {
 
 function tileDetectionType(detection: ModelOutputDetection) {
   const type = (detection.type ?? "").trim();
-  if (type === "detachment") return "spalling";
   if (["crack", "spalling", "peeling", "damage", "corrosion", "hollow"].includes(type)) return type;
   const model = (detection.model ?? "").trim();
   if (model === "裂缝") return "crack";

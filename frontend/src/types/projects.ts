@@ -23,7 +23,7 @@ export type DroneType =
 export type FacadeType = "tile" | "coating" | "plaster" | "panel" | "curtain_wall" | "stone";
 export type SelectableFacadeType = Exclude<FacadeType, "stone">;
 
-export type DefectType = "crack" | "spalling" | "peeling" | "damage" | "detachment" | "moisture" | "hollow";
+export type DefectType = "crack" | "spalling" | "peeling" | "damage" | "moisture" | "hollow";
 export type PhotoType = "visible" | "thermal" | "dji" | "other";
 export type UploadMode = "dji" | "visible" | "thermal" | "mixed";
 export type PhotoStatus = "uploaded" | "detecting" | "detected" | "failed";
@@ -99,6 +99,28 @@ export interface BuildingModel {
   url: string;
   uploaded_by: string | null;
   uploaded_at: string;
+}
+
+export type BuildingModelImageOrientation = "overview" | "east" | "west" | "south" | "north";
+export type BuildingModelImageKind = "model" | "elevation" | "annotated";
+
+export interface BuildingModelImage {
+  id: string;
+  project_id: string;
+  orientation: BuildingModelImageOrientation;
+  image_kind: BuildingModelImageKind;
+  original_filename: string;
+  file_size: number;
+  mime_type: string;
+  url: string;
+  uploaded_by: string | null;
+  uploaded_at: string;
+}
+
+export interface BuildingModelImageUpload {
+  orientation: BuildingModelImageOrientation;
+  imageKind: BuildingModelImageKind;
+  file: File;
 }
 
 export interface UploadBatchPayload {
@@ -202,7 +224,7 @@ export interface DetectionTask {
 
 export interface StartDetectionPayload {
   generate_building_model: boolean;
-  model_types: Array<"crack" | "spalling" | "peeling" | "damage" | "detachment" | "hollow">;
+  model_types: Array<"crack" | "spalling" | "peeling" | "damage" | "hollow">;
 }
 
 export interface ProjectFinalizePayload {

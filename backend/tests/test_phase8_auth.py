@@ -57,6 +57,7 @@ def test_phase8_auth_routes_are_registered() -> None:
     }
 
     assert "/api/auth/login" in paths
+    assert "/api/auth/login/sms-code" in paths
     assert "/api/auth/registration/username-availability" in paths
     assert "/api/auth/registration/sms-code" in paths
     assert "/api/auth/password-reset/sms-code" in paths
@@ -276,8 +277,125 @@ def test_registration_sms_code_is_sent_to_available_phone(
         app.dependency_overrides.clear()
 
     assert response.status_code == 200
-    assert response.json() == {"ok": True, "retry_after_seconds": 60}
+    assert response.json() == {"ok": True, "retry_after_seconds": 1800}
     assert stub_sms_verification_service.sent_phones == ["13800000000"]
+
+
+def test_registration_sms_code_has_a_thirty_minute_phone_cooldown(
+    stub_sms_verification_service: StubSmsVerificationService,
+) -> None:
+    class FakeDb:
+        def scalar(self, _: object) -> None:
+            return None
+
+    app.dependency_overrides[get_db] = lambda: FakeDb()
+
+    try:
+        client = TestClient(app)
+        first_response = client.post(
+            "/api/auth/registration/sms-code",
+            json={"phone": "13800000000"},
+        )
+        second_response = client.post(
+            "/api/auth/registration/sms-code",
+            json={"phone": "13800000000"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 429
+    assert int(second_response.headers["Retry-After"]) >= 1799
+    assert stub_sms_verification_service.sent_phones == ["13800000000"]
+
+
+def test_login_sms_code_is_sent_to_active_account(
+    stub_sms_verification_service: StubSmsVerificationService,
+) -> None:
+    class FakeUser:
+        username = "sms_login_user"
+        phone = "13800000000"
+        status = UserStatus.ACTIVE.value
+
+    class FakeDb:
+        def get(self, _model: object, _user_id: UUID) -> FakeUser:
+            return FakeUser()
+
+        def flush(self) -> None:
+            return None
+
+        def scalar(self, _: object) -> FakeUser:
+            return FakeUser()
+
+    app.dependency_overrides[get_db] = lambda: FakeDb()
+
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/api/auth/login/sms-code",
+            json={"phone": "13800000000"},
+        )
+        repeated_response = client.post(
+            "/api/auth/login/sms-code",
+            json={"phone": "13800000000"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True, "retry_after_seconds": 1800}
+    assert repeated_response.status_code == 429
+    assert int(repeated_response.headers["Retry-After"]) >= 1799
+    assert stub_sms_verification_service.sent_phones == ["13800000000"]
+
+
+def test_phone_verification_code_can_log_in(
+    stub_sms_verification_service: StubSmsVerificationService,
+) -> None:
+    class FakeUser:
+        id = UUID("00000000-0000-0000-0000-000000000010")
+        username = "sms_login_user"
+        real_name = "验证码登录用户"
+        phone = "13800000000"
+        role = UserRole.CUSTOMER.value
+        organization = None
+        status = UserStatus.ACTIVE.value
+        deleted_at = None
+        last_login_at = None
+
+    class FakeDb:
+        def __init__(self) -> None:
+            self.user = FakeUser()
+            self.committed = False
+
+        def get(self, _model: object, _user_id: UUID) -> FakeUser:
+            return self.user
+
+        def flush(self) -> None:
+            return None
+
+        def scalar(self, _: object) -> FakeUser:
+            return self.user
+
+        def commit(self) -> None:
+            self.committed = True
+
+    fake_db = FakeDb()
+    app.dependency_overrides[get_db] = lambda: fake_db
+
+    try:
+        response = TestClient(app).post(
+            "/api/auth/login",
+            json={"phone": "13800000000", "verification_code": "1234"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["user"]["phone"] == "13800000000"
+    assert stub_sms_verification_service.verification_attempts == [("13800000000", "1234")]
+    assert fake_db.committed
+    assert fake_db.user.last_login_at is not None
 
 
 def test_password_reset_verification_can_set_a_new_password(

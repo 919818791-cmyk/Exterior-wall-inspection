@@ -17,10 +17,10 @@ export function usePublicHeroAnimation(
     if (reduceMotion) return undefined;
 
     const context = gsap.context(() => {
-      const heroCopy = hero.querySelector<HTMLElement>(".hero-copy, .detail-hero-copy");
+      const heroCopy = hero.querySelector<HTMLElement>(".hero-copy");
       const heroTitle = heroCopy?.querySelector<HTMLElement>("h1");
-      const heroDescription = heroCopy?.querySelector<HTMLElement>(".hero-description, .staggered-lead");
-      const heroActions = heroCopy?.querySelector<HTMLElement>(".hero-actions, .detail-actions");
+      const heroDescription = heroCopy?.querySelector<HTMLElement>(".hero-description");
+      const heroActions = heroCopy?.querySelector<HTMLElement>(".hero-actions");
 
       if (heroTitle && heroDescription && heroActions) {
         gsap.timeline()

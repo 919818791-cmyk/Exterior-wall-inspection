@@ -9,6 +9,7 @@ export interface AccountFormState {
   real_name: string;
   phone: string;
   organization: string;
+  detection_quota: string;
   role: UserRole;
   account_plan: AccountPlan;
   status: UserStatus;
@@ -174,6 +175,20 @@ export function AccountEditorModal({
                 <option value="professional">专业版</option>
               </select>
             </label>
+            {!isProfile ? (
+              <label className="auth-field">
+                <span>检测额度</span>
+                <input
+                  inputMode="numeric"
+                  max="100000"
+                  min="1"
+                  placeholder="按套餐默认额度"
+                  type="number"
+                  value={form.detection_quota}
+                  onChange={(event) => updateField("detection_quota", event.target.value)}
+                />
+              </label>
+            ) : null}
           </div>
           {notice ? <p className="account-editor-notice" role="status">{notice}</p> : null}
           {error ? <p className="auth-status auth-status-error" role="alert">{error}</p> : null}

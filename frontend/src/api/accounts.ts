@@ -2,7 +2,14 @@ import { queryOptions } from "@tanstack/react-query";
 
 import { apiRequest } from "@/api/client";
 import type { AccountUsageDetailResponse, AccountUsagePeriod, CurrentAccountUsageResponse } from "@/types/accountUsage";
-import type { AccountCreatePayload, AccountPasswordResetResponse, AccountUpdatePayload, AccountUser } from "@/types/auth";
+import type {
+  AccountCreatePayload,
+  AccountPasswordResetResponse,
+  AccountUpdatePayload,
+  AccountUser,
+  ProfessionalApplicationResponse,
+  ProfessionalApplicationReviewPayload
+} from "@/types/auth";
 
 export const accountsQueryOptions = queryOptions({
   queryKey: ["accounts"],
@@ -39,6 +46,19 @@ export function updateAccount(accountId: string, payload: AccountUpdatePayload) 
 export function resetAccountPassword(accountId: string) {
   return apiRequest<AccountPasswordResetResponse>(`/accounts/${accountId}/reset-password`, {
     method: "POST"
+  });
+}
+
+export function submitProfessionalApplication() {
+  return apiRequest<ProfessionalApplicationResponse>("/accounts/me/professional-application", {
+    method: "POST"
+  });
+}
+
+export function reviewProfessionalApplication(accountId: string, payload: ProfessionalApplicationReviewPayload) {
+  return apiRequest<AccountUser>(`/accounts/${accountId}/professional-application/review`, {
+    method: "POST",
+    body: JSON.stringify(payload)
   });
 }
 

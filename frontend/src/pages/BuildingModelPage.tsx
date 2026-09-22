@@ -1,9 +1,20 @@
-import { RotateCcw, Trash2, Upload, X, ZoomIn, ZoomOut } from "lucide-react";
+import {
+  Images,
+  RotateCcw,
+  Trash2,
+  Upload,
+  X
+} from "lucide-react";
+import {
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalFooter,
+  ModalHeader
+} from "@heroui/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   type ChangeEvent,
-  type PointerEvent as ReactPointerEvent,
-  type WheelEvent as ReactWheelEvent,
   useEffect,
   useRef,
   useState
@@ -36,9 +47,12 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import {
   buildingModelQueryKey,
   buildingModelQueryOptions,
+  buildingModelImagesQueryKey,
+  buildingModelImagesQueryOptions,
   deleteBuildingModel,
   projectQueryOptions,
-  uploadBuildingModel
+  uploadBuildingModel,
+  uploadBuildingModelImages
 } from "@/api/projects";
 import { WorkspaceTitleBar } from "@/components/WorkspaceTitleBar";
 import {
@@ -46,6 +60,11 @@ import {
   type GeographicModelOrigin,
   parseMetashapeProjectionPackage
 } from "@/utils/buildingModelTags";
+import type {
+  BuildingModelImageKind,
+  BuildingModelImageOrientation,
+  BuildingModelImageUpload
+} from "@/types/projects";
 
 const MAX_BUILDING_MODEL_BYTES = 1024 * 1024 * 1024;
 const EXAMPLE_BUILDING_MODEL_URL = "/models/tower_residential__modern_apartment_building_metalrough.glb";
@@ -63,6 +82,34 @@ const ELEVATION_VIEWS = [
 type ElevationId = (typeof ELEVATION_VIEWS)[number]["id"];
 type ElevationImages = Partial<Record<ElevationId, string>>;
 type ElevationDirections = Record<ElevationId, Vector3>;
+type ModelImageSlotKey = `${BuildingModelImageOrientation}:${BuildingModelImageKind}`;
+type ModelImageUploadRequest = {
+  uploads: BuildingModelImageUpload[];
+  closeOnSuccess: boolean;
+};
+
+const MODEL_IMAGE_UPLOAD_SLOTS = [
+  {
+    key: "overview:model" as ModelImageSlotKey,
+    orientation: "overview" as const,
+    imageKind: "model" as const,
+    label: "模型立体视角图"
+  },
+  ...ELEVATION_VIEWS.flatMap((view) => ([
+    {
+      key: `${view.id}:elevation` as ModelImageSlotKey,
+      orientation: view.id,
+      imageKind: "elevation" as const,
+      label: `${view.label}图`
+    },
+    {
+      key: `${view.id}:annotated` as ModelImageSlotKey,
+      orientation: view.id,
+      imageKind: "annotated" as const,
+      label: `${view.label}含损伤标注图`
+    }
+  ]))
+];
 
 function getElevationDirections(model: Object3D): ElevationDirections {
   model.updateWorldMatrix(true, true);
@@ -234,6 +281,22 @@ function renderElevationImages(
   }
 
   return images;
+}
+
+async function elevationImagesToUploads(
+  images: ElevationImages
+): Promise<BuildingModelImageUpload[]> {
+  return Promise.all(ELEVATION_VIEWS.map(async (view) => {
+    const imageUrl = images[view.id];
+    if (!imageUrl) throw new Error(`${view.label}视角图生成失败。`);
+    const response = await fetch(imageUrl);
+    const blob = await response.blob();
+    return {
+      orientation: view.id,
+      imageKind: "elevation" as const,
+      file: new File([blob], `${view.id}-elevation.jpg`, { type: "image/jpeg" })
+    };
+  }));
 }
 
 const METASHAPE_GENERATOR_PATTERN = /^Agisoft Metashape\b/i;
@@ -423,14 +486,6 @@ function normalizeMetashapeLocalModelUpAxis(model: Object3D, generator: unknown)
 
 type LoadState = "querying" | "uploading" | "loading" | "deleting" | "ready" | "error" | "empty";
 
-interface ImageViewState {
-  scale: number;
-  x: number;
-  y: number;
-}
-
-const initialImageView: ImageViewState = { scale: 1, x: 0, y: 0 };
-
 interface BuildingModelLocationState {
   backLabel?: string;
   backTo?: string;
@@ -453,21 +508,20 @@ export function BuildingModelPage({ mode = "professional" }: BuildingModelPagePr
   const modelInputRef = useRef<HTMLInputElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const resetViewRef = useRef<() => void>(() => undefined);
-  const imageDragRef = useRef<{
-    pointerId: number;
-    startX: number;
-    startY: number;
-    viewX: number;
-    viewY: number;
-  } | null>(null);
+  const shouldUploadGeneratedElevationsRef = useRef(false);
+  const uploadGeneratedElevationsRef = useRef<(images: ElevationImages) => void>(() => undefined);
   const [loadState, setLoadState] = useState<LoadState>("querying");
   const [loadProgress, setLoadProgress] = useState<number | null>(null);
   const [loadError, setLoadError] = useState("模型加载失败，请稍后重试。");
-  const [selectedElevation, setSelectedElevation] = useState<ElevationId | null>(null);
   const [elevationImages, setElevationImages] = useState<ElevationImages>({});
-  const [imageView, setImageView] = useState<ImageViewState>(initialImageView);
+  const [isImageUploadOpen, setIsImageUploadOpen] = useState(false);
+  const [imageUploadFiles, setImageUploadFiles] = useState<
+    Partial<Record<ModelImageSlotKey, File>>
+  >({});
+  const [imageUploadProgress, setImageUploadProgress] = useState(0);
   const projectQuery = useQuery(projectQueryOptions(id));
   const modelQuery = useQuery(buildingModelQueryOptions(id));
+  const modelImagesQuery = useQuery(buildingModelImagesQueryOptions(id));
   const modelHelpText = "左键旋转 · 滚轮缩放 · Shift+左键或右键平移";
   const project = projectQuery.data;
   const modelRecord = modelQuery.data ?? null;
@@ -495,6 +549,7 @@ export function BuildingModelPage({ mode = "professional" }: BuildingModelPagePr
       void queryClient.invalidateQueries({ queryKey: ["projects", "list"] });
     },
     onError: (error) => {
+      shouldUploadGeneratedElevationsRef.current = false;
       window.alert(getErrorMessage(error));
       setLoadProgress(null);
       setLoadState(modelUrl ? "ready" : "empty");
@@ -517,6 +572,47 @@ export function BuildingModelPage({ mode = "professional" }: BuildingModelPagePr
     }
   });
 
+  const imageUploadMutation = useMutation({
+    mutationFn: ({ uploads }: ModelImageUploadRequest) => uploadBuildingModelImages(
+      id,
+      uploads,
+      ({ percent }) => setImageUploadProgress(percent)
+    ),
+    onMutate: () => {
+      setImageUploadProgress(0);
+    },
+    onSuccess: (images, request) => {
+      queryClient.setQueryData(buildingModelImagesQueryKey(id), images);
+      void queryClient.invalidateQueries({ queryKey: ["review", "detections"] });
+      setImageUploadFiles({});
+      if (request.closeOnSuccess) setIsImageUploadOpen(false);
+      setImageUploadProgress(100);
+    },
+    onError: (error) => {
+      window.alert(getErrorMessage(error));
+      setImageUploadProgress(0);
+    }
+  });
+
+  const selectedImageCount = MODEL_IMAGE_UPLOAD_SLOTS.filter(
+    (slot) => imageUploadFiles[slot.key]
+  ).length;
+
+  uploadGeneratedElevationsRef.current = (images) => {
+    void elevationImagesToUploads(images)
+      .then((uploads) => imageUploadMutation.mutate({ uploads, closeOnSuccess: false }))
+      .catch((error) => window.alert(`模型已上传，但自动生成视角图失败：${getErrorMessage(error)}`));
+  };
+
+  const submitModelImages = () => {
+    const uploads = MODEL_IMAGE_UPLOAD_SLOTS.flatMap((slot) => {
+      const file = imageUploadFiles[slot.key];
+      return file ? [{ orientation: slot.orientation, imageKind: slot.imageKind, file }] : [];
+    });
+    if (uploads.length === 0) return;
+    imageUploadMutation.mutate({ uploads, closeOnSuccess: true });
+  };
+
   const handleModelFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.currentTarget.files?.[0];
     event.currentTarget.value = "";
@@ -530,8 +626,8 @@ export function BuildingModelPage({ mode = "professional" }: BuildingModelPagePr
       return;
     }
 
-    setSelectedElevation(null);
     setElevationImages({});
+    shouldUploadGeneratedElevationsRef.current = true;
     uploadMutation.mutate(file);
   };
 
@@ -541,7 +637,6 @@ export function BuildingModelPage({ mode = "professional" }: BuildingModelPagePr
       || !window.confirm("确认删除当前三维模型？模型文件将从项目存储中永久删除。")
     ) return;
 
-    setSelectedElevation(null);
     setElevationImages({});
     deleteMutation.mutate();
   };
@@ -557,77 +652,10 @@ export function BuildingModelPage({ mode = "professional" }: BuildingModelPagePr
       return;
     }
 
-    setSelectedElevation(null);
     setElevationImages({});
     setLoadProgress(null);
     setLoadState(modelUrl ? "loading" : "empty");
   }, [modelQuery.error, modelQuery.isError, modelQuery.isPending, modelUrl]);
-
-  const setImageScale = (scale: number) => {
-    setImageView((current) => {
-      const nextScale = MathUtils.clamp(scale, 1, 5);
-      return nextScale === 1
-        ? initialImageView
-        : { ...current, scale: nextScale };
-    });
-  };
-
-  const handleImageWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    const rect = event.currentTarget.getBoundingClientRect();
-    const pointerX = event.clientX - rect.left - rect.width / 2;
-    const pointerY = event.clientY - rect.top - rect.height / 2;
-
-    setImageView((current) => {
-      const nextScale = MathUtils.clamp(
-        current.scale * (event.deltaY < 0 ? 1.18 : 1 / 1.18),
-        1,
-        5
-      );
-      if (nextScale === 1) return initialImageView;
-      const ratio = nextScale / current.scale;
-      return {
-        scale: nextScale,
-        x: pointerX - (pointerX - current.x) * ratio,
-        y: pointerY - (pointerY - current.y) * ratio
-      };
-    });
-  };
-
-  const handleImagePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (imageView.scale <= 1) return;
-    event.currentTarget.setPointerCapture(event.pointerId);
-    imageDragRef.current = {
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startY: event.clientY,
-      viewX: imageView.x,
-      viewY: imageView.y
-    };
-  };
-
-  const handleImagePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
-    const drag = imageDragRef.current;
-    if (!drag || drag.pointerId !== event.pointerId) return;
-    setImageView((current) => ({
-      ...current,
-      x: drag.viewX + event.clientX - drag.startX,
-      y: drag.viewY + event.clientY - drag.startY
-    }));
-  };
-
-  const handleImagePointerEnd = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (imageDragRef.current?.pointerId !== event.pointerId) return;
-    imageDragRef.current = null;
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-  };
-
-  useEffect(() => {
-    setImageView(initialImageView);
-    imageDragRef.current = null;
-  }, [selectedElevation]);
 
   useEffect(() => {
     const viewport = viewportRef.current;
@@ -752,14 +780,20 @@ export function BuildingModelPage({ mode = "professional" }: BuildingModelPagePr
         scene.add(grid);
 
         try {
-          setElevationImages(renderElevationImages(
+          const generatedImages = renderElevationImages(
             renderer,
             scene,
             grid,
             model,
             maxDimension
-          ));
+          );
+          setElevationImages(generatedImages);
+          if (shouldUploadGeneratedElevationsRef.current) {
+            shouldUploadGeneratedElevationsRef.current = false;
+            uploadGeneratedElevationsRef.current(generatedImages);
+          }
         } catch {
+          shouldUploadGeneratedElevationsRef.current = false;
           setElevationImages({});
         }
 
@@ -792,6 +826,7 @@ export function BuildingModelPage({ mode = "professional" }: BuildingModelPagePr
       },
       () => {
         if (!disposed) {
+          shouldUploadGeneratedElevationsRef.current = false;
           setLoadError("模型文件读取失败，请重新上传有效的 GLB 文件。");
           setLoadState("error");
         }
@@ -834,22 +869,12 @@ export function BuildingModelPage({ mode = "professional" }: BuildingModelPagePr
               detail: loadProgress === null ? "正在准备模型资源…" : `${loadProgress}%`
             }
           : null;
-  const selectedImageTransform = (
-    `translate3d(${imageView.x}px, ${imageView.y}px, 0) scale(${imageView.scale})`
+  const savedImagesBySlot = new Map(
+    (modelImagesQuery.data ?? []).map((image) => [
+      `${image.orientation}:${image.image_kind}` as ModelImageSlotKey,
+      image
+    ])
   );
-  const activeElevation = selectedElevation
-    ? ELEVATION_VIEWS.find((view) => view.id === selectedElevation) ?? null
-    : null;
-  const activeImageUrl = selectedElevation ? elevationImages[selectedElevation] ?? "" : "";
-
-  const handleElevationSelect = (elevationId: ElevationId) => {
-    if (!elevationImages[elevationId]) return;
-    setSelectedElevation(elevationId);
-  };
-
-  const closeImageDetail = () => {
-    setSelectedElevation(null);
-  };
 
   return (
     <section className="building-model-page" aria-labelledby="building-model-page-title">
@@ -864,18 +889,34 @@ export function BuildingModelPage({ mode = "professional" }: BuildingModelPagePr
               onChange={handleModelFileChange}
             />
             <button
-              aria-label="上传三维模型"
-              className="building-model-header-action"
+              aria-label="模型上传"
+              className="button primary-action-button"
               disabled={!id || !canManageModel || uploadMutation.isPending || deleteMutation.isPending}
               title={isReadOnlyProject ? "示例项目为只读项目" : "支持 GLB 格式，文件最大 1 GB"}
               type="button"
               onClick={() => modelInputRef.current?.click()}
             >
               <Upload aria-hidden="true" />
+              <span className="workspace-title-bar-action-label">
+                {uploadMutation.isPending ? "上传中…" : "模型上传"}
+              </span>
+            </button>
+            <button
+              aria-label="图片上传"
+              className="button primary-action-button"
+              disabled={!id || !canManageModel || imageUploadMutation.isPending}
+              title={isReadOnlyProject ? "示例项目为只读项目" : "上传模型立体视角图、4 张立面图和 4 张含损伤标注图"}
+              type="button"
+              onClick={() => setIsImageUploadOpen(true)}
+            >
+              <Images aria-hidden="true" />
+              <span className="workspace-title-bar-action-label">
+                图片上传
+              </span>
             </button>
             <button
               aria-label="删除三维模型"
-              className="building-model-header-action is-danger"
+              className="button destructive-action-button"
               disabled={!modelRecord || !canManageModel || uploadMutation.isPending || deleteMutation.isPending}
               title={isReadOnlyProject ? "示例项目为只读项目" : "删除当前三维模型"}
               type="button"
@@ -891,9 +932,7 @@ export function BuildingModelPage({ mode = "professional" }: BuildingModelPagePr
         titleId="building-model-page-title"
       />
 
-      <div
-        className={`building-model-workspace${activeImageUrl ? " has-detail" : ""}`}
-      >
+      <div className="building-model-workspace">
         <div className="building-model-viewport" ref={viewportRef}>
           <button
             aria-label="重置模型视角"
@@ -932,97 +971,124 @@ export function BuildingModelPage({ mode = "professional" }: BuildingModelPagePr
             </div>
           ) : null}
         </div>
-        {activeImageUrl ? (
-          <aside
-            aria-label={`${activeElevation?.label ?? "建筑立面"}预览`}
-            className="building-model-detail-card"
-          >
-            <div
-              className={`building-model-detail-image-viewport${imageView.scale > 1 ? " is-zoomed" : ""}`}
-              onPointerCancel={handleImagePointerEnd}
-              onPointerDown={handleImagePointerDown}
-              onPointerMove={handleImagePointerMove}
-              onPointerUp={handleImagePointerEnd}
-              onWheel={handleImageWheel}
-            >
-              <div
-                className="building-model-detail-actions"
-                onPointerDown={(event) => event.stopPropagation()}
-              >
-                <button
-                  aria-label="缩小图片"
-                  disabled={imageView.scale <= 1}
-                  title="缩小"
-                  type="button"
-                  onClick={() => setImageScale(imageView.scale / 1.25)}
-                >
-                  <ZoomOut aria-hidden="true" />
-                </button>
-                <button
-                  aria-label="放大图片"
-                  disabled={imageView.scale >= 5}
-                  title="放大"
-                  type="button"
-                  onClick={() => setImageScale(imageView.scale * 1.25)}
-                >
-                  <ZoomIn aria-hidden="true" />
-                </button>
-                <button
-                  aria-label="关闭图片预览"
-                  className="back-cancel-button"
-                  title="关闭"
-                  type="button"
-                  onClick={closeImageDetail}
-                >
-                  <X aria-hidden="true" />
-                </button>
-              </div>
-              <div
-                className="building-model-detail-image"
-                style={{ transform: selectedImageTransform }}
-              >
-                <img
-                  alt={`${activeElevation?.label ?? "建筑立面"}图`}
-                  draggable="false"
-                  src={activeImageUrl}
-                />
-              </div>
-            </div>
-          </aside>
-        ) : null}
       </div>
 
-      {modelUrl ? (
-        <section className="building-model-elevation-section" aria-label="建筑立面缩略图">
-          <p className="building-model-elevation-heading">
-            选择建筑立面
-          </p>
-          <div className="building-model-elevation-gallery">
-            {ELEVATION_VIEWS.map((view) => {
-              const thumbnailUrl = elevationImages[view.id] ?? "";
-              const isActive = selectedElevation === view.id;
-              return (
+      <Modal
+        classNames={{
+          backdrop: "start-detection-modal-backdrop",
+          base: "start-detection-modal-content",
+          wrapper: "start-detection-modal-wrapper"
+        }}
+        hideCloseButton
+        isOpen={isImageUploadOpen}
+        placement="center"
+        scrollBehavior="inside"
+        size="3xl"
+        onOpenChange={(isOpen) => {
+          if (!imageUploadMutation.isPending) setIsImageUploadOpen(isOpen);
+        }}
+      >
+        <ModalContent>
+          {(onClose) => (
+            <>
+              <button
+                aria-label="关闭图片上传"
+                className="start-detection-modal-close back-cancel-button"
+                disabled={imageUploadMutation.isPending}
+                type="button"
+                onClick={onClose}
+              >
+                <X aria-hidden="true" />
+              </button>
+              <ModalHeader className="start-detection-modal-header">
+                <span className="start-detection-modal-title-copy">上传三维模型报告图片</span>
+              </ModalHeader>
+              <ModalBody className="start-detection-modal-body">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {MODEL_IMAGE_UPLOAD_SLOTS.map((slot) => {
+                    const savedImage = savedImagesBySlot.get(slot.key);
+                    const generatedImage = slot.imageKind === "elevation"
+                      ? elevationImages[slot.orientation]
+                      : undefined;
+                    const previewUrl = savedImage?.url ?? generatedImage;
+                    const selectedFile = imageUploadFiles[slot.key];
+                    return (
+                      <div
+                        key={slot.key}
+                        className={`grid gap-2 rounded-lg border border-slate-200 bg-white p-3 text-sm font-semibold text-slate-800${slot.orientation === "overview" ? " sm:col-span-2" : ""}`}
+                      >
+                        <span>{slot.label}</span>
+                        {previewUrl ? (
+                          <img
+                            alt={`${slot.label}预览`}
+                            className="h-32 w-full rounded-md border border-slate-200 bg-slate-50 object-cover"
+                            decoding="async"
+                            src={previewUrl}
+                          />
+                        ) : (
+                          <span className="grid h-32 place-items-center rounded-md border border-dashed border-slate-300 bg-slate-50 text-xs font-normal text-slate-400">
+                            暂无图片
+                          </span>
+                        )}
+                        <span className="text-xs font-normal text-slate-500">
+                          {selectedFile
+                            ? `待上传：${selectedFile.name}`
+                            : savedImage
+                              ? `已保存：${savedImage.original_filename}`
+                              : generatedImage
+                                ? "已自动生成，正在保存"
+                                : "尚未上传"}
+                        </span>
+                        <input
+                          accept=".jpg,.jpeg,.png,image/jpeg,image/png"
+                          className="block w-full text-xs font-normal text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:font-semibold file:text-slate-800"
+                          disabled={imageUploadMutation.isPending}
+                          type="file"
+                          onChange={(event) => {
+                            const file = event.currentTarget.files?.[0];
+                            setImageUploadFiles((current) => {
+                              const next = { ...current };
+                              if (file) next[slot.key] = file;
+                              else delete next[slot.key];
+                              return next;
+                            });
+                          }}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+                <p className="text-sm text-slate-500">
+                  本次选择 {selectedImageCount} 张
+                  {imageUploadMutation.isPending ? ` · 上传进度 ${imageUploadProgress}%` : ""}
+                </p>
+              </ModalBody>
+              <ModalFooter className="start-detection-modal-footer">
                 <button
-                  key={view.id}
-                  aria-label={`查看${view.label}`}
-                  aria-pressed={isActive}
-                  className={isActive ? "is-active" : ""}
-                  disabled={!thumbnailUrl}
+                  className="button back-cancel-button"
+                  disabled={imageUploadMutation.isPending}
                   type="button"
-                  onClick={() => handleElevationSelect(view.id)}
+                  onClick={onClose}
                 >
-                  <span className="building-model-elevation-thumbnail">
-                    {thumbnailUrl ? (
-                      <img alt="" decoding="async" src={thumbnailUrl} />
-                    ) : <span aria-hidden="true" />}
-                  </span>
-                  <strong>{view.label}</strong>
+                  取消
                 </button>
-              );
-            })}
-          </div>
-        </section>
-      ) : null}
+                <button
+                  className="button primary-action-button"
+                  disabled={
+                    selectedImageCount === 0
+                    || imageUploadMutation.isPending
+                  }
+                  type="button"
+                  onClick={submitModelImages}
+                >
+                  <Upload aria-hidden="true" />
+                  {imageUploadMutation.isPending ? `上传中 ${imageUploadProgress}%` : "上传所选图片"}
+                </button>
+              </ModalFooter>
+            </>
+          )}
+        </ModalContent>
+      </Modal>
     </section>
   );
 }

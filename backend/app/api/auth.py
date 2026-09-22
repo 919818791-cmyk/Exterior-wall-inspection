@@ -66,6 +66,8 @@ def _to_user_read(user: AuthenticatedUser) -> AuthUserRead:
         role=user.role,
         organization=user.organization,
         account_plan=user.account_plan,
+        professional_application_status=user.professional_application_status,
+        professional_plan_expires_at=user.professional_plan_expires_at,
     )
 
 
@@ -147,15 +149,106 @@ def _find_active_user_by_phone(db: Session, phone: str) -> UserAccount | None:
     )
 
 
+@router.post(
+    "/login/sms-code",
+    response_model=RegistrationSmsCodeResponse,
+)
+def send_login_sms_code(
+    payload: RegistrationSmsCodeRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    sms_service: SmsVerificationService = Depends(get_sms_verification_service),
+) -> RegistrationSmsCodeResponse:
+    """Send a login code without revealing whether the phone owns an active account."""
+    settings = get_settings()
+    phone = _validate_china_mobile_phone(payload.phone)
+    ensure_demo_users(db)
+    db.flush()
+    store = get_usage_store()
+    client_ip = _request_ip(request)
+    limits = (
+        (
+            "login-sms:phone:cooldown",
+            phone,
+            1,
+            settings.sms_verification_auth_send_interval_seconds,
+        ),
+        (
+            "login-sms:phone:hour",
+            phone,
+            settings.sms_verification_send_limit_per_phone_hour,
+            3600,
+        ),
+        (
+            "login-sms:ip:hour",
+            client_ip,
+            settings.sms_verification_send_limit_per_ip_hour,
+            3600,
+        ),
+    )
+    consumed_limits: list[tuple[str, str]] = []
+    try:
+        for scope, identity, limit, ttl_seconds in limits:
+            enforce_limit(
+                store,
+                scope,
+                identity,
+                limit=limit,
+                ttl_seconds=ttl_seconds,
+                detail="验证码发送过于频繁，请稍后重试。",
+            )
+            consumed_limits.append((scope, identity))
+    except HTTPException:
+        for scope, identity in consumed_limits:
+            store.refund(scope, identity, amount=1)
+        raise
+
+    if _find_active_user_by_phone(db, phone) is None:
+        return RegistrationSmsCodeResponse(
+            retry_after_seconds=settings.sms_verification_auth_send_interval_seconds,
+        )
+
+    try:
+        sms_service.send_code(phone)
+    except SmsVerificationConfigurationError as exc:
+        for scope, identity in consumed_limits:
+            store.refund(scope, identity, amount=1)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="短信验证码服务尚未配置，请联系管理员。",
+        ) from exc
+    except SmsVerificationProviderError as exc:
+        for scope, identity in consumed_limits:
+            store.refund(scope, identity, amount=1)
+        _raise_sms_provider_error(
+            exc,
+            retry_after_seconds=settings.sms_verification_auth_send_interval_seconds,
+        )
+
+    return RegistrationSmsCodeResponse(
+        retry_after_seconds=settings.sms_verification_auth_send_interval_seconds,
+    )
+
+
 @router.post("/login", response_model=LoginResponse)
-def login(payload: LoginRequest, db: Session = Depends(get_db)) -> LoginResponse:
+def login(
+    payload: LoginRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    sms_service: SmsVerificationService = Depends(get_sms_verification_service),
+) -> LoginResponse:
     settings = get_settings()
     store = get_usage_store()
     login_identity = payload.identity.strip() if payload.identity else None
     login_phone = payload.phone.strip() if payload.phone else None
     legacy_username = payload.username.strip() if payload.username else None
+    using_sms_code = payload.verification_code is not None
     if not login_identity and not login_phone and not legacy_username:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="用户名或手机号不能为空。")
+    if using_sms_code and login_phone is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="手机号不能为空。")
+    if not using_sms_code and payload.password is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="密码不能为空。")
     normalized_identity = (login_identity or login_phone or legacy_username or "").lower()
     enforce_limit(
         store,
@@ -167,7 +260,15 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> LoginResponse
     )
     ensure_demo_users(db)
     db.flush()
-    if login_identity is not None:
+    if using_sms_code:
+        validated_phone = _validate_china_mobile_phone(login_phone or "")
+        user = db.scalar(
+            select(UserAccount).where(
+                UserAccount.phone == validated_phone,
+                UserAccount.deleted_at.is_(None),
+            )
+        )
+    elif login_identity is not None:
         user = db.scalar(
             select(UserAccount).where(
                 UserAccount.phone == login_identity,
@@ -193,7 +294,56 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> LoginResponse
                 UserAccount.deleted_at.is_(None),
             )
         )
-    if user is None or not verify_password(payload.password, user.password_hash):
+    if using_sms_code:
+        if user is None:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="手机号或验证码错误。")
+        verification_limits = (
+            (
+                "login-sms-check:phone",
+                login_phone or "",
+                settings.sms_verification_check_limit_per_phone,
+            ),
+            (
+                "login-sms-check:ip",
+                _request_ip(request),
+                settings.sms_verification_check_limit_per_ip,
+            ),
+        )
+        consumed_limits: list[tuple[str, str]] = []
+        try:
+            for scope, identity, limit in verification_limits:
+                enforce_limit(
+                    store,
+                    scope,
+                    identity,
+                    limit=limit,
+                    ttl_seconds=settings.sms_verification_check_window_seconds,
+                    detail="验证码核验尝试过于频繁，请稍后重试。",
+                )
+                consumed_limits.append((scope, identity))
+        except HTTPException:
+            for scope, identity in consumed_limits:
+                store.refund(scope, identity, amount=1)
+            raise
+        try:
+            verification_passed = sms_service.verify_code(login_phone or "", payload.verification_code or "")
+        except SmsVerificationConfigurationError as exc:
+            for scope, identity in consumed_limits:
+                store.refund(scope, identity, amount=1)
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="短信验证码服务尚未配置，请联系管理员。",
+            ) from exc
+        except SmsVerificationProviderError as exc:
+            for scope, identity in consumed_limits:
+                store.refund(scope, identity, amount=1)
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="短信验证码服务暂时不可用，请稍后重试。",
+            ) from exc
+        if not verification_passed:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="手机号或验证码错误。")
+    elif user is None or not verify_password(payload.password or "", user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="用户名、手机号或密码错误。")
     if user.status != UserStatus.ACTIVE.value:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="账号尚未开通，请等待管理员审核。")
@@ -240,7 +390,7 @@ def send_registration_sms_code(
             "registration-sms:phone:cooldown",
             phone,
             1,
-            settings.sms_verification_send_interval_seconds,
+            settings.sms_verification_auth_send_interval_seconds,
         ),
         (
             "registration-sms:phone:hour",
@@ -286,11 +436,11 @@ def send_registration_sms_code(
             store.refund(scope, identity, amount=1)
         _raise_sms_provider_error(
             exc,
-            retry_after_seconds=settings.sms_verification_send_interval_seconds,
+            retry_after_seconds=settings.sms_verification_auth_send_interval_seconds,
         )
 
     return RegistrationSmsCodeResponse(
-        retry_after_seconds=settings.sms_verification_send_interval_seconds,
+        retry_after_seconds=settings.sms_verification_auth_send_interval_seconds,
     )
 
 

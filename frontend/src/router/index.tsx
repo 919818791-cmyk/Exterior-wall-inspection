@@ -6,8 +6,8 @@ import { AppLayout } from "@/layouts/AppLayout";
 
 const AccountManagementPage = lazy(() => import("@/pages/AccountManagementPage").then((module) => ({ default: module.AccountManagementPage })));
 const BuildingModelPage = lazy(() => import("@/pages/BuildingModelPage").then((module) => ({ default: module.BuildingModelPage })));
-const CapabilityDetailPage = lazy(() => import("@/pages/CapabilityDetailPage").then((module) => ({ default: module.CapabilityDetailPage })));
 const DashboardPage = lazy(() => import("@/pages/DashboardPage").then((module) => ({ default: module.DashboardPage })));
+const LoginPage = lazy(() => import("@/pages/LoginPage").then((module) => ({ default: module.LoginPage })));
 const PrivacyPolicyPage = lazy(() => import("@/pages/LegalDocumentPage").then((module) => ({ default: module.PrivacyPolicyPage })));
 const TermsPage = lazy(() => import("@/pages/LegalDocumentPage").then((module) => ({ default: module.TermsPage })));
 const NewProjectPage = lazy(() => import("@/pages/NewProjectPage").then((module) => ({ default: module.NewProjectPage })));
@@ -39,7 +39,7 @@ function LegacyReviewDetectionRedirect() {
 }
 
 export const router = createBrowserRouter([
-  { path: "/login", element: <Navigate replace to="/" /> },
+  { path: "/login", element: deferred(<LoginPage />) },
   { path: "/privacy", element: deferred(<PrivacyPolicyPage />) },
   { path: "/terms", element: deferred(<TermsPage />) },
   {
@@ -47,9 +47,7 @@ export const router = createBrowserRouter([
     element: <AppLayout />,
     children: [
       { index: true, element: deferred(<DashboardPage />) },
-      { path: "capabilities", element: <Navigate replace to="/capabilities/crack" /> },
-      { path: "capabilities/time", element: <Navigate replace to="/" /> },
-      { path: "capabilities/:type", element: deferred(<CapabilityDetailPage />) },
+      { path: "capabilities/*", element: <Navigate replace to="/#ai" /> },
       { path: "pricing", element: deferred(<PricingPage />) },
       { path: "trials", element: deferred(<ReportListPage />) },
       { path: "reports", element: <Navigate replace to="/trials" /> },

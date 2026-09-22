@@ -4,12 +4,12 @@ import { ProjectWorkbenchShell } from "@/components/project/ProjectWorkbenchShel
 
 const ORIGINAL_EXAMPLES = [
   { filename: "裂缝.jpeg", label: "裂缝" },
-  { filename: "剥落.jpg", label: "剥落" },
+  { filename: "剥落.jpg", label: "脱落" },
   { filename: "空鼓.JPG", label: "空鼓" }
 ] as const;
 const ANNOTATED_EXAMPLES = [
   { filename: "裂缝标注图.jpeg", label: "裂缝" },
-  { filename: "剥落标注图.png", label: "剥落" },
+  { filename: "剥落标注图.png", label: "脱落" },
   { filename: "空鼓标注图.png", label: "空鼓" }
 ] as const;
 

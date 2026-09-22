@@ -2,11 +2,6 @@ import {
   Button,
   Card,
   CardBody,
-  Modal,
-  ModalBody,
-  ModalContent,
-  ModalFooter,
-  ModalHeader,
   Skeleton
 } from "@heroui/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -25,15 +20,14 @@ import { useMemo, useRef, useState } from "react";
 import { Link as RouterLink, Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
 
 import { deleteReport, downloadReportDocx, downloadTrialReportPdf, reportQueryOptions } from "@/api/reports";
-import { ApiError } from "@/api/client";
 import {
   completeDetectionReview,
-  reviewDetectionPreviewQueryOptions,
-  reviewDetectionQueryOptions
+  reviewDetectionPreviewQueryOptions
 } from "@/api/review";
 import { ReportDefectBox } from "@/components/ReportDefectBox";
 import { WorkspaceTitleBar } from "@/components/WorkspaceTitleBar";
 import type {
+  ReportBuildingModelImage,
   ReportDefectSnapshot,
   ReportDetail
 } from "@/types/reports";
@@ -49,12 +43,6 @@ function confirmReportExport() {
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "操作失败，请稍后重试。";
-}
-
-function isBuildingModelRequiredError(error: unknown) {
-  return error instanceof ApiError
-    && error.status === 409
-    && error.message.includes("导入三维模型");
 }
 
 export function ReportDetailPage() {
@@ -149,17 +137,12 @@ function TrialResultDetail({
   const [annotatedPreview, setAnnotatedPreview] = useState<TrialReportAnnotatedPreview | null>(null);
   const [previewScale, setPreviewScale] = useState(1);
   const [previewOffset, setPreviewOffset] = useState({ x: 0, y: 0 });
-  const [isBuildingModelPromptOpen, setIsBuildingModelPromptOpen] = useState(false);
   const previewViewportRef = useRef<HTMLDivElement | null>(null);
   const formalTableHeaderRef = useRef<HTMLDivElement | null>(null);
   const previewDrag = useRef<{ pointerId: number; x: number; y: number; originX: number; originY: number } | null>(null);
   const previewDragMoved = useRef(false);
   const isTrialResult = report.source_type === "trial";
   const exportFormat = isTrialResult ? "PDF" : "DOCX";
-  const reviewDetectionQuery = useQuery({
-    ...reviewDetectionQueryOptions(reviewTaskId ?? ""),
-    enabled: Boolean(reviewTaskId)
-  });
   const exportMutation = useMutation({
     mutationFn: () => isTrialResult
       ? downloadTrialReportPdf(report.id)
@@ -178,9 +161,6 @@ function TrialResultDetail({
         queryClient.invalidateQueries({ queryKey: ["reports"] })
       ]);
       navigate("/review", { replace: true });
-    },
-    onError: (error) => {
-      if (isBuildingModelRequiredError(error)) setIsBuildingModelPromptOpen(true);
     }
   });
   const deleteReportMutation = useMutation({
@@ -198,6 +178,7 @@ function TrialResultDetail({
     () => isTrialResult ? [] : buildFormalResultRows(resultRows),
     [isTrialResult, resultRows]
   );
+  const isBuildingModelReport = !isTrialResult && buildingModelReportRequested(report);
   function clampPreviewOffset(offset: { x: number; y: number }, scale: number) {
     const viewport = previewViewportRef.current;
     if (!viewport || scale <= 1) return { x: 0, y: 0 };
@@ -235,34 +216,14 @@ function TrialResultDetail({
     closeAnnotatedPreview();
   }
 
-  async function requestCompleteReview() {
-    let detection = reviewDetectionQuery.data;
-    if (!detection && reviewTaskId) {
-      detection = (await reviewDetectionQuery.refetch()).data;
-    }
-    if (detection?.generate_building_model && !detection.has_building_model) {
-      setIsBuildingModelPromptOpen(true);
-      return;
-    }
+  function requestCompleteReview() {
     if (window.confirm("确认当前预览结果无误并完成审核？完成后将推送正式结果并返回工作台。")) {
       completeReviewMutation.mutate();
     }
   }
 
-  function openBuildingModelUpload() {
-    if (!reviewTaskId) return;
-    setIsBuildingModelPromptOpen(false);
-    navigate(`/review/detections/${report.project.id}/model`, {
-      state: {
-        backLabel: "返回审核预览",
-        backTo: `/detections/results/${report.id}?reviewTaskId=${encodeURIComponent(reviewTaskId)}`,
-        projectTitle: report.project.name || report.title
-      }
-    });
-  }
-
   return (
-    <div className={`trial-result-detail-page formal-result-detail-page${isTrialResult ? " quick-result-detail-page" : ""}`}>
+    <div className={`trial-result-detail-page formal-result-detail-page${isTrialResult ? " quick-result-detail-page" : ""}${isBuildingModelReport ? " building-model-report-detail-page" : ""}`}>
       <WorkspaceTitleBar
         backLabel={reviewTaskId ? "返回修改" : isTrialResult ? "返回快速体验" : "返回专业检测"}
         backTo={reviewTaskId ? `/review/detections/${reviewTaskId}` : isTrialResult ? "/trials" : "/detections"}
@@ -275,7 +236,7 @@ function TrialResultDetail({
               className="button primary-action-button review-preview-complete-button"
               disabled={completeReviewMutation.isPending}
               type="button"
-              onClick={() => void requestCompleteReview()}
+              onClick={requestCompleteReview}
             >
               <CheckCircle2 aria-hidden="true" />
               <span className="workspace-title-bar-action-label">
@@ -325,40 +286,9 @@ function TrialResultDetail({
       {exportMutation.isError ? (
         <p className="project-list-error">{exportFormat} 导出失败：{getErrorMessage(exportMutation.error)}<button className="inline-retry-button" type="button" onClick={() => exportMutation.mutate()}>重试</button></p>
       ) : null}
-      {completeReviewMutation.isError && !isBuildingModelRequiredError(completeReviewMutation.error) ? (
+      {completeReviewMutation.isError ? (
         <p className="project-list-error">完成审核失败：{getErrorMessage(completeReviewMutation.error)}<button className="inline-retry-button" type="button" onClick={() => completeReviewMutation.mutate()}>重试</button></p>
       ) : null}
-      <Modal
-        classNames={{
-          backdrop: "trial-version-modal-backdrop",
-          base: "trial-version-modal-content",
-          wrapper: "trial-version-modal-wrapper"
-        }}
-        hideCloseButton
-        isDismissable={false}
-        isOpen={isBuildingModelPromptOpen}
-        placement="center"
-        onOpenChange={setIsBuildingModelPromptOpen}
-      >
-        <ModalContent>
-          {(onClose) => (
-            <>
-              <ModalHeader className="trial-version-modal-header">
-                <div className="trial-version-modal-heading">
-                  <h2>请先上传三维模型</h2>
-                </div>
-              </ModalHeader>
-              <ModalBody className="trial-version-modal-body">
-                <p>该项目已勾选“生成三维模型”，上传三维模型后才能完成审核。</p>
-              </ModalBody>
-              <ModalFooter className="trial-version-modal-footer">
-                <button className="back-cancel-button" type="button" onClick={onClose}>稍后</button>
-                <button className="button primary-action-button" type="button" onClick={openBuildingModelUpload}>上传三维模型</button>
-              </ModalFooter>
-            </>
-          )}
-        </ModalContent>
-      </Modal>
       {deleteReportMutation.isError ? (
         <p className="project-list-error">删除失败：{getErrorMessage(deleteReportMutation.error)}<button className="inline-retry-button" type="button" onClick={() => deleteReportMutation.mutate()}>重试</button></p>
       ) : null}
@@ -366,7 +296,16 @@ function TrialResultDetail({
         <section className="trial-experience-grid">
           <aside className="trial-report-panel">
             <div className="trial-report-result is-headless">
-              {resultRows.length ? (
+              {isBuildingModelReport ? (
+                <BuildingModelReportView
+                  report={report}
+                  rows={formalResultRows}
+                  onPreview={(preview) => {
+                    resetPreviewView();
+                    setAnnotatedPreview(preview);
+                  }}
+                />
+              ) : resultRows.length ? (
                 <div className={`trial-report-table-wrap${isTrialResult ? " formal-report-table-body-wrap" : " formal-report-table-layout"}`}>
                   {isTrialResult ? (
                     <table className="trial-report-table trial-report-table--without-tile">
@@ -574,6 +513,195 @@ interface FormalResultPhotoPair {
   thermalPhoto: TrialResultPhotoRow | null;
 }
 
+const BUILDING_MODEL_REPORT_ORIENTATIONS = [
+  { id: "east", label: "东立面" },
+  { id: "south", label: "南立面" },
+  { id: "west", label: "西立面" },
+  { id: "north", label: "北立面" }
+] as const;
+
+function buildingModelReportRequested(report: ReportDetail) {
+  const config = report.detection_config;
+  if (!config) return false;
+  const configJson = config.config_json;
+  if (!configJson || typeof configJson !== "object") return false;
+  if (configJson.generate_building_model === true) return true;
+  const nestedConfig = configJson.config_json;
+  return Boolean(
+    nestedConfig
+    && typeof nestedConfig === "object"
+    && "generate_building_model" in nestedConfig
+    && (nestedConfig as Record<string, unknown>).generate_building_model === true
+  );
+}
+
+function BuildingModelReportView({
+  report,
+  rows,
+  onPreview
+}: {
+  report: ReportDetail;
+  rows: FormalResultPhotoPair[];
+  onPreview: (preview: TrialReportAnnotatedPreview) => void;
+}) {
+  const imagesBySlot = new Map(
+    (report.building_model_images ?? []).map((image) => [
+      `${image.orientation}:${image.image_kind}`,
+      image
+    ])
+  );
+  const projectName = report.project.name || report.title || report.report_no;
+
+  return (
+    <article className="building-model-report-document">
+      <h1>{projectName}无人机外立面表观病害筛查分析报告</h1>
+
+      <section className="building-model-report-section">
+        <h2>一、工程概况</h2>
+        <p className="building-model-report-intro">
+          针对{projectName}外立面开展无人机双光数据采集与智能分析，通过可见光与热红外影像同步获取，结合三维重建技术生成高精度建筑三维模型及外立面正射影像，通过智能算法自动识别裂缝、空鼓、剥落等表观病害，并经人工复核确认；并将识别结果映射至各外立面上，完成几何量化与定位，为建筑外立面安全评估与维修决策提供数据支撑。
+        </p>
+        <BuildingModelReportFigure
+          caption="建筑三维模型"
+          image={imagesBySlot.get("overview:model")}
+        />
+        <div className="building-model-report-elevation-list" aria-label="建筑三维模型四个立面">
+          {BUILDING_MODEL_REPORT_ORIENTATIONS.map((orientation) => (
+            <BuildingModelReportFigure
+              key={orientation.id}
+              caption={orientation.label}
+              image={imagesBySlot.get(`${orientation.id}:elevation`)}
+            />
+          ))}
+        </div>
+      </section>
+
+      <section className="building-model-report-section building-model-report-analysis">
+        <h2>二、分析结果</h2>
+        {BUILDING_MODEL_REPORT_ORIENTATIONS.map((orientation, orientationIndex) => {
+          const orientationRows = rows.filter((row) => (
+            buildingModelRowOrientation(row) === orientation.id
+          ));
+          return (
+            <section key={orientation.id} className="building-model-report-orientation-section">
+              <BuildingModelReportFigure
+                caption={`图 ${orientationIndex + 1} ${orientation.label}表观损伤分布`}
+                image={imagesBySlot.get(`${orientation.id}:annotated`)}
+              />
+              <table
+                aria-label={`${orientation.label}检测结果`}
+                className="building-model-report-table"
+              >
+                <BuildingModelResultColumns />
+                <thead>
+                  <tr>
+                    <th>序号</th>
+                    <th>可见光图像</th>
+                    <th>热红外图像</th>
+                    <th>损伤</th>
+                    <th>坐标与<br />几何信息</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {orientationRows.length ? orientationRows.map((row, rowIndex) => (
+                    <BuildingModelResultRow
+                      key={row.key}
+                      row={row}
+                      index={rowIndex}
+                      onPreview={onPreview}
+                    />
+                  )) : (
+                    <tr className="building-model-report-empty-row">
+                      <td>1</td>
+                      <td>—</td>
+                      <td>—</td>
+                      <td>未检出明显缺陷</td>
+                      <td>—</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </section>
+          );
+        })}
+      </section>
+    </article>
+  );
+}
+
+function buildingModelRowOrientation(
+  row: FormalResultPhotoPair
+): (typeof BUILDING_MODEL_REPORT_ORIENTATIONS)[number]["id"] | null {
+  const rawOrientation = row.visiblePhoto?.facadeOrientation
+    || row.thermalPhoto?.facadeOrientation;
+  const orientation = rawOrientation?.trim().toLocaleLowerCase();
+  if (!orientation) return null;
+  if (orientation === "东" || orientation === "东立面" || orientation === "east") return "east";
+  if (orientation === "南" || orientation === "南立面" || orientation === "south") return "south";
+  if (orientation === "西" || orientation === "西立面" || orientation === "west") return "west";
+  if (orientation === "北" || orientation === "北立面" || orientation === "north") return "north";
+  return null;
+}
+
+function BuildingModelReportFigure({
+  image,
+  caption
+}: {
+  image?: ReportBuildingModelImage;
+  caption: string;
+}) {
+  return (
+    <figure className="building-model-report-figure">
+      {image?.url ? (
+        <img alt={caption} src={image.url} />
+      ) : (
+        <div className="building-model-report-image-placeholder">
+          <FileImage aria-hidden="true" />
+          <span>图片尚未上传</span>
+        </div>
+      )}
+      <figcaption>{caption}</figcaption>
+    </figure>
+  );
+}
+
+function BuildingModelResultColumns() {
+  return (
+    <colgroup>
+      <col className="building-model-report-sequence-col" />
+      <col className="building-model-report-photo-col" />
+      <col className="building-model-report-photo-col" />
+      <col className="building-model-report-description-col" />
+      <col className="building-model-report-detail-col" />
+    </colgroup>
+  );
+}
+
+function BuildingModelResultRow({
+  row,
+  index,
+  onPreview
+}: {
+  row: FormalResultPhotoPair;
+  index: number;
+  onPreview: (preview: TrialReportAnnotatedPreview) => void;
+}) {
+  const defects = [
+    ...(row.visiblePhoto?.defects ?? []),
+    ...(row.thermalPhoto?.defects ?? [])
+  ];
+
+  return (
+    <tr>
+      <td className="trial-sequence-column">{index + 1}</td>
+      <ResultPhotoCell row={row.visiblePhoto} onPreview={onPreview} />
+      <ResultPhotoCell row={row.thermalPhoto} onPreview={onPreview} />
+      <ResultDescriptionCell summary={trialResultDefectSummary(defects)} />
+      <ResultDetailCell defects={defects} />
+    </tr>
+  );
+}
+
 function FormalResultColumns() {
   return (
     <colgroup>
@@ -760,47 +888,45 @@ function formatDefectMeasurement(defect: ReportDefectSnapshot) {
   };
 }
 
-const MAX_VISIBLE_DETAIL_ITEMS = 10;
+function formatDefectCoordinate(defect: ReportDefectSnapshot) {
+  const bbox = defect.bbox_json;
+  const values = [bbox?.x, bbox?.y].map(Number);
+  if (values.some((value) => !Number.isFinite(value))) return "坐标不足";
+  const [x, y] = values;
+  const normalized = values.every((value) => value >= 0 && value <= 1);
+  const coordinateValue = (value: number) => (
+    Number.isInteger(value)
+      ? String(value)
+      : value.toFixed(normalized ? 3 : 1).replace(/\.?0+$/, "")
+  );
+  return `x=${coordinateValue(x)}，y=${coordinateValue(y)}`;
+}
 
 function ResultDetailCell({ defects }: { defects: ReportDefectSnapshot[] }) {
   const formattedDetailItems = defects.map((defect, index) => {
     const defectNumber = defect.defect_no || formatDefectNumber(defect.defect_type, index + 1);
     const measurement = formatDefectMeasurement(defect);
+    const coordinate = formatDefectCoordinate(defect);
+    const measurementText = measurement.available
+      ? `${measurement.estimated ? "≈" : " "}${measurement.value} ${measurement.unit}`
+      : "几何参数不足";
+    const text = `${defectNumber}${measurementText}（${coordinate}）`;
     return {
       key: `${defect.id || defectNumber}-${index}`,
-      defectNumber,
-      ...measurement,
-      text: measurement.available
-        ? `${defectNumber}${measurement.estimated ? " ≈" : ""} ${measurement.value} ${measurement.unit}`
-        : "参数不足"
+      text
     };
   });
-  const missingDetailItem = formattedDetailItems.find((item) => !item.available);
-  const detailItems = [
-    ...formattedDetailItems.filter((item) => item.available),
-    ...(missingDetailItem ? [missingDetailItem] : [])
-  ];
-  const detailSummary = detailItems.map((item) => item.text).join("、");
-  const hasOverflow = detailItems.length > MAX_VISIBLE_DETAIL_ITEMS;
-  const visibleDetailItems = detailItems.slice(0, MAX_VISIBLE_DETAIL_ITEMS);
+  const detailSummary = formattedDetailItems.map((item) => item.text).join("、");
 
   return (
     <td className="formal-report-detail-column">
-      {detailItems.length ? (
+      {formattedDetailItems.length ? (
         <div className="formal-report-detail-list" title={detailSummary} aria-label={detailSummary}>
-          {visibleDetailItems.map((item) => (
+          {formattedDetailItems.map((item) => (
             <div key={item.key} className="formal-report-detail-item">
-              {item.available ? (
-                <>
-                  <span className="formal-report-detail-muted">
-                    {item.defectNumber}{item.estimated ? " ≈" : ""}
-                  </span>
-                  <span className="formal-report-detail-value"> {item.value} {item.unit}</span>
-                </>
-              ) : item.text}
+              {item.text}
             </div>
           ))}
-          {hasOverflow ? <div className="formal-report-detail-ellipsis" aria-hidden="true">......</div> : null}
         </div>
       ) : "—"}
     </td>

@@ -6,7 +6,6 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleCheckBig,
-  ClipboardCheck,
   CopyPlus,
   Download,
   FileImage,
@@ -29,6 +28,7 @@ import {
   reviewDetectionAnnotationsQueryOptions,
   saveReviewDetectionAnnotations
 } from "@/api/review";
+import { ErrorNoticeModal } from "@/components/project/PhotoLimitModal";
 import { TilePreviewDialog, type TilePreviewSource } from "@/components/TilePreviewDialog";
 import type {
   AnnotationBBox,
@@ -47,10 +47,9 @@ import { formatDefectNumber } from "@/utils/trialDefectDisplay";
 
 const DEFECT_OPTIONS = [
   { value: "crack", label: "裂缝", color: "#ef4444" },
-  { value: "spalling", label: "剥落", color: "#f97316" },
+  { value: "spalling", label: "脱落", color: "#f97316" },
   { value: "peeling", label: "起皮", color: "#d97706" },
   { value: "damage", label: "面板破损", color: "#dc2626" },
-  { value: "detachment", label: "脱落", color: "#f97316" },
   { value: "moisture", label: "潮湿", color: "#0ea5e9" },
   { value: "corrosion", label: "锈蚀", color: "#a16207" },
   { value: "hollow", label: "空鼓", color: "#7c3aed" }
@@ -182,6 +181,7 @@ export function ReviewAnnotationWorkbench({
     [detailQuery.data?.edits]
   );
   const [selectedPhotoKey, setSelectedPhotoKey] = useState<string | null>(null);
+  const [previewRequirementError, setPreviewRequirementError] = useState("");
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const [importNotice, setImportNotice] = useState<AnnotationImportNotice | null>(null);
   const editorSaveHandlersRef = useRef(new Map<string, AnnotationEditorSaveHandler>());
@@ -482,6 +482,16 @@ export function ReviewAnnotationWorkbench({
       window.alert("请先保存所有照片的标注，等待保存完成后再预览结果。");
       return;
     }
+    if (
+      detailQuery.data?.generate_building_model
+      && (
+        !detailQuery.data.has_building_model
+        || !detailQuery.data.has_building_model_images
+      )
+    ) {
+      setPreviewRequirementError("请先上传三维模型及所需图片");
+      return;
+    }
     const query = new URLSearchParams({ reviewTaskId });
     navigate(`/detections/results/${report.id}?${query.toString()}`);
   };
@@ -491,7 +501,6 @@ export function ReviewAnnotationWorkbench({
         <section className="annotation-detail-workbench" aria-label="照片标注编辑工作台">
           <header className="annotation-detail-header">
             <div className="management-page-title">
-              <ClipboardCheck aria-hidden="true" className="management-page-title-icon" />
               <h1>{projectName || report.title}</h1>
             </div>
             <div className="annotation-detail-header-actions">
@@ -499,7 +508,7 @@ export function ReviewAnnotationWorkbench({
                 ref={importInputRef}
                 className="sr-only"
                 accept=".json,application/json"
-                aria-label="批量导入标注框 JSON"
+                aria-label="导入标注框 JSON"
                 disabled={readOnly || hasUnsavedChanges || isAnyEditorSaving || importMutation.isPending}
                 multiple
                 type="file"
@@ -512,11 +521,7 @@ export function ReviewAnnotationWorkbench({
                 onClick={previewAnnotations}
               >
                 <CircleCheckBig aria-hidden="true" />
-                {readOnly
-                  ? "当前审核不可编辑"
-                  : hasUnsavedChanges || isAnyEditorSaving
-                    ? "请先保存标注"
-                    : "预览报告"}
+                {readOnly ? "当前审核不可编辑" : "预览报告"}
               </button>
               <button
                 className="button primary-action-button annotation-save-annotations"
@@ -549,7 +554,7 @@ export function ReviewAnnotationWorkbench({
                 onClick={() => importInputRef.current?.click()}
               >
                 <FileUp aria-hidden="true" />
-                {importMutation.isPending ? "导入保存中…" : "批量导入 JSON"}
+                {importMutation.isPending ? "导入保存中…" : "导入 JSON"}
               </button>
               <button
                 className="button back-cancel-button annotation-export-annotations"
@@ -560,16 +565,6 @@ export function ReviewAnnotationWorkbench({
               >
                 <Download aria-hidden="true" />
                 导出 JSON
-              </button>
-              <button
-                className="button back-cancel-button annotation-export-annotations"
-                disabled={originalPhotosExportMutation.isPending}
-                title="导出当前项目的全部原始照片"
-                type="button"
-                onClick={() => originalPhotosExportMutation.mutate()}
-              >
-                <FileImage aria-hidden="true" />
-                {originalPhotosExportMutation.isPending ? "导出中…" : "导出原始照片"}
               </button>
               <RouterLink
                 aria-label={backLabel}
@@ -594,7 +589,15 @@ export function ReviewAnnotationWorkbench({
           <aside className="annotation-photo-rail" aria-label="照片缩略图列表">
             <div className="annotation-photo-rail-heading">
               <strong>照片列表</strong>
-              <span>{selectedPhotoIndex + 1} / {rows.length}</span>
+              <button
+                className="back-cancel-button annotation-photo-export"
+                disabled={originalPhotosExportMutation.isPending}
+                title="导出当前项目的全部原始照片"
+                type="button"
+                onClick={() => originalPhotosExportMutation.mutate()}
+              >
+                {originalPhotosExportMutation.isPending ? "导出中…" : "导出照片"}
+              </button>
             </div>
             <div className="annotation-photo-thumbnails">
               {rows.map((row, index) => {
@@ -651,6 +654,12 @@ export function ReviewAnnotationWorkbench({
           </CardBody>
         </Card>
       )}
+      <ErrorNoticeModal
+        message={previewRequirementError}
+        onOpenChange={(isOpen) => {
+          if (!isOpen) setPreviewRequirementError("");
+        }}
+      />
     </div>
   );
 }
@@ -726,7 +735,7 @@ function AnnotationPhotoEditor({
     detections: row.detections
   }), [imageHeight, imageWidth, row.detections, row.filename, row.imageUrl, row.tileHeight, row.tileOverlapRatio, row.tileWidth]);
   const dirty = JSON.stringify(cleanAnnotations(annotations)) !== JSON.stringify(cleanAnnotations(savedAnnotations));
-  const defectOptions = DEFECT_OPTIONS.filter((option) => ["crack", "spalling", "peeling", "damage", "detachment", "hollow"].includes(option.value));
+  const defectOptions = DEFECT_OPTIONS.filter((option) => ["crack", "spalling", "peeling", "damage", "hollow"].includes(option.value));
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["review", "detections"] });
   const saveMutation = useMutation({

@@ -36,8 +36,8 @@ class PricingQuotaSettingRead(BaseModel):
 
 class FormalDetectionPromptSettingRead(BaseModel):
     tile_crack_prompt: str
-    tile_detachment_prompt: str
-    tile_crack_detachment_prompt: str
+    tile_spalling_prompt: str
+    tile_visible_prompt: str
     tile_thermal_prompt: str
     coating_crack_prompt: str
     coating_peeling_prompt: str
@@ -48,7 +48,7 @@ class FormalDetectionPromptSettingRead(BaseModel):
     plaster_visible_prompt: str
     plaster_thermal_prompt: str
     panel_damage_prompt: str
-    panel_detachment_prompt: str
+    panel_spalling_prompt: str
     curtain_wall_damage_prompt: str
 
 
@@ -56,8 +56,8 @@ class FormalDetectionPromptSettingUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     tile_crack_prompt: str | None = Field(default=None, min_length=20, max_length=20_000)
-    tile_detachment_prompt: str | None = Field(default=None, min_length=20, max_length=20_000)
-    tile_crack_detachment_prompt: str | None = Field(default=None, min_length=20, max_length=20_000)
+    tile_spalling_prompt: str | None = Field(default=None, min_length=20, max_length=20_000)
+    tile_visible_prompt: str | None = Field(default=None, min_length=20, max_length=20_000)
     tile_thermal_prompt: str | None = Field(default=None, min_length=20, max_length=20_000)
     coating_crack_prompt: str | None = Field(default=None, min_length=20, max_length=20_000)
     coating_peeling_prompt: str | None = Field(default=None, min_length=20, max_length=20_000)
@@ -68,7 +68,7 @@ class FormalDetectionPromptSettingUpdate(BaseModel):
     plaster_visible_prompt: str | None = Field(default=None, min_length=20, max_length=20_000)
     plaster_thermal_prompt: str | None = Field(default=None, min_length=20, max_length=20_000)
     panel_damage_prompt: str | None = Field(default=None, min_length=20, max_length=20_000)
-    panel_detachment_prompt: str | None = Field(default=None, min_length=20, max_length=20_000)
+    panel_spalling_prompt: str | None = Field(default=None, min_length=20, max_length=20_000)
     curtain_wall_damage_prompt: str | None = Field(default=None, min_length=20, max_length=20_000)
 
 

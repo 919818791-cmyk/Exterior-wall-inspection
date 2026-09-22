@@ -114,5 +114,18 @@ class BuildingModelRead(ApiSchema):
     uploaded_at: datetime
 
 
+class BuildingModelImageRead(ApiSchema):
+    id: UUID
+    project_id: UUID
+    orientation: Literal["overview", "east", "west", "south", "north"]
+    image_kind: Literal["model", "elevation", "annotated"]
+    original_filename: str
+    file_size: int
+    mime_type: str
+    url: str
+    uploaded_by: UUID | None
+    uploaded_at: datetime
+
+
 class DeleteResponse(ApiSchema):
     ok: bool = True

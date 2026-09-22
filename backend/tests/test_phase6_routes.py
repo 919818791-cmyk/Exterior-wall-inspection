@@ -82,7 +82,7 @@ def test_required_building_model_blocks_review_completion_until_imported() -> No
         _ensure_required_building_model(requested=True, model_exists=False)
 
     assert exc_info.value.status_code == 409
-    assert "导入三维模型" in exc_info.value.detail
+    assert exc_info.value.detail == "请先上传三维模型及所需图片"
 
     _ensure_required_building_model(requested=True, model_exists=True)
     _ensure_required_building_model(requested=False, model_exists=False)

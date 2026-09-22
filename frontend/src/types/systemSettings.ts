@@ -12,8 +12,8 @@ export interface TrialInferenceProviderOption {
 
 export interface FormalDetectionPromptSettings {
   tile_crack_prompt: string;
-  tile_detachment_prompt: string;
-  tile_crack_detachment_prompt: string;
+  tile_spalling_prompt: string;
+  tile_visible_prompt: string;
   tile_thermal_prompt: string;
   coating_crack_prompt: string;
   coating_peeling_prompt: string;
@@ -24,7 +24,7 @@ export interface FormalDetectionPromptSettings {
   plaster_visible_prompt: string;
   plaster_thermal_prompt: string;
   panel_damage_prompt: string;
-  panel_detachment_prompt: string;
+  panel_spalling_prompt: string;
   curtain_wall_damage_prompt: string;
 }
 

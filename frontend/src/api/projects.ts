@@ -6,6 +6,8 @@ import type { ReportDetail } from "@/types/reports";
 import type { AuthUser } from "@/types/auth";
 import type {
   BuildingModel,
+  BuildingModelImage,
+  BuildingModelImageUpload,
   DetectionConfig,
   DetectionConfigPayload,
   DetectionTask,
@@ -110,6 +112,37 @@ export function deleteBuildingModel(projectId: string) {
   return apiRequest<{ ok: boolean }>(`/projects/${projectId}/building-model`, {
     method: "DELETE"
   });
+}
+
+export function buildingModelImagesQueryKey(projectId: string) {
+  return ["projects", projectId, "building-model-images"] as const;
+}
+
+export function buildingModelImagesQueryOptions(projectId: string) {
+  return queryOptions({
+    queryKey: buildingModelImagesQueryKey(projectId),
+    queryFn: () => apiRequest<BuildingModelImage[]>(
+      `/projects/${projectId}/building-model-images`
+    ),
+    enabled: Boolean(projectId)
+  });
+}
+
+export function uploadBuildingModelImages(
+  projectId: string,
+  uploads: BuildingModelImageUpload[],
+  onProgress?: (progress: ApiUploadProgress) => void
+) {
+  const body = new FormData();
+  uploads.forEach((upload) => {
+    body.append("files", upload.file);
+    body.append("slots", `${upload.orientation}:${upload.imageKind}`);
+  });
+  return apiUploadRequest<BuildingModelImage[]>(
+    `/projects/${projectId}/building-model-images`,
+    body,
+    { method: "PUT", onProgress }
+  );
 }
 
 export function projectPhotosQueryOptions(projectId: string) {

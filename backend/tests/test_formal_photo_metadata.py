@@ -353,16 +353,16 @@ def test_formal_docx_uses_reference_layout_and_pairs_four_by_three_photos() -> N
     assert table.rows[1].cells[3].text == "西立面\n38.6 m"
     assert table.rows[1].cells[4].text == "疑似裂缝: 1处\n疑似空鼓: 2处"
     assert table.rows[1].cells[5].text == (
-        "裂缝-001≈0.248m\n"
-        "空鼓-001 1.200m²\n"
-        "参数不足"
+        "裂缝-001≈0.248 m（x=0.2，y=0.25）\n"
+        "空鼓-001 1.200 m²（x=800，y=300）\n"
+        "空鼓-002几何参数不足（x=0.1，y=0.6）"
     )
     assert "0.777" not in table.rows[1].cells[5].text
     detail_runs = table.rows[1].cells[5].paragraphs[0].runs
-    assert detail_runs[3].text == "m\n"
-    assert detail_runs[3].font.name == "微软雅黑"
-    assert detail_runs[3].font.size.pt == pytest.approx(9)
-    assert str(detail_runs[3].font.color.rgb) == "475467"
+    measurement_unit_run = next(run for run in detail_runs if run.text == " m")
+    assert measurement_unit_run.font.name == "微软雅黑"
+    assert measurement_unit_run.font.size.pt == pytest.approx(9)
+    assert str(measurement_unit_run.font.color.rgb) == "475467"
     assert reads == [
         ("inspection", "photos/0165-v.jpg"),
         ("inspection", "photos/0165-t.jpg"),
@@ -388,7 +388,7 @@ def test_formal_docx_uses_reference_layout_and_pairs_four_by_three_photos() -> N
     assert all(_has_white_label_text(image) for image in embedded_images)
 
 
-def test_formal_docx_shows_one_parameter_warning_when_measurements_are_missing() -> None:
+def test_formal_docx_shows_coordinates_for_each_defect_when_measurements_are_missing() -> None:
     content = build_report_docx(
         "参数不足报告",
         "RPT-NO-MEASUREMENTS",
@@ -422,4 +422,7 @@ def test_formal_docx_shows_one_parameter_warning_when_measurements_are_missing()
     table = document.tables[0]
     assert all(len(row._tr.tc_lst) == 6 for row in table.rows)
     assert table.rows[0].cells[5].text == "缺陷详情"
-    assert table.rows[1].cells[5].text == "参数不足"
+    assert table.rows[1].cells[5].text == (
+        "裂缝-001几何参数不足（x=10，y=20）\n"
+        "空鼓-001几何参数不足（x=200，y=100）"
+    )

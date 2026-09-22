@@ -52,9 +52,9 @@ const PROMPT_SETTING_GROUPS: PromptSettingGroup[] = [
     key: "general",
     label: "通用设置",
     options: [
-      { key: "visible_prompt", label: "裂缝 + 剥落" },
+      { key: "visible_prompt", label: "裂缝 + 脱落" },
       { key: "crack_prompt", label: "裂缝" },
-      { key: "spalling_prompt", label: "剥落" },
+      { key: "spalling_prompt", label: "脱落" },
       { key: "thermal_prompt", label: "空鼓（热成像）" },
       { key: "photo_guard_prompt", label: "照片相关性判断" }
     ]
@@ -64,8 +64,8 @@ const PROMPT_SETTING_GROUPS: PromptSettingGroup[] = [
     label: "饰面砖",
     options: [
       { key: "tile_crack_prompt", label: "裂缝" },
-      { key: "tile_detachment_prompt", label: "脱落" },
-      { key: "tile_crack_detachment_prompt", label: "裂缝 + 脱落" },
+      { key: "tile_spalling_prompt", label: "脱落" },
+      { key: "tile_visible_prompt", label: "裂缝 + 脱落" },
       { key: "tile_thermal_prompt", label: "空鼓（热成像）" }
     ]
   },
@@ -84,8 +84,8 @@ const PROMPT_SETTING_GROUPS: PromptSettingGroup[] = [
     label: "抹灰",
     options: [
       { key: "plaster_crack_prompt", label: "裂缝" },
-      { key: "plaster_spalling_prompt", label: "剥落" },
-      { key: "plaster_visible_prompt", label: "裂缝 + 剥落" },
+      { key: "plaster_spalling_prompt", label: "脱落" },
+      { key: "plaster_visible_prompt", label: "裂缝 + 脱落" },
       { key: "plaster_thermal_prompt", label: "空鼓（热成像）" }
     ]
   },
@@ -94,7 +94,7 @@ const PROMPT_SETTING_GROUPS: PromptSettingGroup[] = [
     label: "饰面板",
     options: [
       { key: "panel_damage_prompt", label: "面板破损" },
-      { key: "panel_detachment_prompt", label: "脱落" }
+      { key: "panel_spalling_prompt", label: "脱落" }
     ]
   },
   {
@@ -153,8 +153,8 @@ function updatePayload(form: SettingsForm): TrialInferenceSettingUpdate {
     photo_guard_prompt: form.photo_guard_prompt,
     formal_prompts: {
       tile_crack_prompt: form.tile_crack_prompt,
-      tile_detachment_prompt: form.tile_detachment_prompt,
-      tile_crack_detachment_prompt: form.tile_crack_detachment_prompt,
+      tile_spalling_prompt: form.tile_spalling_prompt,
+      tile_visible_prompt: form.tile_visible_prompt,
       tile_thermal_prompt: form.tile_thermal_prompt,
       coating_crack_prompt: form.coating_crack_prompt,
       coating_peeling_prompt: form.coating_peeling_prompt,
@@ -165,7 +165,7 @@ function updatePayload(form: SettingsForm): TrialInferenceSettingUpdate {
       plaster_visible_prompt: form.plaster_visible_prompt,
       plaster_thermal_prompt: form.plaster_thermal_prompt,
       panel_damage_prompt: form.panel_damage_prompt,
-      panel_detachment_prompt: form.panel_detachment_prompt,
+      panel_spalling_prompt: form.panel_spalling_prompt,
       curtain_wall_damage_prompt: form.curtain_wall_damage_prompt
     }
   };

@@ -7,7 +7,6 @@ import { currentAccountUsageQueryOptions } from "@/api/accounts";
 import { logout } from "@/api/auth";
 import { AUTH_UNAUTHORIZED_EVENT } from "@/api/client";
 import { AppSidebar, AppSidebarUserMenuContent } from "@/components/AppSidebar";
-import { AuthModal } from "@/components/auth/AuthModal";
 import { ChangePasswordModal } from "@/components/auth/ChangePasswordModal";
 import { getListPageHeader, ListPageHeader } from "@/components/ListPageHeader";
 import { PersonalInfoModal } from "@/components/auth/PersonalInfoModal";
@@ -33,13 +32,7 @@ function pageClass(pathname: string) {
   if (pathname.startsWith("/detections") || pathname.startsWith("/trials") || pathname.startsWith("/accounts") || pathname.startsWith("/system-settings") || pathname.startsWith("/review")) {
     return "project-page";
   }
-  if (pathname.startsWith("/capabilities")) return "detail-page";
   return "";
-}
-
-function safeRedirectPath(value: string | null) {
-  if (!value || !value.startsWith("/") || value.startsWith("//")) return null;
-  return value;
 }
 
 function usesAppSidebar(pathname: string) {
@@ -67,9 +60,6 @@ export function AppLayout() {
   const queryClient = useQueryClient();
   const user = useAuthStore((state) => state.user);
   const clearSession = useAuthStore((state) => state.clearSession);
-  const [authModalOpen, setAuthModalOpen] = useState(false);
-  const [authModalInitialMode, setAuthModalInitialMode] = useState<"login" | "trial-application">("login");
-  const [authNotice, setAuthNotice] = useState("");
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [personalInfoModalOpen, setPersonalInfoModalOpen] = useState(false);
   const [changePasswordModalOpen, setChangePasswordModalOpen] = useState(false);
@@ -96,8 +86,6 @@ export function AppLayout() {
   const accountMenuRef = useRef<HTMLDivElement>(null);
   const sidebarAccountMenuRef = useRef<HTMLElement>(null);
   const headerRef = useRef<HTMLElement>(null);
-  const pendingAuthenticationActionRef = useRef<(() => void) | null>(null);
-  const defectKey = location.pathname.match(/^\/capabilities\/(crack|spalling|missing|moisture|corrosion|hollow)$/)?.[1];
   const isBuildingModelRoute = /^\/detections\/[^/]+\/model$/.test(location.pathname);
   const isReviewBuildingModelRoute = /^\/review\/detections\/[^/]+\/model$/.test(location.pathname);
   const isReviewDetailRoute = /^\/review\/detections\/[^/]+$/.test(location.pathname);
@@ -136,10 +124,6 @@ export function AppLayout() {
   }, [location.pathname, location.search]);
 
   useEffect(() => {
-    if (new URLSearchParams(location.search).get("login") === "1") setAuthModalOpen(true);
-  }, [location.search]);
-
-  useEffect(() => {
     if (typeof window === "undefined" || typeof window.matchMedia !== "function") return undefined;
     const mediaQuery = window.matchMedia(`(max-width: ${sidebarBreakpoint}px)`);
     const updateSidebarViewport = () => setSidebarViewportCompact(mediaQuery.matches);
@@ -165,9 +149,7 @@ export function AppLayout() {
       setAccountMenuOpen(false);
       setPersonalInfoModalOpen(false);
       setChangePasswordModalOpen(false);
-      setAuthNotice("登录状态已失效，请重新登录。登录后将返回当前页面。");
-      setAuthModalOpen(true);
-      navigate(`/?login=1&redirect=${encodeURIComponent(currentPath)}`, { replace: true });
+      navigate(`/login?redirect=${encodeURIComponent(currentPath)}`, { replace: true });
     };
     window.addEventListener(AUTH_UNAUTHORIZED_EVENT, handleUnauthorized);
     return () => window.removeEventListener(AUTH_UNAUTHORIZED_EVENT, handleUnauthorized);
@@ -280,45 +262,17 @@ export function AppLayout() {
     clearSession();
     queryClient.removeQueries({ queryKey: ["reports"] });
     queryClient.removeQueries({ queryKey: ["current-account-usage"] });
-    setAuthNotice("密码已修改。请使用新密码重新登录。");
-    setAuthModalOpen(true);
-    navigate("/", { replace: true });
+    navigate("/login?notice=password-changed", { replace: true });
   }
 
-  function requestAuthentication(onAuthenticated?: () => void) {
-    pendingAuthenticationActionRef.current = onAuthenticated ?? null;
-    setAuthModalInitialMode("login");
-    setAuthModalOpen(true);
+  function requestAuthentication() {
+    const currentPath = `${location.pathname}${location.search}${location.hash}`;
+    navigate(`/login?redirect=${encodeURIComponent(currentPath)}`);
   }
 
   function requestRegistration() {
-    pendingAuthenticationActionRef.current = null;
-    setAuthModalInitialMode("trial-application");
-    setAuthModalOpen(true);
-  }
-
-  function closeAuthModal() {
-    pendingAuthenticationActionRef.current = null;
-    setAuthModalOpen(false);
-    setAuthNotice("");
-  }
-
-  function handleAuthenticated() {
-    const searchParams = new URLSearchParams(location.search);
-    const redirect = safeRedirectPath(searchParams.get("redirect"));
-    const pendingAction = pendingAuthenticationActionRef.current;
-    pendingAuthenticationActionRef.current = null;
-    queryClient.removeQueries({ queryKey: ["reports"] });
-    queryClient.removeQueries({ queryKey: ["current-account-usage"] });
-    setAuthNotice("");
-    setAuthModalOpen(false);
-    if (pendingAction) {
-      pendingAction();
-    } else if (redirect) {
-      navigate(redirect, { replace: true });
-    } else if (searchParams.get("login") === "1") {
-      navigate(location.pathname, { replace: true });
-    }
+    const currentPath = `${location.pathname}${location.search}${location.hash}`;
+    navigate(`/login?mode=register&redirect=${encodeURIComponent(currentPath)}`);
   }
 
   const displayName = user?.real_name?.trim() || user?.username || "";
@@ -391,7 +345,6 @@ export function AppLayout() {
   return (
     <div
       className={`${resolvedPageClass}${hasAppSidebar ? " app-sidebar-route" : ""}${hasAppSidebar && isSidebarCollapsed ? " app-sidebar-collapsed" : ""}`.trim()}
-      data-defect={defectKey}
     >
       {hasAppSidebar ? (
         <AppSidebar
@@ -472,14 +425,6 @@ export function AppLayout() {
       <main className="app-main">
         <Outlet context={{ requestAuthentication, requestRegistration, setProjectDetailListChrome }} />
       </main>
-      <AuthModal
-        key={authModalInitialMode}
-        initialMode={authModalInitialMode}
-        isOpen={authModalOpen}
-        notice={authNotice}
-        onAuthenticated={handleAuthenticated}
-        onClose={closeAuthModal}
-      />
       {user ? (
         <PersonalInfoModal
           isOpen={personalInfoModalOpen}

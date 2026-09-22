@@ -80,6 +80,18 @@ exit /b 0
 :run_backend
 cd /d "%~dp0backend"
 title Building Exterior Backend
+powershell -NoProfile -Command "if (Get-NetTCPConnection -State Listen -LocalPort 8000 -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }"
+if not errorlevel 1 (
+  echo Backend is already running at http://127.0.0.1:8000.
+  echo A second backend process was not started.
+  exit /b 0
+)
+echo [SETUP] Applying backend database migrations...
+".venv\Scripts\python.exe" -m alembic upgrade head
+if errorlevel 1 (
+  echo [ERROR] Backend database migration failed.
+  goto failed
+)
 echo Backend logs will appear in this window.
 ".venv\Scripts\python.exe" -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 echo.

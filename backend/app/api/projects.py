@@ -22,6 +22,7 @@ from app.enums.status import PhotoPrecheckStatus, ProjectStatus
 from app.models.tables import (
     AiDetectionResult,
     BuildingModel,
+    BuildingModelImage,
     DetectionConfig,
     DetectionTask,
     Photo,
@@ -577,6 +578,20 @@ def delete_project(
         if building_model is not None
         else None
     )
+    building_model_image_storage: list[tuple[str, str]] = []
+    for orientation in ("east", "west", "south", "north"):
+        for image_kind in ("elevation", "annotated"):
+            image = db.scalar(
+                select(BuildingModelImage).where(
+                    BuildingModelImage.project_id == project.id,
+                    BuildingModelImage.orientation == orientation,
+                    BuildingModelImage.image_kind == image_kind,
+                )
+            )
+            if image is not None:
+                building_model_image_storage.append(
+                    (image.storage_bucket, image.storage_object_key)
+                )
     deleted_at = datetime.now(UTC)
     discarded_photo_storage: list[tuple[str, str | None]] = []
     if (
@@ -606,6 +621,8 @@ def delete_project(
     db.commit()
     if building_model_storage is not None:
         remove_object(*building_model_storage)
+    for storage in building_model_image_storage:
+        remove_object(*storage)
     for bucket, object_key in discarded_photo_storage:
         remove_object(bucket, object_key)
     return DeleteResponse()

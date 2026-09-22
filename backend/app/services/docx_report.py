@@ -27,6 +27,7 @@ from app.services.defect_numbering import number_defects
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 REPORT_TEMPLATE_DIR = BACKEND_ROOT / "templates" / "reports"
 FORMAL_TEMPLATE = REPORT_TEMPLATE_DIR / "正式报告示例.docx"
+BUILDING_MODEL_TEMPLATE = REPORT_TEMPLATE_DIR / "三维模型报告.docx"
 
 TABLE_IMAGE_WIDTH_EMU = 1_440_000
 TABLE_IMAGE_HEIGHT_EMU = 1_080_000
@@ -38,6 +39,19 @@ REPORT_INTRO_TEXT = (
     "经对巡检结果进行空间定位与尺度估算，得到以下疑似病害位置。"
     "深度估计结果存在模型与相机参数误差，建议结合现场复核。"
 )
+BUILDING_MODEL_REPORT_TITLE_SUFFIX = "无人机外立面表观病害筛查分析报告"
+BUILDING_MODEL_IMAGE_PARAGRAPHS = {
+    ("overview", "model"): 3,
+    ("east", "elevation"): 5,
+    ("south", "elevation"): 7,
+    ("west", "elevation"): 9,
+    ("north", "elevation"): 11,
+    ("east", "annotated"): 15,
+    ("south", "annotated"): 18,
+    ("west", "annotated"): 22,
+    ("north", "annotated"): 26,
+}
+BUILDING_MODEL_TABLE_ORIENTATIONS = ("东立面", "南立面", "西立面", "北立面")
 
 ObjectReader = Callable[[str, str], bytes]
 
@@ -222,6 +236,25 @@ def _defect_measurement_text(value: Any) -> str | None:
     return f"{measurement:.3f}"
 
 
+def _defect_coordinate_text(defect: dict[str, Any]) -> str:
+    bbox = defect.get("bbox_json") or {}
+    if not isinstance(bbox, dict):
+        return "坐标不足"
+    values = [finite_number(bbox.get(key)) for key in ("x", "y")]
+    if any(value is None for value in values):
+        return "坐标不足"
+    x, y = (float(value) for value in values)
+    normalized = all(0 <= value <= 1 for value in (x, y))
+
+    def coordinate_value(value: float) -> str:
+        if value.is_integer():
+            return str(int(value))
+        precision = 3 if normalized else 1
+        return f"{value:.{precision}f}".rstrip("0").rstrip(".")
+
+    return f"x={coordinate_value(x)}，y={coordinate_value(y)}"
+
+
 def _append_prototype_run(paragraph, prototype: Any | None, value: str) -> Run:
     if prototype is None:
         return paragraph.add_run(value)
@@ -247,41 +280,32 @@ def _set_defect_details(
         _append_prototype_run(paragraph, prototype(0), "—")
         return
 
-    detail_items: list[tuple[dict[str, Any], bool, str] | None] = []
-    has_missing_parameters = False
-    for defect in defects:
+    for index, defect in enumerate(defects):
         is_crack = defect.get("defect_type") == "crack"
         measurement_text = _defect_measurement_text(
             defect.get("length") if is_crack else defect.get("area")
         )
-        if measurement_text is None:
-            has_missing_parameters = True
-        else:
-            detail_items.append((defect, is_crack, measurement_text))
-    if has_missing_parameters:
-        detail_items.append(None)
-
-    for index, detail_item in enumerate(detail_items):
-        if detail_item is None:
-            last_run = _append_prototype_run(paragraph, prototype(0), "参数不足")
-            if index < len(detail_items) - 1:
-                last_run.add_break()
-            continue
-
-        defect, is_crack, measurement_text = detail_item
         defect_no = _text(defect.get("defect_no"), fallback="缺陷")
         _append_prototype_run(paragraph, prototype(0), defect_no)
-        estimated = defect.get(
-            "length_estimated" if is_crack else "area_estimated"
-        ) is True
-        _append_prototype_run(paragraph, prototype(1), "≈" if estimated else " ")
-        _append_prototype_run(paragraph, prototype(2), measurement_text)
+        if measurement_text is None:
+            _append_prototype_run(paragraph, prototype(0), "几何参数不足")
+        else:
+            estimated = defect.get(
+                "length_estimated" if is_crack else "area_estimated"
+            ) is True
+            _append_prototype_run(paragraph, prototype(1), "≈" if estimated else " ")
+            _append_prototype_run(paragraph, prototype(2), measurement_text)
+            _append_prototype_run(
+                paragraph,
+                prototype(3),
+                " m" if is_crack else " m²",
+            )
         last_run = _append_prototype_run(
             paragraph,
-            prototype(3),
-            "m" if is_crack else "m²",
+            prototype(0),
+            f"（{_defect_coordinate_text(defect)}）",
         )
-        if index < len(detail_items) - 1:
+        if index < len(defects) - 1:
             last_run.add_break()
 
 
@@ -430,6 +454,180 @@ def _set_title(document, data: dict[str, Any], report_title: str, report_no: str
     document.core_properties.subject = report_no
 
 
+def _building_model_report_requested(data: dict[str, Any]) -> bool:
+    detection_config = data.get("detection_config")
+    if not isinstance(detection_config, dict):
+        return False
+    if detection_config.get("generate_building_model") is True:
+        return True
+    config_json = detection_config.get("config_json")
+    if not isinstance(config_json, dict):
+        return False
+    if config_json.get("generate_building_model") is True:
+        return True
+    nested_config = config_json.get("config_json")
+    return (
+        isinstance(nested_config, dict)
+        and nested_config.get("generate_building_model") is True
+    )
+
+
+def _set_building_model_title(
+    document,
+    data: dict[str, Any],
+    report_title: str,
+    report_no: str,
+) -> None:
+    if len(document.paragraphs) < 3:
+        raise DocxReportExportError("三维模型 DOCX 模板缺少标题或工程概况段落。")
+    project = data.get("project") or {}
+    detection_name = str(project.get("name") or report_title or report_no).strip()
+    title = (
+        f"{detection_name}{BUILDING_MODEL_REPORT_TITLE_SUFFIX}"
+        if detection_name
+        else BUILDING_MODEL_REPORT_TITLE_SUFFIX
+    )
+    intro = document.paragraphs[2].text.replace("[建筑名称]", detection_name or "本建筑")
+    _set_paragraph_text(document.paragraphs[0], title)
+    _set_paragraph_text(document.paragraphs[2], intro)
+    document.core_properties.title = title
+    document.core_properties.subject = report_no
+
+
+def _building_model_image_map(data: dict[str, Any]) -> dict[tuple[str, str], dict[str, Any]]:
+    return {
+        (str(image.get("orientation")), str(image.get("image_kind"))): image
+        for image in data.get("building_model_images") or []
+        if isinstance(image, dict)
+    }
+
+
+def _replace_template_picture(
+    paragraph,
+    image: dict[str, Any],
+    read_object: ObjectReader | None,
+) -> None:
+    if read_object is None:
+        raise DocxReportExportError("三维模型报告图片读取服务不可用。")
+    bucket = image.get("storage_bucket")
+    object_key = image.get("storage_object_key")
+    if not bucket or not object_key:
+        raise DocxReportExportError("三维模型报告图片存储信息不完整。")
+    try:
+        image_bytes = read_object(str(bucket), str(object_key))
+    except Exception as exc:
+        filename = _text(image.get("original_filename"), fallback="三维模型报告图片")
+        raise DocxReportExportError(f"{filename} 读取失败，DOCX 导出已终止。") from exc
+
+    extent = next(iter(paragraph._p.xpath(".//wp:extent")), None)
+    width = Emu(int(extent.get("cx"))) if extent is not None else None
+    height = Emu(int(extent.get("cy"))) if extent is not None else None
+    _clear_paragraph_content(paragraph)
+    run = paragraph.add_run()
+    try:
+        run.add_picture(BytesIO(image_bytes), width=width, height=height)
+    except (UnidentifiedImageError, OSError, ValueError) as exc:
+        raise DocxReportExportError("三维模型报告图片无法写入 DOCX。") from exc
+
+
+def _populate_building_model_images(
+    document,
+    data: dict[str, Any],
+    read_object: ObjectReader | None,
+) -> None:
+    image_map = _building_model_image_map(data)
+    missing_slots = [
+        slot for slot in BUILDING_MODEL_IMAGE_PARAGRAPHS if slot not in image_map
+    ]
+    if missing_slots:
+        raise DocxReportExportError("三维模型报告所需的 9 张图片尚未上传完整。")
+    for slot, paragraph_index in BUILDING_MODEL_IMAGE_PARAGRAPHS.items():
+        if paragraph_index >= len(document.paragraphs):
+            raise DocxReportExportError("三维模型 DOCX 模板缺少立面图片占位符。")
+        _replace_template_picture(
+            document.paragraphs[paragraph_index],
+            image_map[slot],
+            read_object,
+        )
+
+
+def _pair_orientation(pair: dict[str, Any]) -> str:
+    for variant in ("visible", "thermal"):
+        row = pair.get(variant)
+        orientation = row and row.get("photo", {}).get("facade_orientation")
+        if orientation:
+            return str(orientation)
+    return ""
+
+
+def _populate_building_model_tables(
+    document,
+    data: dict[str, Any],
+    read_object: ObjectReader | None,
+) -> None:
+    if len(document.tables) < len(BUILDING_MODEL_TABLE_ORIENTATIONS):
+        raise DocxReportExportError("三维模型 DOCX 模板缺少分立面结果表格。")
+    all_pairs = _paired_photo_rows(data)
+
+    for table, orientation in zip(
+        document.tables,
+        BUILDING_MODEL_TABLE_ORIENTATIONS,
+        strict=False,
+    ):
+        if len(table.rows) < 2 or len(table.rows[0].cells) < 5 or len(table.rows[1].cells) < 5:
+            raise DocxReportExportError("三维模型 DOCX 模板结果表格格式不完整。")
+        header_properties = table.rows[0]._tr.get_or_add_trPr()
+        if header_properties.find(qn("w:tblHeader")) is None:
+            header_properties.append(OxmlElement("w:tblHeader"))
+        prototype_row = deepcopy(table.rows[1]._tr)
+        populated_photo_prototypes = [
+            deepcopy(paragraph._p) for paragraph in table.rows[1].cells[1].paragraphs
+        ]
+        empty_photo_prototypes = [
+            deepcopy(paragraph._p) for paragraph in table.rows[1].cells[2].paragraphs
+        ]
+        detail_run_prototypes = [
+            deepcopy(run._r) for run in table.rows[1].cells[4].paragraphs[0].runs
+        ]
+        for row_element in list(table._tbl.tr_lst[1:]):
+            table._tbl.remove(row_element)
+
+        pairs = [pair for pair in all_pairs if _pair_orientation(pair) == orientation]
+        if not pairs:
+            pairs = [{"visible": None, "thermal": None}]
+        for index, pair in enumerate(pairs, start=1):
+            table._tbl.append(deepcopy(prototype_row))
+            row = table.rows[-1]
+            _set_paragraph_text(row.cells[0].paragraphs[0], str(index))
+            _set_photo_cell(
+                row.cells[1],
+                pair["visible"],
+                read_object=read_object,
+                populated_prototypes=populated_photo_prototypes,
+                empty_prototypes=empty_photo_prototypes,
+            )
+            _set_photo_cell(
+                row.cells[2],
+                pair["thermal"],
+                read_object=read_object,
+                populated_prototypes=populated_photo_prototypes,
+                empty_prototypes=empty_photo_prototypes,
+            )
+            defects = [
+                *(pair["visible"]["defects"] if pair["visible"] else []),
+                *(pair["thermal"]["defects"] if pair["thermal"] else []),
+            ]
+            _set_paragraph_text(row.cells[3].paragraphs[0], _defect_description(defects), blue=True)
+            _set_defect_details(
+                row.cells[4].paragraphs[0],
+                defects,
+                detail_run_prototypes,
+            )
+        for row in table.rows:
+            for cell in row.cells:
+                cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+
+
 def _remove_trailing_empty_paragraph(document) -> None:
     if not document.paragraphs or document.paragraphs[-1].text:
         return
@@ -513,16 +711,23 @@ def build_report_docx(
     *,
     read_object: ObjectReader | None = None,
 ) -> bytes:
-    if not FORMAL_TEMPLATE.is_file():
+    data = deepcopy(report_data or {})
+    building_model_report = _building_model_report_requested(data)
+    template = BUILDING_MODEL_TEMPLATE if building_model_report else FORMAL_TEMPLATE
+    if not template.is_file():
         raise DocxReportExportError("DOCX 导出模板不存在。")
 
-    data = deepcopy(report_data or {})
     data["defects"] = number_defects(
         defect for defect in data.get("defects") or [] if isinstance(defect, dict)
     )
-    document = Document(FORMAL_TEMPLATE)
-    _set_title(document, data, report_title, report_no)
-    _populate_result_table(document, data, read_object)
+    document = Document(template)
+    if building_model_report:
+        _set_building_model_title(document, data, report_title, report_no)
+        _populate_building_model_images(document, data, read_object)
+        _populate_building_model_tables(document, data, read_object)
+    else:
+        _set_title(document, data, report_title, report_no)
+        _populate_result_table(document, data, read_object)
     _remove_trailing_empty_paragraph(document)
 
     output = BytesIO()

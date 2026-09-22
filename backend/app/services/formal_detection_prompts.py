@@ -18,10 +18,10 @@ FACADE_TYPE_NAMES: dict[FacadeType, str] = {
     "curtain_wall": "幕墙",
 }
 FACADE_DEFECT_TYPES: dict[FacadeType, frozenset[str]] = {
-    "tile": frozenset({"crack", "detachment", "hollow"}),
+    "tile": frozenset({"crack", "spalling", "hollow"}),
     "coating": frozenset({"crack", "peeling", "hollow"}),
     "plaster": frozenset({"crack", "spalling", "hollow"}),
-    "panel": frozenset({"damage", "detachment"}),
+    "panel": frozenset({"damage", "spalling"}),
     "curtain_wall": frozenset({"damage"}),
 }
 VISIBLE_PROMPT_VARIANTS = {
@@ -30,24 +30,22 @@ VISIBLE_PROMPT_VARIANTS = {
     frozenset({"crack", "spalling"}): "visible_prompt",
     frozenset({"peeling"}): "peeling_prompt",
     frozenset({"crack", "peeling"}): "crack_peeling_prompt",
-    frozenset({"detachment"}): "detachment_prompt",
-    frozenset({"crack", "detachment"}): "crack_detachment_prompt",
 }
 FORMAL_PROMPT_FILES = {
     "tile_crack_prompt": "饰面砖裂缝.txt",
-    "tile_detachment_prompt": "饰面砖脱落.txt",
-    "tile_crack_detachment_prompt": "饰面砖裂缝+脱落.txt",
+    "tile_spalling_prompt": "饰面砖脱落.txt",
+    "tile_visible_prompt": "饰面砖裂缝+脱落.txt",
     "tile_thermal_prompt": "饰面砖空鼓.txt",
     "coating_crack_prompt": "涂饰裂缝.txt",
     "coating_peeling_prompt": "涂饰起皮.txt",
     "coating_crack_peeling_prompt": "涂饰裂缝+起皮.txt",
     "coating_thermal_prompt": "涂饰空鼓.txt",
     "plaster_crack_prompt": "抹灰裂缝.txt",
-    "plaster_spalling_prompt": "抹灰剥落.txt",
-    "plaster_visible_prompt": "抹灰裂缝+剥落.txt",
+    "plaster_spalling_prompt": "抹灰脱落.txt",
+    "plaster_visible_prompt": "抹灰裂缝+脱落.txt",
     "plaster_thermal_prompt": "抹灰空鼓.txt",
     "panel_damage_prompt": "饰面板—面板破损.txt",
-    "panel_detachment_prompt": "饰面板—脱落.txt",
+    "panel_spalling_prompt": "饰面板—脱落.txt",
     "curtain_wall_damage_prompt": "幕墙—面板破损.txt",
 }
 FORMAL_PROMPT_SETTING_KEYS = {
@@ -111,7 +109,7 @@ def formal_detection_prompts(
     dedicated_visible_keys = (
         {
             defect_type: f"{facade_type}_{defect_type}_prompt"
-            for defect_type in ("damage", "detachment")
+            for defect_type in ("damage", "spalling")
             if defect_type in selected_models
         }
         if facade_type in {"panel", "curtain_wall"}
@@ -121,7 +119,7 @@ def formal_detection_prompts(
         VISIBLE_PROMPT_VARIANTS.get(
             frozenset(
                 selected_models.intersection(
-                    {"crack", "spalling", "peeling", "detachment"}
+                    {"crack", "spalling", "peeling"}
                 )
             )
         )

@@ -66,7 +66,7 @@ import {
 import { trialDefectBoxLabel, trialDefectDisplayFromModel } from "@/utils/trialDefectDisplay";
 import { readTrialPhotoMetadata, type TrialPhotoMetadata } from "@/utils/photoMetadata";
 
-const MODEL_OPTIONS = ["裂缝", "剥落", "空鼓"] as const;
+const MODEL_OPTIONS = ["裂缝", "脱落", "空鼓"] as const;
 const TRIAL_PHOTO_PAGE_SIZE = 12;
 const TRIAL_PHOTO_UPLOAD_BASE_HINT = `仅支持建筑外墙相关的原始照片，支持可见光与热红外照片，支持 JPG、JPEG、PNG 格式，单张不超过 ${MAX_PHOTO_UPLOAD_SIZE_BYTES / 1024 / 1024}MB`;
 const TRIAL_RESULT_CONFIDENCE_THRESHOLD = 0.6;
@@ -710,7 +710,7 @@ export function TrialExperiencePage() {
   async function confirmDetection(payload: StartDetectionPayload) {
     if (!preparedDetection || isGenerating) return;
     const models = payload.model_types.map((model) => (
-      model === "crack" ? "裂缝" : model === "spalling" ? "剥落" : "空鼓"
+      model === "crack" ? "裂缝" : model === "spalling" ? "脱落" : "空鼓"
     ));
     const previousResult = generatedResult;
     const requestId = createClientId("trial-detection");
@@ -1044,7 +1044,7 @@ export function TrialExperiencePage() {
         </section>
         </form>
         <DetectionGuidePanel
-          description={<>支持裂缝、剥落、空鼓外墙缺陷识别</>}
+          description={<>支持裂缝、脱落、空鼓外墙缺陷识别</>}
         />
         </div>
       </ProjectWorkbenchShell>
@@ -1393,7 +1393,7 @@ function metadataFromUploadedPhoto(uploadedPhoto: TrialUploadedPhoto, fallback: 
 }
 
 function trialUploadErrorMessage(error: unknown) {
-  if (error instanceof ApiError && error.status === 401) return "登录状态已失效，请重新登录后上传。";
+  if (error instanceof ApiError && error.status === 401) return "请重新登录后上传。";
   return error instanceof Error ? error.message : "上传失败，请重新上传。";
 }
 

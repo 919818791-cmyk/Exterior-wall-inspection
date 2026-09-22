@@ -164,12 +164,14 @@ npm run dev
 | 内部审核人员 | `reviewer` / `13800000002` | `Reviewer123!` | 全部专业检测只读、审核工作台和正式报告下载；快速体验记录仅本人及示例项目 |
 | 管理员 | `admin` / `13800000003` | `Admin123!` | 全部功能 |
 
-### 注册短信验证码
+### 注册与登录短信验证码
 
-注册账号已接入阿里云号码认证服务（Dypnsapi）：前端先调用
+注册账号与手机号登录已接入阿里云号码认证服务（Dypnsapi）：注册前端先调用
 `POST /api/auth/registration/sms-code` 发送验证码，随后把验证码随
 `POST /api/auth/trial-application` 一并提交；只有阿里云
-`CheckSmsVerifyCode` 返回 `PASS` 才会创建账号。发送间隔、手机号/IP
+`CheckSmsVerifyCode` 返回 `PASS` 才会创建账号。手机号登录先调用
+`POST /api/auth/login/sms-code`，再把手机号与验证码提交到
+`POST /api/auth/login`。注册与登录的同手机号发送间隔均为 30 分钟；手机号/IP
 小时限额和核验错误次数均由后端及 Redis 统一控制，AccessKey 不会进入前端包。
 
 在根目录 `.env.local`（本地）或 `.env`（生产）配置：
@@ -182,12 +184,13 @@ ALIYUN_DYPNS_REGION_ID=ap-southeast-1
 ALIYUN_DYPNS_ENDPOINT=dypnsapi.aliyuncs.com
 SMS_VERIFICATION_SIGN_NAME=号码认证控制台当前可用的系统赠送签名
 SMS_VERIFICATION_TEMPLATE_CODE=100001
+SMS_VERIFICATION_AUTH_SEND_INTERVAL_SECONDS=1800
 ```
 
 RAM 用户仅需授予 `dypns:SendSmsVerifyCode` 和
 `dypns:CheckSmsVerifyCode`。请从号码认证控制台填写当前可用的系统签名，
-不要长期写死 OpenAPI 测试页中的历史签名。未启用或配置不完整时，注册接口
-会返回 `503`，不会绕过手机验证直接创建账号。
+不要长期写死 OpenAPI 测试页中的历史签名。未启用或配置不完整时，注册与登录
+短信接口会返回 `503`，不会绕过手机验证直接创建账号或登录。
 
 如果 `5175` 已被占用，可以临时改用其他端口：
 
@@ -230,7 +233,7 @@ npm run dev -- --host 127.0.0.1 --port 5174
 - 报告文件字段统一为 `docx_bucket`、`docx_object_key`
 - `backend/templates/reports/正式报告示例.docx` 作为正式报告 DOCX 模板
 - AI 检测体验归档保存上传照片和简易识别结果，不生成 DOCX 文件
-- `POST /api/auth/login`、`GET /api/auth/me`、`POST /api/auth/logout` 基础登录会话
+- `POST /api/auth/login/sms-code`、`POST /api/auth/login`、`GET /api/auth/me`、`POST /api/auth/logout` 基础登录会话
 - Bearer 登录态刷新恢复；专业检测和免费试用列表页公开访问，新增页及其他业务路由跳转登录页
 - 客户用户仅看到自己的项目、项目审核完成后固化的检测结果、已推送正式报告和自己的体验归档，且无法访问审核接口或审核菜单
 - 内部审核人员和管理员可访问审核工作台；审核员对其他账号的项目源数据只读，不能修改、上传、启动检测或删除

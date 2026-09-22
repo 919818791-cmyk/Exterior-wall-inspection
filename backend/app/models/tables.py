@@ -36,6 +36,7 @@ from app.enums.status import (
     PhotoPrecheckStatus,
     PhotoStatus,
     PhotoType,
+    ProfessionalApplicationStatus,
     ProjectStatus,
     RecommendationOrientation,
     ReportPushMethod,
@@ -63,7 +64,21 @@ class UserAccount(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     __table_args__ = (
         enum_check("role", UserRole, "role"),
         enum_check("account_plan", AccountPlan, "account_plan"),
+        enum_check(
+            "professional_application_status",
+            ProfessionalApplicationStatus,
+            "professional_application_status",
+        ),
         enum_check("status", UserStatus, "status"),
+        CheckConstraint(
+            "professional_application_duration_months IS NULL OR "
+            "professional_application_duration_months IN (6, 12)",
+            name="professional_application_duration_months",
+        ),
+        CheckConstraint(
+            "detection_quota IS NULL OR detection_quota BETWEEN 1 AND 100000",
+            name="detection_quota",
+        ),
         Index("uq_user_account_phone", "phone", unique=True),
         Index("idx_user_account_role", "role"),
         Index("idx_user_account_status", "status"),
@@ -75,7 +90,13 @@ class UserAccount(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     phone: Mapped[str | None] = mapped_column(String(32))
     role: Mapped[str] = status_column(UserRole.CUSTOMER)
     account_plan: Mapped[str] = status_column(AccountPlan.BASIC)
+    professional_application_status: Mapped[str | None] = mapped_column(String(32))
+    professional_application_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    professional_application_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    professional_application_duration_months: Mapped[int | None] = mapped_column(SmallInteger)
+    professional_plan_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     organization: Mapped[str | None] = mapped_column(String(128))
+    detection_quota: Mapped[int | None] = mapped_column(Integer)
     status: Mapped[str] = status_column(UserStatus.ACTIVE)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     quota_reset_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -163,6 +184,50 @@ class BuildingModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
     file_size: Mapped[int] = mapped_column(BigInteger, nullable=False)
     mime_type: Mapped[str | None] = mapped_column(String(128))
+    storage_bucket: Mapped[str] = mapped_column(String(64), nullable=False)
+    storage_object_key: Mapped[str] = mapped_column(String(512), nullable=False)
+    uploaded_by: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("user_account.id", ondelete="SET NULL"),
+    )
+
+
+class BuildingModelImage(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "building_model_image"
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id",
+            "orientation",
+            "image_kind",
+            name="uq_building_model_image_project_slot",
+        ),
+        CheckConstraint(
+            "orientation IN ('overview', 'east', 'west', 'south', 'north')",
+            name="ck_building_model_image_orientation",
+        ),
+        CheckConstraint(
+            "image_kind IN ('model', 'elevation', 'annotated')",
+            name="ck_building_model_image_kind",
+        ),
+        CheckConstraint(
+            "(orientation = 'overview' AND image_kind = 'model') OR "
+            "(orientation IN ('east', 'west', 'south', 'north') "
+            "AND image_kind IN ('elevation', 'annotated'))",
+            name="ck_building_model_image_slot",
+        ),
+        Index("idx_building_model_image_project_id", "project_id"),
+    )
+
+    project_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("project.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    orientation: Mapped[str] = mapped_column(String(16), nullable=False)
+    image_kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    file_size: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    mime_type: Mapped[str] = mapped_column(String(128), nullable=False)
     storage_bucket: Mapped[str] = mapped_column(String(64), nullable=False)
     storage_object_key: Mapped[str] = mapped_column(String(512), nullable=False)
     uploaded_by: Mapped[UUID | None] = mapped_column(

@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Modal, ModalBody, ModalContent, ModalFooter, ModalHeader } from "@heroui/react";
 import { BarChart3, Copy, RefreshCw, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -7,6 +8,7 @@ import {
   accountsQueryOptions,
   accountUsageDetailQueryOptions,
   createAccount,
+  reviewProfessionalApplication,
   resetAccountPassword,
   resetAccountQuotas,
   updateAccount
@@ -15,8 +17,15 @@ import { WorkbenchNameSearch } from "@/components/WorkbenchNameSearch";
 import { AccountEditorModal, type AccountFormState } from "@/components/auth/AccountEditorModal";
 import { ErrorNoticeModal } from "@/components/project/PhotoLimitModal";
 import type { AccountUsagePeriod, AccountUsageTotals } from "@/types/accountUsage";
-import type { AccountCreatePayload, AccountPlan, AccountUpdatePayload, AccountUser, UserRole, UserStatus } from "@/types/auth";
-import { formatDateTime } from "@/utils/projectDisplay";
+import type {
+  AccountCreatePayload,
+  AccountPlan,
+  AccountUpdatePayload,
+  AccountUser,
+  ProfessionalApplicationStatus,
+  UserRole,
+  UserStatus
+} from "@/types/auth";
 
 const roleLabels: Record<UserRole, string> = {
   admin: "管理员",
@@ -39,12 +48,19 @@ const statusClass: Record<UserStatus, "ready" | "neutral"> = {
   disabled: "neutral"
 };
 
+const professionalApplicationLabels: Record<ProfessionalApplicationStatus, string> = {
+  pending: "待审核",
+  approved: "已通过",
+  rejected: "已拒绝"
+};
+
 const emptyAccountForm: AccountFormState = {
   username: "",
   password: "",
   real_name: "",
   phone: "",
   organization: "",
+  detection_quota: "",
   role: "customer",
   account_plan: "basic",
   status: "active"
@@ -66,6 +82,12 @@ function toNullable(value: string) {
   return trimmed ? trimmed : null;
 }
 
+function toDetectionQuota(value: string) {
+  if (!value.trim()) return null;
+  const quota = Number(value);
+  return Number.isInteger(quota) && quota >= 1 && quota <= 100_000 ? quota : undefined;
+}
+
 function formFromAccount(account: AccountUser): AccountFormState {
   return {
     username: account.username,
@@ -73,6 +95,7 @@ function formFromAccount(account: AccountUser): AccountFormState {
     real_name: account.real_name ?? "",
     phone: account.phone ?? "",
     organization: account.organization ?? "",
+    detection_quota: account.detection_quota?.toString() ?? "",
     role: account.role,
     account_plan: account.account_plan,
     status: account.status
@@ -85,6 +108,7 @@ export function AccountManagementPage() {
   const queryClient = useQueryClient();
   const accountsQuery = useQuery(accountsQueryOptions);
   const [editingAccount, setEditingAccount] = useState<AccountUser | null>(null);
+  const [reviewAccount, setReviewAccount] = useState<AccountUser | null>(null);
   const [usageAccount, setUsageAccount] = useState<AccountUser | null>(null);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [formError, setFormError] = useState("");
@@ -126,6 +150,25 @@ export function AccountManagementPage() {
         queryClient.invalidateQueries({ queryKey: ["current-account-usage"] })
       ]);
       setFormNotice("账号全部额度已重置。");
+    }
+  });
+
+  const reviewProfessionalMutation = useMutation({
+    mutationFn: ({
+      accountId,
+      decision,
+      durationMonths
+    }: {
+      accountId: string;
+      decision: "approved" | "rejected";
+      durationMonths: 6 | 12;
+    }) => reviewProfessionalApplication(accountId, {
+      decision,
+      duration_months: durationMonths
+    }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["accounts"] });
+      setReviewAccount(null);
     }
   });
 
@@ -173,6 +216,17 @@ export function AccountManagementPage() {
     setIsEditorOpen(true);
   }
 
+  function openProfessionalReview(account: AccountUser) {
+    reviewProfessionalMutation.reset();
+    setReviewAccount(account);
+  }
+
+  function closeProfessionalReview() {
+    if (reviewProfessionalMutation.isPending) return;
+    reviewProfessionalMutation.reset();
+    setReviewAccount(null);
+  }
+
   function closeEditor() {
     setIsEditorOpen(false);
     setEditingAccount(null);
@@ -189,12 +243,17 @@ export function AccountManagementPage() {
   function buildCreatePayload(form: AccountFormState): AccountCreatePayload | null {
     const username = form.username.trim();
     const password = form.password.trim();
+    const detectionQuota = toDetectionQuota(form.detection_quota);
     if (!username) {
       setFormError("请输入用户名。");
       return null;
     }
     if (password.length < 8) {
       setFormError("新建账号密码至少 8 位。");
+      return null;
+    }
+    if (detectionQuota === undefined) {
+      setFormError("检测额度需为 1 至 100000 的整数，或留空使用套餐默认额度。");
       return null;
     }
     setFormError("");
@@ -204,6 +263,7 @@ export function AccountManagementPage() {
       real_name: toNullable(form.real_name),
       phone: toNullable(form.phone),
       organization: toNullable(form.organization),
+      detection_quota: detectionQuota,
       role: form.role,
       account_plan: form.account_plan,
       status: form.status
@@ -212,8 +272,13 @@ export function AccountManagementPage() {
 
   function buildUpdatePayload(form: AccountFormState): AccountUpdatePayload | null {
     const username = form.username.trim();
+    const detectionQuota = toDetectionQuota(form.detection_quota);
     if (!username) {
       setFormError("请输入用户名。");
+      return null;
+    }
+    if (detectionQuota === undefined) {
+      setFormError("检测额度需为 1 至 100000 的整数，或留空使用套餐默认额度。");
       return null;
     }
     setFormError("");
@@ -222,6 +287,7 @@ export function AccountManagementPage() {
       real_name: toNullable(form.real_name),
       phone: toNullable(form.phone),
       organization: toNullable(form.organization),
+      detection_quota: detectionQuota,
       role: form.role,
       account_plan: form.account_plan,
       status: form.status
@@ -294,7 +360,7 @@ export function AccountManagementPage() {
                     <th className="account-role-column">权限</th>
                     <th className="account-secondary-column">套餐</th>
                     <th className="account-secondary-column">状态</th>
-                    <th className="account-secondary-column">最近登录</th>
+                    <th className="account-secondary-column">专业版申请</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -318,7 +384,21 @@ export function AccountManagementPage() {
                       <td className="account-role-column" data-label="权限"><span className="account-role">{roleLabels[account.role]}</span></td>
                       <td className="account-secondary-column" data-label="套餐">{account.role === "customer" ? planLabels[account.account_plan] : "—"}</td>
                       <td className="account-secondary-column" data-label="状态"><span className={`status-tag ${statusClass[account.status]}`}>{statusLabels[account.status]}</span></td>
-                      <td className="account-secondary-column" data-label="最近登录">{formatDateTime(account.last_login_at)}</td>
+                      <td className="account-secondary-column" data-label="专业版申请">
+                        {account.role === "customer" && account.professional_application_status ? (
+                          <button
+                            className={`button ${account.professional_application_status === "pending" ? "primary-action-button" : "back-cancel-button"}`}
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              openProfessionalReview(account);
+                            }}
+                            onKeyDown={(event) => event.stopPropagation()}
+                          >
+                            {professionalApplicationLabels[account.professional_application_status]}
+                          </button>
+                        ) : "—"}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -351,6 +431,20 @@ export function AccountManagementPage() {
           onSubmit={submitAccount}
         />
       ) : null}
+      <ProfessionalReviewModal
+        account={reviewAccount}
+        error={reviewProfessionalMutation.error ? getErrorMessage(reviewProfessionalMutation.error) : ""}
+        isPending={reviewProfessionalMutation.isPending}
+        onClose={closeProfessionalReview}
+        onSubmit={(decision, durationMonths) => {
+          if (!reviewAccount) return;
+          reviewProfessionalMutation.mutate({
+            accountId: reviewAccount.id,
+            decision,
+            durationMonths
+          });
+        }}
+      />
       {usageAccount ? <AccountUsageModal account={usageAccount} onClose={() => setUsageAccount(null)} /> : null}
       <ErrorNoticeModal
         actionIcon={<Copy aria-hidden="true" />}
@@ -367,6 +461,111 @@ export function AccountManagementPage() {
         }}
       />
     </div>
+  );
+}
+
+function ProfessionalReviewModal({
+  account,
+  error,
+  isPending,
+  onClose,
+  onSubmit
+}: {
+  account: AccountUser | null;
+  error: string;
+  isPending: boolean;
+  onClose: () => void;
+  onSubmit: (decision: "approved" | "rejected", durationMonths: 6 | 12) => void;
+}) {
+  const [durationMonths, setDurationMonths] = useState<6 | 12>(6);
+
+  useEffect(() => {
+    if (account) setDurationMonths(account.professional_application_duration_months ?? 6);
+  }, [account]);
+
+  return (
+    <Modal
+      classNames={{
+        backdrop: "start-detection-modal-backdrop",
+        base: "start-detection-modal-content",
+        wrapper: "start-detection-modal-wrapper"
+      }}
+      hideCloseButton
+      isDismissable={!isPending}
+      isKeyboardDismissDisabled={isPending}
+      isOpen={Boolean(account)}
+      placement="center"
+      size="sm"
+      onOpenChange={(isOpen) => {
+        if (!isOpen) onClose();
+      }}
+    >
+      <ModalContent>
+        {(closeModal) => (
+          <>
+            <button
+              aria-label="关闭专业版申请审核"
+              className="start-detection-modal-close back-cancel-button"
+              disabled={isPending}
+              type="button"
+              onClick={closeModal}
+            >
+              <X aria-hidden="true" />
+            </button>
+            <ModalHeader className="start-detection-modal-header">
+              <span className="start-detection-modal-title-copy">审核专业版申请</span>
+            </ModalHeader>
+            <ModalBody className="start-detection-modal-body">
+              <p className="text-base leading-6 text-slate-600">
+                正在审核账号“{account?.real_name || account?.username}”的专业版申请。
+              </p>
+              <fieldset className="start-detection-types">
+                <legend>专业版期限</legend>
+                <div className="grid grid-cols-2 gap-3">
+                  {([6, 12] as const).map((months) => (
+                    <label
+                      className={`start-detection-option ${durationMonths === months ? "is-selected" : ""}`}
+                      key={months}
+                    >
+                      <span className="start-detection-option-heading">
+                        <input
+                          checked={durationMonths === months}
+                          disabled={isPending}
+                          name="professional-plan-duration"
+                          type="radio"
+                          value={months}
+                          onChange={() => setDurationMonths(months)}
+                        />
+                        <strong>{months === 6 ? "半年" : "一年"}</strong>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+              {error ? <p className="auth-status auth-status-error" role="alert">{error}</p> : null}
+            </ModalBody>
+            <ModalFooter className="start-detection-modal-footer">
+              <button
+                className="button back-cancel-button"
+                disabled={isPending}
+                type="button"
+                onClick={() => onSubmit("rejected", durationMonths)}
+              >
+                {isPending ? "正在处理…" : "拒绝"}
+              </button>
+              <button
+                className="button primary-action-button"
+                disabled={isPending}
+                type="button"
+                onClick={() => onSubmit("approved", durationMonths)}
+              >
+                {isPending ? "正在处理…" : "通过"}
+              </button>
+            </ModalFooter>
+          </>
+        )}
+      </ModalContent>
+    </Modal>
   );
 }
 

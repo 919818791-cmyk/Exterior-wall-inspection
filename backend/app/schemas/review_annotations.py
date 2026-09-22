@@ -48,3 +48,6 @@ class AnnotationPhotoEditRead(ApiSchema):
 class ReviewAnnotationDetail(ApiSchema):
     result: ReportDetailRead
     edits: list[AnnotationPhotoEditRead]
+    generate_building_model: bool = False
+    has_building_model: bool = False
+    has_building_model_images: bool = False

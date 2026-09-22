@@ -14,6 +14,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.api.building_models import has_complete_building_model_images
 from app.api.dependencies import AuthenticatedUser, get_current_user, require_roles
 from app.api.projects import _get_project_or_404
 from app.api.reports import _detail_item
@@ -260,11 +261,12 @@ def _ensure_required_building_model(
     *,
     requested: bool,
     model_exists: bool,
+    images_exist: bool = True,
 ) -> None:
-    if requested and not model_exists:
+    if requested and (not model_exists or not images_exist):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="该项目已勾选“生成三维模型”，请先导入三维模型后再完成审核。",
+            detail="请先上传三维模型及所需图片",
         )
 
 
@@ -289,6 +291,7 @@ def _review_detection_item(
         report_status=report.status if report is not None else None,
         generate_building_model=_building_model_requested(snapshot, config),
         has_building_model=_building_model_exists(db, project.id),
+        has_building_model_images=has_complete_building_model_images(db, project.id),
         model_types=(
             snapshot.get("model_types")
             or (config.model_types if config is not None else [])
@@ -682,8 +685,9 @@ def get_review_detection_annotations(
     db: Session = Depends(get_db),
     _: AuthenticatedUser = Depends(get_current_user),
 ) -> ReviewAnnotationDetail:
-    _, report = _review_annotation_report(db, task_id)
+    task, report = _review_annotation_report(db, task_id)
     result = _review_result_detail(db, request, report)
+    snapshot, config = _task_detection_config(db, task)
     edits = list(
         db.scalars(
             select(AnnotationPhotoEdit)
@@ -694,6 +698,9 @@ def get_review_detection_annotations(
     return ReviewAnnotationDetail(
         result=result,
         edits=[_edit_read(edit) for edit in edits],
+        generate_building_model=_building_model_requested(snapshot, config),
+        has_building_model=_building_model_exists(db, task.project_id),
+        has_building_model_images=has_complete_building_model_images(db, task.project_id),
     )
 
 
@@ -707,7 +714,14 @@ def get_review_detection_preview(
     db: Session = Depends(get_db),
     _: AuthenticatedUser = Depends(get_current_user),
 ) -> ReportDetailRead:
-    _, report = _review_annotation_report(db, task_id)
+    task, report = _review_annotation_report(db, task_id)
+    snapshot, config = _task_detection_config(db, task)
+    if _building_model_requested(snapshot, config):
+        _ensure_required_building_model(
+            requested=True,
+            model_exists=_building_model_exists(db, task.project_id),
+            images_exist=has_complete_building_model_images(db, task.project_id),
+        )
     result = _review_result_detail(db, request, report)
     edits = list(
         db.scalars(
@@ -737,7 +751,6 @@ def save_review_detection_annotations(
         DefectType.SPALLING.value,
         DefectType.PEELING.value,
         DefectType.DAMAGE.value,
-        DefectType.DETACHMENT.value,
         DefectType.HOLLOW.value,
     }
     if any(
@@ -1202,7 +1215,6 @@ def _apply_review_annotation_edits(
                     DefectType.SPALLING.value,
                     DefectType.PEELING.value,
                     DefectType.DAMAGE.value,
-                    DefectType.DETACHMENT.value,
                     DefectType.HOLLOW.value,
                 }
             ):
@@ -1402,6 +1414,7 @@ def complete_detection_review(
     _ensure_required_building_model(
         requested=_building_model_requested(snapshot, config),
         model_exists=_building_model_exists(db, project.id),
+        images_exist=has_complete_building_model_images(db, project.id),
     )
 
     now = datetime.now(UTC)

@@ -74,6 +74,7 @@ class ReviewDetectionListItem(ApiSchema):
     report_status: InspectionReportStatus | None = None
     generate_building_model: bool = False
     has_building_model: bool = False
+    has_building_model_images: bool = False
     model_types: list[DefectType] = Field(default_factory=list)
     photo_count: int
     ai_result_count: int

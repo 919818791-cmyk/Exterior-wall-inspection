@@ -1,11 +1,12 @@
 import { useMutation } from "@tanstack/react-query";
-import { CircleCheck, X } from "lucide-react";
+import { CircleCheck } from "lucide-react";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 
 import {
   checkRegistrationUsername,
   createTrialApplication,
   login,
+  sendLoginSmsCode,
   sendRegistrationSmsCode
 } from "@/api/auth";
 import { ApiError } from "@/api/client";
@@ -23,12 +24,9 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "登录失败，请稍后重试。";
 }
 
-interface AuthModalProps {
+interface AuthPanelProps {
   initialMode?: "login" | "trial-application";
-  isOpen: boolean;
-  notice?: string;
-  onClose: () => void;
-  onAuthenticated?: () => void;
+  onAuthenticated: () => void;
 }
 
 type AuthMode = "login" | "forgot-password" | "trial-application";
@@ -101,13 +99,22 @@ function maskPhone(phone: string) {
   return `${phone.slice(0, 3)}****${phone.slice(-4)}`;
 }
 
-/** The single sign-in surface for the whole application. It follows the prototype dialog. */
-export function AuthModal({ initialMode = "login", isOpen, notice, onClose, onAuthenticated }: AuthModalProps) {
+function formatSmsCountdown(seconds: number) {
+  const minutes = Math.floor(seconds / 60).toString().padStart(2, "0");
+  const remainingSeconds = (seconds % 60).toString().padStart(2, "0");
+  return `${minutes}:${remainingSeconds}后重发`;
+}
+
+/** The single sign-in surface for the whole application. */
+export function AuthPanel({ initialMode = "login", onAuthenticated }: AuthPanelProps) {
   const setAuthenticated = useAuthStore((state) => state.setAuthenticated);
   const [mode, setMode] = useState<AuthMode>(initialMode);
   const [loginMethod, setLoginMethod] = useState<LoginMethod>("username");
   const [identity, setIdentity] = useState("");
   const [password, setPassword] = useState("");
+  const [loginVerificationCode, setLoginVerificationCode] = useState("");
+  const [loginSmsCountdown, setLoginSmsCountdown] = useState(0);
+  const [loginSentSmsPhone, setLoginSentSmsPhone] = useState<string | null>(null);
   const [trialApplicationForm, setTrialApplicationForm] = useState<TrialApplicationPayload>(emptyTrialApplicationForm);
   const [trialPasswordConfirmation, setTrialPasswordConfirmation] = useState("");
   const [registrationFieldTouched, setRegistrationFieldTouched] = useState(untouchedRegistrationFields);
@@ -120,6 +127,7 @@ export function AuthModal({ initialMode = "login", isOpen, notice, onClose, onAu
   const [sentSmsPhone, setSentSmsPhone] = useState<string | null>(null);
   const [loginHelp, setLoginHelp] = useState("");
   const identityInputRef = useRef<HTMLInputElement>(null);
+  const loginVerificationCodeInputRef = useRef<HTMLInputElement>(null);
   const trialUsernameInputRef = useRef<HTMLInputElement>(null);
   const verificationCodeInputRef = useRef<HTMLInputElement>(null);
   const trialApplicationFormRef = useRef<TrialApplicationPayload>(emptyTrialApplicationForm);
@@ -130,11 +138,12 @@ export function AuthModal({ initialMode = "login", isOpen, notice, onClose, onAu
   const usernameCheckPromiseRef = useRef<{ value: string; promise: Promise<boolean> } | null>(null);
 
   const loginMutation = useMutation({
-    mutationFn: () => login({ identity, password }),
+    mutationFn: () => loginMethod === "phone"
+      ? login({ phone: identity, verification_code: loginVerificationCode })
+      : login({ identity, password }),
     onSuccess: (result) => {
       setAuthenticated(result.user, result.access_token);
-      if (onAuthenticated) onAuthenticated();
-      else onClose();
+      onAuthenticated();
     }
   });
 
@@ -142,9 +151,18 @@ export function AuthModal({ initialMode = "login", isOpen, notice, onClose, onAu
     mutationFn: (payload: TrialApplicationPayload) => createTrialApplication(payload, trialApplicationIdempotencyKey),
     onSuccess: (result, submittedForm) => {
       setTrialApplicationSubmittedUsername(result.username);
-      setLoginMethod("phone");
-      setIdentity(submittedForm.phone);
+      setLoginMethod("username");
+      setIdentity(submittedForm.username);
       setPassword(submittedForm.password);
+    }
+  });
+
+  const loginSmsMutation = useMutation({
+    mutationFn: (phone: string) => sendLoginSmsCode(phone),
+    onSuccess: (result, phone) => {
+      setLoginSentSmsPhone(phone);
+      setLoginSmsCountdown(result.retry_after_seconds);
+      window.requestAnimationFrame(() => loginVerificationCodeInputRef.current?.focus());
     }
   });
 
@@ -169,62 +187,31 @@ export function AuthModal({ initialMode = "login", isOpen, notice, onClose, onAu
   }
 
   useEffect(() => {
-    if (isOpen) return;
-    setMode("login");
-    setLoginMethod("username");
-    setIdentity("");
-    setPassword("");
-    trialApplicationFormRef.current = emptyTrialApplicationForm;
-    setTrialApplicationForm(emptyTrialApplicationForm);
-    trialPasswordConfirmationRef.current = "";
-    setTrialPasswordConfirmation("");
-    setRegistrationFieldTouched(untouchedRegistrationFields);
-    resetUsernameAvailability();
-    registrationAgreementAcceptedRef.current = false;
-    setRegistrationAgreementAccepted(false);
-    setTrialValidationError("");
-    setTrialApplicationSubmittedUsername(null);
-    setTrialApplicationIdempotencyKey(createClientId("registration"));
-    setSmsCountdown(0);
-    setSentSmsPhone(null);
-    setLoginHelp("");
-    loginMutation.reset();
-    trialApplicationMutation.reset();
-    registrationSmsMutation.reset();
-  }, [isOpen]);
-
-  useEffect(() => {
     if (smsCountdown <= 0) return;
     const timer = window.setTimeout(() => setSmsCountdown((current) => Math.max(0, current - 1)), 1000);
     return () => window.clearTimeout(timer);
   }, [smsCountdown]);
 
   useEffect(() => {
-    if (!isOpen) return;
-
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") requestClose();
-    };
-    document.body.classList.add("auth-modal-open");
-    document.addEventListener("keydown", closeOnEscape);
-
-    return () => {
-      document.body.classList.remove("auth-modal-open");
-      document.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [isOpen, mode, onClose, trialApplicationForm, trialPasswordConfirmation]);
+    if (loginSmsCountdown <= 0) return;
+    const timer = window.setTimeout(
+      () => setLoginSmsCountdown((current) => Math.max(0, current - 1)),
+      1000
+    );
+    return () => window.clearTimeout(timer);
+  }, [loginSmsCountdown]);
 
   useEffect(() => {
-    if (!isOpen) return;
     window.requestAnimationFrame(() => {
       if (mode === "login") identityInputRef.current?.focus();
       else if (mode === "trial-application") trialUsernameInputRef.current?.focus();
     });
-  }, [isOpen, mode]);
+  }, [mode]);
 
   function switchToLogin() {
     if (hasUnsavedRegistration() && !window.confirm("注册信息尚未提交，确认放弃并返回登录？")) return;
     loginMutation.reset();
+    loginSmsMutation.reset();
     trialApplicationMutation.reset();
     registrationSmsMutation.reset();
     setSmsCountdown(0);
@@ -237,13 +224,19 @@ export function AuthModal({ initialMode = "login", isOpen, notice, onClose, onAu
   function switchLoginMethod(nextMethod: LoginMethod) {
     if (nextMethod === loginMethod) return;
     loginMutation.reset();
+    loginSmsMutation.reset();
     setLoginHelp("");
     setIdentity("");
+    setPassword("");
+    setLoginVerificationCode("");
+    setLoginSmsCountdown(0);
+    setLoginSentSmsPhone(null);
     setLoginMethod(nextMethod);
   }
 
   function switchToTrialApplication() {
     loginMutation.reset();
+    loginSmsMutation.reset();
     trialApplicationMutation.reset();
     registrationSmsMutation.reset();
     setSmsCountdown(0);
@@ -269,6 +262,7 @@ export function AuthModal({ initialMode = "login", isOpen, notice, onClose, onAu
     }
     if (field === "phone" && sentSmsPhone && value.trim() !== sentSmsPhone) {
       registrationSmsMutation.reset();
+      setSmsCountdown(0);
       setSentSmsPhone(null);
     }
     setTrialValidationError("");
@@ -349,6 +343,15 @@ export function AuthModal({ initialMode = "login", isOpen, notice, onClose, onAu
     loginMutation.mutate();
   }
 
+  function handleSendLoginSmsCode() {
+    const phone = identity.trim();
+    if (getPhoneFormatError(phone)) return;
+    loginSmsMutation.reset();
+    loginMutation.reset();
+    setLoginHelp("");
+    loginSmsMutation.mutate(phone);
+  }
+
   function handleSendRegistrationSmsCode() {
     const phone = trialApplicationFormRef.current.phone.trim();
     markRegistrationFieldTouched("phone");
@@ -408,11 +411,6 @@ export function AuthModal({ initialMode = "login", isOpen, notice, onClose, onAu
     trialApplicationMutation.mutate(latestForm);
   }
 
-  function requestClose() {
-    if (hasUnsavedRegistration() && !window.confirm("注册信息尚未提交，确认放弃并关闭？")) return;
-    onClose();
-  }
-
   function hasUnsavedRegistration() {
     return mode === "trial-application"
       && !trialApplicationSubmittedUsername
@@ -422,10 +420,14 @@ export function AuthModal({ initialMode = "login", isOpen, notice, onClose, onAu
       );
   }
 
-  if (!isOpen) return null;
-
   const isTrialApplicationSuccess = mode === "trial-application" && Boolean(trialApplicationSubmittedUsername);
   const loginInlineMessage = loginMutation.isError ? getErrorMessage(loginMutation.error) : loginHelp;
+  const loginSmsFeedback = loginSmsMutation.isError
+    ? getErrorMessage(loginSmsMutation.error)
+    : loginSentSmsPhone === identity.trim()
+      ? `验证码已发送至 ${maskPhone(loginSentSmsPhone)}。`
+      : "";
+  const loginSmsFeedbackTone = loginSmsMutation.isError ? "error" : "success";
   const usernameFormatError = registrationFieldTouched.username
     ? getUsernameFormatError(trialApplicationForm.username)
     : "";
@@ -462,23 +464,15 @@ export function AuthModal({ initialMode = "login", isOpen, notice, onClose, onAu
     || (trialApplicationMutation.isError ? getErrorMessage(trialApplicationMutation.error) : "");
 
   return (
-    <div
+    <section
       aria-label={isTrialApplicationSuccess ? "账号创建成功" : undefined}
       aria-labelledby={isTrialApplicationSuccess ? undefined : "auth-title"}
-      aria-modal="true"
-      className="auth-modal is-open"
-      role="dialog"
+      className={`auth-dialog auth-page-panel ${mode === "login" ? "auth-login-dialog" : mode === "forgot-password" ? "forgot-password-dialog" : "trial-application-dialog"} ${isTrialApplicationSuccess ? "auth-success-dialog" : ""}`}
     >
-      <div aria-hidden="true" className="auth-modal-backdrop" />
-      <section className={`auth-dialog ${mode === "login" ? "auth-login-dialog" : mode === "forgot-password" ? "forgot-password-dialog" : "trial-application-dialog"} ${isTrialApplicationSuccess ? "auth-success-dialog" : ""}`}>
-        <button aria-label="关闭登录弹窗" className="auth-close back-cancel-button" type="button" onClick={requestClose}>
-          <X aria-hidden="true" />
-        </button>
         {!isTrialApplicationSuccess ? (
           <div className="auth-dialog-heading auth-dialog-brand-heading">
             <h2 id="auth-title" className="auth-system-brand">
-              <span className="brand-mark" aria-hidden="true"><span /><span /><span /></span>
-              <span>欢迎使用外墙巡检平台</span>
+              欢迎使用外墙巡检平台
             </h2>
           </div>
         ) : null}
@@ -523,7 +517,14 @@ export function AuthModal({ initialMode = "login", isOpen, notice, onClose, onAu
                   title="请输入正确的11位手机号码"
                   value={identity}
                   onChange={(event) => {
-                    setIdentity(event.target.value.replace(/\D/g, ""));
+                    const nextPhone = event.target.value.replace(/\D/g, "");
+                    setIdentity(nextPhone);
+                    setLoginVerificationCode("");
+                    if (loginSentSmsPhone && nextPhone !== loginSentSmsPhone) {
+                      loginSmsMutation.reset();
+                      setLoginSmsCountdown(0);
+                      setLoginSentSmsPhone(null);
+                    }
                     if (loginMutation.isError) loginMutation.reset();
                   }}
                 />
@@ -545,20 +546,52 @@ export function AuthModal({ initialMode = "login", isOpen, notice, onClose, onAu
                 />
               )}
             </label>
-            <div className="auth-password-field">
-              <PasswordInput
-                aria-label="密码"
-                autoComplete="current-password"
-                label="密码"
-                placeholder="请输入密码"
-                required
-                value={password}
-                onChange={(event) => {
-                  setPassword(event.target.value);
-                  if (loginMutation.isError) loginMutation.reset();
-                }}
-              />
-              <div className="auth-login-assistance-row">
+            {loginMethod === "phone" ? (
+              <div className="auth-field auth-login-verification-field">
+                <label className="auth-field-label" htmlFor="login-verification-code">短信验证码</label>
+                <div className="auth-verification-code-row">
+                  <input
+                    ref={loginVerificationCodeInputRef}
+                    aria-describedby={loginSmsFeedback ? "login-verification-code-feedback" : undefined}
+                    autoComplete="one-time-code"
+                    id="login-verification-code"
+                    inputMode="numeric"
+                    maxLength={8}
+                    minLength={4}
+                    pattern="[0-9]{4,8}"
+                    placeholder="请输入验证码"
+                    required
+                    value={loginVerificationCode}
+                    onChange={(event) => {
+                      setLoginVerificationCode(event.target.value.replace(/\D/g, "").slice(0, 8));
+                      if (loginMutation.isError) loginMutation.reset();
+                    }}
+                  />
+                  <button
+                    className="auth-verification-code-button"
+                    disabled={
+                      loginSmsMutation.isPending
+                      || loginSmsCountdown > 0
+                      || Boolean(getPhoneFormatError(identity))
+                    }
+                    type="button"
+                    onClick={handleSendLoginSmsCode}
+                  >
+                    {loginSmsMutation.isPending
+                      ? "发送中…"
+                      : loginSmsCountdown > 0
+                        ? formatSmsCountdown(loginSmsCountdown)
+                        : "获取验证码"}
+                  </button>
+                </div>
+                <small
+                  aria-hidden={loginSmsFeedback ? undefined : true}
+                  className={`auth-field-feedback is-${loginSmsFeedbackTone} ${loginSmsFeedback ? "" : "is-empty"}`}
+                  id="login-verification-code-feedback"
+                  role={loginSmsFeedback ? (loginSmsFeedbackTone === "error" ? "alert" : "status") : undefined}
+                >
+                  {loginSmsFeedback || "\u00a0"}
+                </small>
                 {loginInlineMessage ? (
                   <span
                     className={`auth-login-inline-message ${loginMutation.isError ? "is-error" : loginHelp ? "is-success" : "is-info"}`}
@@ -567,20 +600,44 @@ export function AuthModal({ initialMode = "login", isOpen, notice, onClose, onAu
                     {loginInlineMessage}
                   </span>
                 ) : null}
-                <button
-                  className="auth-link-button auth-forgot-password"
-                  type="button"
-                  onClick={() => {
-                    loginMutation.reset();
-                    setLoginHelp("");
-                    setMode("forgot-password");
-                  }}
-                >
-                  忘记密码
-                </button>
               </div>
-            </div>
-            {notice ? <p className="auth-status auth-status-info" role="status">{notice}</p> : null}
+            ) : (
+              <div className="auth-password-field">
+                <PasswordInput
+                  aria-label="密码"
+                  autoComplete="current-password"
+                  label="密码"
+                  placeholder="请输入密码"
+                  required
+                  value={password}
+                  onChange={(event) => {
+                    setPassword(event.target.value);
+                    if (loginMutation.isError) loginMutation.reset();
+                  }}
+                />
+                <div className="auth-login-assistance-row">
+                  {loginInlineMessage ? (
+                    <span
+                      className={`auth-login-inline-message ${loginMutation.isError ? "is-error" : loginHelp ? "is-success" : "is-info"}`}
+                      role={loginMutation.isError ? "alert" : "status"}
+                    >
+                      {loginInlineMessage}
+                    </span>
+                  ) : null}
+                  <button
+                    className="auth-link-button auth-forgot-password"
+                    type="button"
+                    onClick={() => {
+                      loginMutation.reset();
+                      setLoginHelp("");
+                      setMode("forgot-password");
+                    }}
+                  >
+                    忘记密码
+                  </button>
+                </div>
+              </div>
+            )}
             <button className="auth-submit" disabled={loginMutation.isPending} type="submit">
               {loginMutation.isPending ? "正在登录…" : "登录"}
             </button>
@@ -598,7 +655,8 @@ export function AuthModal({ initialMode = "login", isOpen, notice, onClose, onAu
               setLoginMethod("phone");
               setIdentity(phone);
               setPassword("");
-              setLoginHelp("密码已重置，请使用新密码登录。");
+              setLoginVerificationCode("");
+              setLoginHelp("密码已重置，可使用手机号验证码登录。");
             }}
           />
         ) : trialApplicationSubmittedUsername ? (
@@ -750,7 +808,7 @@ export function AuthModal({ initialMode = "login", isOpen, notice, onClose, onAu
                   {registrationSmsMutation.isPending
                     ? "发送中…"
                     : smsCountdown > 0
-                      ? `${smsCountdown}秒后重发`
+                      ? formatSmsCountdown(smsCountdown)
                       : "获取验证码"}
                 </button>
               </div>
@@ -808,7 +866,6 @@ export function AuthModal({ initialMode = "login", isOpen, notice, onClose, onAu
             </div>
           </form>
         )}
-      </section>
-    </div>
+    </section>
   );
 }

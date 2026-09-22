@@ -85,5 +85,5 @@ def test_pdf_description_uses_the_page_defect_colors() -> None:
     ])
 
     assert '<font color="#DC2626">疑似裂缝: 1处</font>' in description
-    assert '<font color="#F97316">疑似剥落: 1处</font>' in description
+    assert '<font color="#F97316">疑似脱落: 1处</font>' in description
     assert '<font color="#245CFF">疑似空鼓: 1处</font>' in description

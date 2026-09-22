@@ -67,6 +67,7 @@ class Settings(BaseSettings):
     sms_verification_scheme_name: str = ""
     sms_verification_code_length: int = Field(default=4, ge=4, le=8)
     sms_verification_valid_seconds: int = Field(default=300, ge=60, le=1800)
+    sms_verification_auth_send_interval_seconds: int = Field(default=1800, ge=1800, le=86400)
     sms_verification_send_interval_seconds: int = Field(default=60, ge=30, le=600)
     sms_verification_send_limit_per_phone_hour: int = Field(default=5, ge=1, le=30)
     sms_verification_send_limit_per_ip_hour: int = Field(default=20, ge=1, le=200)

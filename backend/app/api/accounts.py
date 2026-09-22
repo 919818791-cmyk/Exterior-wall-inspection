@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import secrets
+from calendar import monthrange
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Literal
 from uuid import UUID
@@ -14,7 +15,7 @@ from app.api.dependencies import AuthenticatedUser, get_current_user, require_ro
 from app.core.config import get_settings
 from app.core.security import hash_password
 from app.db.session import get_db
-from app.enums.status import UserRole, UserStatus
+from app.enums.status import AccountPlan, ProfessionalApplicationStatus, UserRole, UserStatus
 from app.models.tables import UsageEvent, UserAccount
 from app.schemas.account_usage import (
     AccountUsageDetailResponse,
@@ -30,6 +31,8 @@ from app.schemas.auth import (
     AccountQuotaResetResponse,
     AccountRead,
     AccountUpdateRequest,
+    ProfessionalApplicationResponse,
+    ProfessionalApplicationReviewRequest,
 )
 from app.services.photo_upload_quota import reset_account_quota_counters
 from app.services.trial_inference_provider import trial_scheduling_settings
@@ -71,6 +74,13 @@ def _utc_boundary(value: date) -> datetime:
 
 def _aware_utc(value: datetime) -> datetime:
     return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+
+
+def _add_months(value: datetime, months: int) -> datetime:
+    month_index = value.year * 12 + value.month - 1 + months
+    year, month_zero_based = divmod(month_index, 12)
+    month = month_zero_based + 1
+    return value.replace(year=year, month=month, day=min(value.day, monthrange(year, month)[1]))
 
 
 def _bucket_index(timestamp: datetime, boundaries: list[tuple[datetime, datetime]]) -> int | None:
@@ -156,7 +166,15 @@ def _ensure_admin_account_remains_available(
 
 
 def _to_account_read(account: UserAccount) -> AccountRead:
-    return AccountRead.model_validate(account)
+    result = AccountRead.model_validate(account)
+    expires_at = result.professional_plan_expires_at
+    if (
+        result.account_plan == AccountPlan.PROFESSIONAL
+        and expires_at is not None
+        and _aware_utc(expires_at) <= datetime.now(UTC)
+    ):
+        return result.model_copy(update={"account_plan": AccountPlan.BASIC})
+    return result
 
 
 USAGE_SUM_FIELDS = (
@@ -347,27 +365,70 @@ def get_current_account_usage(
                     professional_formal_monthly_photo_upload_count += count
 
     scheduling = trial_scheduling_settings(db, get_settings())
+    account_detection_quota = getattr(account, "detection_quota", None)
+
+    def effective_limit(default_limit: int) -> int:
+        return int(account_detection_quota) if account_detection_quota is not None else default_limit
+
     return CurrentAccountUsageResponse(
         account_id=current_user.id,
         period_start=month_start,
         period_end=today,
         usage=AccountUsageTotals(**metrics),
         trial_monthly_photo_upload_balance=_quota_balance(
-            scheduling.monthly_photo_upload_limit,
+            effective_limit(scheduling.monthly_photo_upload_limit),
             basic_trial_photo_upload_count,
         ),
         basic_formal_monthly_photo_upload_balance=_quota_balance(
-            scheduling.basic_formal_monthly_photo_upload_limit,
+            effective_limit(scheduling.basic_formal_monthly_photo_upload_limit),
             basic_formal_photo_upload_count,
         ),
         professional_formal_monthly_photo_upload_balance=_quota_balance(
-            scheduling.professional_monthly_photo_upload_limit,
+            effective_limit(scheduling.professional_monthly_photo_upload_limit),
             professional_formal_monthly_photo_upload_count,
         ),
         professional_trial_monthly_photo_upload_balance=_quota_balance(
-            scheduling.professional_trial_monthly_photo_upload_limit,
+            effective_limit(scheduling.professional_trial_monthly_photo_upload_limit),
             professional_trial_monthly_photo_upload_count,
         ),
+    )
+
+
+@router.post("/me/professional-application", response_model=ProfessionalApplicationResponse)
+def submit_professional_application(
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ProfessionalApplicationResponse:
+    if current_user.role != UserRole.CUSTOMER.value:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="只有客户账号可以申请专业版。")
+
+    account = db.get(UserAccount, current_user.id)
+    if account is None or account.deleted_at is not None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="账号不存在。")
+
+    now = datetime.now(UTC)
+    expires_at = account.professional_plan_expires_at
+    has_active_professional_plan = (
+        account.account_plan == AccountPlan.PROFESSIONAL.value
+        and (expires_at is None or _aware_utc(expires_at) > now)
+    )
+    if has_active_professional_plan:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="当前账号已经是专业版套餐。")
+
+    if account.professional_application_status != ProfessionalApplicationStatus.PENDING.value:
+        account.professional_application_status = ProfessionalApplicationStatus.PENDING.value
+        account.professional_application_requested_at = now
+        account.professional_application_reviewed_at = None
+        account.professional_application_duration_months = None
+        account.account_plan = AccountPlan.BASIC.value
+        account.professional_plan_expires_at = None
+        db.commit()
+        db.refresh(account)
+
+    requested_at = account.professional_application_requested_at or now
+    return ProfessionalApplicationResponse(
+        status=ProfessionalApplicationStatus.PENDING,
+        requested_at=requested_at,
     )
 
 
@@ -448,6 +509,7 @@ def create_account(
         role=_enum_value(payload.role),
         account_plan=_enum_value(payload.account_plan),
         organization=_clean_optional_text(payload.organization),
+        detection_quota=payload.detection_quota,
         status=_enum_value(payload.status),
     )
     db.add(account)
@@ -487,12 +549,47 @@ def update_account(
     for field in ("real_name", "organization"):
         if field in data:
             setattr(account, field, _clean_optional_text(data[field]))
+    if "detection_quota" in data:
+        account.detection_quota = data["detection_quota"]
     if data.get("role") is not None:
         account.role = next_role
     if data.get("account_plan") is not None:
         account.account_plan = _enum_value(data["account_plan"])
+        account.professional_plan_expires_at = None
     if data.get("status") is not None:
         account.status = next_status
+
+    db.commit()
+    db.refresh(account)
+    return _to_account_read(account)
+
+
+@router.post(
+    "/{account_id}/professional-application/review",
+    response_model=AccountRead,
+)
+def review_professional_application(
+    account_id: UUID,
+    payload: ProfessionalApplicationReviewRequest,
+    _: AuthenticatedUser = Depends(require_roles(UserRole.ADMIN)),
+    db: Session = Depends(get_db),
+) -> AccountRead:
+    account = _account_or_404(db, account_id)
+    if account.role != UserRole.CUSTOMER.value:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="只有客户账号可以申请专业版。")
+    if account.professional_application_status is None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="该账号尚未提交专业版申请。")
+
+    now = datetime.now(UTC)
+    account.professional_application_status = payload.decision
+    account.professional_application_reviewed_at = now
+    account.professional_application_duration_months = payload.duration_months
+    if payload.decision == ProfessionalApplicationStatus.APPROVED.value:
+        account.account_plan = AccountPlan.PROFESSIONAL.value
+        account.professional_plan_expires_at = _add_months(now, payload.duration_months)
+    else:
+        account.account_plan = AccountPlan.BASIC.value
+        account.professional_plan_expires_at = None
 
     db.commit()
     db.refresh(account)

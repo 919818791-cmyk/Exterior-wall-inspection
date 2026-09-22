@@ -1,6 +1,7 @@
 import {
   ArrowRight,
   CalendarClock,
+  ChevronLeft,
   ChevronRight,
   ScanSearch,
   Sparkles
@@ -10,96 +11,162 @@ import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
+import { capabilityDescriptions } from "@/data/capabilityDescriptions";
+import { HeroVideoPlaylist } from "@/components/HeroVideoPlaylist";
+import { TimeRecommendationDialog } from "@/components/TimeRecommendationDialog";
 import { usePublicHeroAnimation } from "@/hooks/usePublicHeroAnimation";
-import { TimeRecommendationDialog } from "@/pages/CapabilityDetailPage";
 
 gsap.registerPlugin(ScrollTrigger);
 
 type DefectCard = {
   key: string;
   title: string;
+  description?: string;
   image?: string;
-  to?: string;
 };
 
 const defects: DefectCard[] = [
   {
     key: "crack",
     title: "裂缝识别",
-    image: "/images/optimized/defect-crack-card.webp",
-    to: "/capabilities/crack"
+    description: capabilityDescriptions.crack,
+    image: "/images/optimized/defect-crack-card.webp"
   },
   {
     key: "spalling",
-    title: "剥落识别",
-    image: "/images/optimized/defect-spalling-card.webp",
-    to: "/capabilities/spalling"
+    title: "脱落识别",
+    description: capabilityDescriptions.spalling,
+    image: "/images/optimized/defect-spalling-card.webp"
   },
   {
     key: "hollow",
     title: "空鼓识别",
-    image: "/images/optimized/defect-hollow-card.webp",
-    to: "/capabilities/hollow"
+    description: capabilityDescriptions.hollow,
+    image: "/images/optimized/defect-hollow-card.webp"
   },
   {
     key: "peeling",
-    title: "起皮识别"
-  },
-  {
-    key: "detachment",
-    title: "脱落识别"
+    title: "起皮识别",
+    description: capabilityDescriptions.peeling,
+    image: "/images/optimized/defect-peeling-card.webp"
   },
   {
     key: "damage",
-    title: "破损识别"
+    title: "面板损坏识别",
+    description: capabilityDescriptions.damage,
+    image: "/images/optimized/defect-damage-card.webp"
   }
 ];
 
-const heroVideos = ["/videos/N1.mp4", "/videos/N2.mp4", "/videos/N3.mp4"];
-
-type NetworkInformation = {
-  effectiveType?: string;
-  saveData?: boolean;
-};
+function DefectCardContent({ defect }: { defect: DefectCard }) {
+  return (
+    <>
+      <div className={`defect-media${defect.image ? "" : " is-placeholder"}`}>
+        {defect.image
+          ? <img alt={`${defect.title}示意图`} decoding="async" loading="lazy" src={defect.image} />
+          : <span className="defect-media-placeholder">图片待补充</span>}
+      </div>
+      <div className="defect-card-body">
+        <div className="defect-card-copy">
+          <h3>{defect.title}</h3>
+          {defect.description ? <p>{defect.description}</p> : null}
+        </div>
+      </div>
+    </>
+  );
+}
 
 export function DashboardPage() {
   const pageRef = useRef<HTMLDivElement>(null);
   const heroRef = useRef<HTMLElement>(null);
-  const heroVideoRefs = useRef<Array<HTMLVideoElement | null>>([]);
-  const [heroVideoIndex, setHeroVideoIndex] = useState(0);
+  const defectSectionRef = useRef<HTMLElement>(null);
+  const defectCarouselRef = useRef<HTMLDivElement>(null);
+  const defectScrollEndTimerRef = useRef(0);
+  const [activeDefectIndex, setActiveDefectIndex] = useState(0);
+  const [isDefectSectionVisible, setIsDefectSectionVisible] = useState(false);
+  const [isDefectAutoplayPaused, setIsDefectAutoplayPaused] = useState(false);
+  const [isDefectAutoplayComplete, setIsDefectAutoplayComplete] = useState(false);
   const [timeRecommendationOpenSignal, setTimeRecommendationOpenSignal] = useState(0);
   usePublicHeroAnimation(heroRef, undefined, pageRef);
 
-  const prepareNextHeroVideo = (currentIndex: number) => {
-    const connection = (navigator as Navigator & { connection?: NetworkInformation }).connection;
-    const shouldLimitPreload = connection?.saveData || ["slow-2g", "2g"].includes(connection?.effectiveType ?? "");
-    const nextVideo = heroVideoRefs.current[(currentIndex + 1) % heroVideos.length];
+  const scrollToDefect = (index: number) => {
+    const carousel = defectCarouselRef.current;
+    const card = carousel?.children[index] as HTMLElement | undefined;
+    if (!carousel || !card) return;
 
-    if (!nextVideo || nextVideo.preload !== "none") return;
-    nextVideo.preload = shouldLimitPreload ? "metadata" : "auto";
-    nextVideo.load();
+    setIsDefectAutoplayComplete(false);
+    setActiveDefectIndex(index);
+    carousel.scrollTo({
+      left: card.offsetLeft - (carousel.clientWidth - card.offsetWidth) / 2,
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth"
+    });
   };
 
-  const playNextHeroVideo = (currentIndex: number) => {
-    if (currentIndex !== heroVideoIndex) return;
+  const handleDefectCarouselScroll = () => {
+    window.clearTimeout(defectScrollEndTimerRef.current);
+    defectScrollEndTimerRef.current = window.setTimeout(() => {
+      const carousel = defectCarouselRef.current;
+      if (!carousel) return;
 
-    const nextIndex = (currentIndex + 1) % heroVideos.length;
-    const nextVideo = heroVideoRefs.current[nextIndex];
-    if (!nextVideo) {
-      setHeroVideoIndex(nextIndex);
+      const viewportCenter = carousel.scrollLeft + carousel.clientWidth / 2;
+      const cards = Array.from(carousel.children) as HTMLElement[];
+      const nearestIndex = cards.reduce((closestIndex, card, index) => (
+        Math.abs(card.offsetLeft + card.offsetWidth / 2 - viewportCenter)
+          < Math.abs(cards[closestIndex].offsetLeft + cards[closestIndex].offsetWidth / 2 - viewportCenter)
+          ? index
+          : closestIndex
+      ), 0);
+      if (nearestIndex !== defects.length - 1) setIsDefectAutoplayComplete(false);
+      setActiveDefectIndex(nearestIndex);
+    }, 120);
+  };
+
+  useEffect(() => {
+    if (isDefectAutoplayPaused || isDefectAutoplayComplete || !isDefectSectionVisible) return undefined;
+
+    const rotationTimer = window.setTimeout(() => {
+      if (activeDefectIndex === defects.length - 1) {
+        setIsDefectAutoplayComplete(true);
+        return;
+      }
+
+      scrollToDefect(activeDefectIndex + 1);
+    }, 4000);
+
+    return () => window.clearTimeout(rotationTimer);
+  }, [activeDefectIndex, isDefectAutoplayComplete, isDefectAutoplayPaused, isDefectSectionVisible]);
+
+  const toggleDefectAutoplay = () => {
+    if (isDefectAutoplayComplete) {
+      setIsDefectAutoplayPaused(false);
+      scrollToDefect(0);
       return;
     }
 
-    if (nextVideo.ended) nextVideo.currentTime = 0;
-    const activateNextVideo = () => {
-      setHeroVideoIndex(nextIndex);
-      prepareNextHeroVideo(nextIndex);
-    };
-    void nextVideo.play().then(
-      activateNextVideo,
-      activateNextVideo
-    );
+    setIsDefectAutoplayPaused((paused) => !paused);
   };
+
+  useEffect(() => {
+    const section = defectSectionRef.current;
+    if (!section) return undefined;
+
+    const observer = new IntersectionObserver(([entry]) => {
+      setIsDefectSectionVisible(entry.isIntersecting && entry.intersectionRatio >= 0.6);
+    }, { threshold: [0, 0.6] });
+
+    observer.observe(section);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    defects.forEach((defect) => {
+      if (!defect.image) return;
+      const image = new Image();
+      image.src = defect.image;
+    });
+
+    return () => window.clearTimeout(defectScrollEndTimerRef.current);
+  }, []);
 
   useEffect(() => {
     const page = pageRef.current;
@@ -262,24 +329,7 @@ export function DashboardPage() {
     <>
       <div ref={pageRef} className="home-page">
       <section ref={heroRef} className="hero" data-home-panel aria-labelledby="home-hero-title">
-        {heroVideos.map((video, index) => (
-          <video
-            key={video}
-            ref={(element) => { heroVideoRefs.current[index] = element; }}
-            className={`hero-background-video${index === heroVideoIndex ? " is-active" : ""}`}
-            autoPlay={index === 0}
-            muted
-            playsInline
-            preload={index === 0 ? "auto" : "none"}
-            aria-hidden="true"
-            onEnded={() => playNextHeroVideo(index)}
-            onPlaying={() => {
-              if (index === heroVideoIndex) prepareNextHeroVideo(index);
-            }}
-          >
-            <source src={video} type="video/mp4" />
-          </video>
-        ))}
+        <HeroVideoPlaylist />
         <div className="hero-copy">
           <h1 id="home-hero-title">发现问题，更早一步。</h1>
           <div className="hero-copy-footer">
@@ -303,36 +353,63 @@ export function DashboardPage() {
         </div>
       </section>
 
-      <section className="section home-reveal-section" id="ai" data-home-panel aria-labelledby="home-ai-title">
+      <section ref={defectSectionRef} className="section home-reveal-section" id="ai" data-home-panel aria-labelledby="home-ai-title">
         <div className="section-heading home-reveal-item">
           <h2 id="home-ai-title">检测能力</h2>
         </div>
-        <div className="defect-grid">
-          {defects.map((defect) => {
-            const content = (
-              <>
-              <div className={`defect-media${defect.image ? "" : " is-placeholder"}`}>
-                {defect.image
-                  ? <img alt={`${defect.title}示意图`} decoding="async" loading="lazy" src={defect.image} />
-                  : <span className="defect-media-placeholder">图片待补充</span>}
-              </div>
-              <div className="defect-card-body">
-                <h3>{defect.title}</h3>
-                {defect.to ? <span className="defect-detail-link">了解详情 <ChevronRight aria-hidden="true" /></span> : null}
-              </div>
-              </>
-            );
-
-            return defect.to ? (
-              <Link key={defect.key} className="defect-card home-reveal-item" id={`defect-${defect.key}`} to={defect.to} aria-label={`查看${defect.title}详情`}>
-                {content}
-              </Link>
-            ) : (
-              <article key={defect.key} className="defect-card home-reveal-item" id={`defect-${defect.key}`} aria-label={defect.title}>
-                {content}
+        <div className="defect-carousel home-reveal-item" aria-label="检测能力轮播" aria-roledescription="轮播图">
+          <div ref={defectCarouselRef} className="defect-carousel-track" onScroll={handleDefectCarouselScroll}>
+            {defects.map((defect, index) => (
+              <article key={defect.key} className={`defect-card defect-carousel-card${index === activeDefectIndex ? " is-active" : ""}`} id={`defect-${defect.key}`} aria-label={defect.title}>
+                <DefectCardContent defect={defect} />
               </article>
-            );
-          })}
+            ))}
+          </div>
+          <div className="defect-carousel-control-row">
+            <div className="defect-carousel-controls" aria-label="检测能力卡片切换" role="group">
+              <button
+                aria-label="上一项检测能力"
+                disabled={activeDefectIndex === 0}
+                type="button"
+                onClick={() => scrollToDefect(activeDefectIndex - 1)}
+              >
+                <ChevronLeft aria-hidden="true" />
+              </button>
+              <div className="defect-carousel-pagination" aria-label="选择检测能力">
+                {defects.map((defect, index) => (
+                  <button
+                    key={defect.key}
+                    className={index === activeDefectIndex ? "is-active" : ""}
+                    type="button"
+                    aria-label={`显示${defect.title}`}
+                    aria-current={index === activeDefectIndex ? "true" : undefined}
+                    onClick={() => scrollToDefect(index)}
+                  />
+                ))}
+              </div>
+              <button
+                aria-label="下一项检测能力"
+                disabled={activeDefectIndex === defects.length - 1}
+                type="button"
+                onClick={() => scrollToDefect(activeDefectIndex + 1)}
+              >
+                <ChevronRight aria-hidden="true" />
+              </button>
+            </div>
+            <button
+              className="defect-carousel-autoplay-toggle"
+              aria-label={isDefectAutoplayComplete ? "重新播放自动轮播" : isDefectAutoplayPaused ? "开始自动轮播" : "暂停自动轮播"}
+              aria-pressed={isDefectAutoplayPaused || isDefectAutoplayComplete}
+              type="button"
+              onClick={toggleDefectAutoplay}
+            >
+              {isDefectAutoplayComplete
+                ? <img alt="" aria-hidden="true" decoding="async" src="/icons/replay.png" />
+                : isDefectAutoplayPaused
+                ? <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M5 2.5 21 12 5 21.5Z" fill="currentColor" /></svg>
+                : <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M3.5 2.5h6v19h-6zM14.5 2.5h6v19h-6z" fill="currentColor" /></svg>}
+            </button>
+          </div>
         </div>
       </section>
 

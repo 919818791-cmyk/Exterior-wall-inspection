@@ -102,6 +102,14 @@ export interface ReportDefectSnapshot {
   reviewed_at?: string | null;
 }
 
+export interface ReportBuildingModelImage {
+  orientation: "overview" | "east" | "west" | "south" | "north";
+  image_kind: "model" | "elevation" | "annotated";
+  original_filename: string;
+  mime_type?: string | null;
+  url?: string | null;
+}
+
 export interface ModelOutputDetection {
   id?: string | null;
   detection_id?: string | null;
@@ -203,6 +211,7 @@ export interface ReportDetail {
   };
   defects: ReportDefectSnapshot[];
   photos: ReportPhotoSnapshot[];
+  building_model_images: ReportBuildingModelImage[];
   raw_model_outputs: ModelOutputPhoto[];
   docx_bucket: string | null;
   docx_object_key: string | null;

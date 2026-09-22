@@ -13,7 +13,7 @@ def test_number_defects_uses_chinese_type_and_type_specific_sequence() -> None:
 
     assert [item["defect_no"] for item in numbered] == [
         "裂缝-001",
-        "剥落-001",
+        "脱落-001",
         "裂缝-002",
         "空鼓-001",
     ]

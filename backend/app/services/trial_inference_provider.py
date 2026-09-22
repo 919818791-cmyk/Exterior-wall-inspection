@@ -72,13 +72,13 @@ class TrialPromptSettings:
 
     def visible_prompt_for_models(self, models: list[str]) -> str:
         selected = {
-            "剥落" if model == "脱落" else model
+            "脱落" if model == "剥落" else model
             for model in models
             if model in {"裂缝", "脱落", "剥落"}
         }
         if selected == {"裂缝"}:
             return self.crack_prompt
-        if selected == {"剥落"}:
+        if selected == {"脱落"}:
             return self.spalling_prompt
         return self.visible_prompt
 

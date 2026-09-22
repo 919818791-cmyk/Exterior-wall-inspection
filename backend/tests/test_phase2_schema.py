@@ -65,7 +65,6 @@ def test_phase2_required_status_values_are_centralized() -> None:
         "spalling",
         "peeling",
         "damage",
-        "detachment",
         "moisture",
         "hollow",
     }

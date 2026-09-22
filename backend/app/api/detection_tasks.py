@@ -100,22 +100,20 @@ logger = logging.getLogger(__name__)
 MIN_VISIBLE_CONFIDENCE = 0.6
 DEFECT_TYPE_NAMES = {
     "crack": "裂缝",
-    "spalling": "剥落",
+    "spalling": "脱落",
     "peeling": "起皮",
     "damage": "面板破损",
-    "detachment": "脱落",
     "moisture": "潮湿",
     "hollow": "空鼓",
 }
 FORMAL_VISIBLE_DEFECT_TYPES = frozenset(
-    {"crack", "spalling", "peeling", "damage", "detachment"}
+    {"crack", "spalling", "peeling", "damage"}
 )
 FORMAL_DEFECT_TYPE_ORDER = (
     "crack",
     "spalling",
     "peeling",
     "damage",
-    "detachment",
     "hollow",
 )
 FORMAL_BACKEND_WORKER_ID = "formal-backend-queue"

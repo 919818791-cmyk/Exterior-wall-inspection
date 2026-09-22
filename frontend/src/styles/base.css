@@ -394,15 +394,6 @@ body {
 }
 
 
-.defect-card a {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  color: var(--blue);
-  font-weight: 800;
-  font-size: 14px;
-}
-
 .total {
   display: grid;
   grid-template-columns: 1fr auto;
@@ -495,18 +486,6 @@ body {
   line-height: 1.25;
 }
 
-.defect-card p {
-  margin: 0 0 6px;
-  color: #52627d;
-  font-size: 15px;
-  line-height: 1.75;
-}
-
-.defect-grid {
-  display: grid;
-  margin: 56px auto 0;
-}
-
 .defect-card {
   flex-direction: column;
   align-items: stretch;
@@ -525,10 +504,6 @@ body {
 
 .defect-card-body {
   flex: 1;
-}
-
-.defect-card-body a {
-  margin-top: 0;
 }
 
 .defect-icon {
@@ -559,11 +534,6 @@ body {
   background: linear-gradient(135deg, #edf7ff, #dcecff);
 }
 
-.defect-card p {
-  min-height: 66px;
-  margin-bottom: 6px;
-}
-
 .projects {
   top: 24px;
   left: 0;
@@ -589,61 +559,6 @@ body {
   margin: 0 0 14px;
   color: #697891;
   font-size: 12px;
-}
-
-.detail-page {
-  background: #fff;
-}
-
-.detail-page[data-defect="crack"] {
-  --detail-hero-image: url("/images/defects/crack.jpg");
-}
-
-.detail-page[data-defect="missing"] {
-  --detail-hero-image: url("/images/defects/spalling.JPG");
-}
-
-.detail-page[data-defect="spalling"] {
-  --detail-hero-image: url("/images/defects/spalling.JPG");
-}
-
-.detail-page[data-defect="moisture"] {
-  --detail-hero-image: url("/images/defects/leakage.jpg");
-}
-
-.detail-page[data-defect="corrosion"] {
-  --detail-hero-image: url("/images/defects/corrosion.jpg");
-}
-
-.detail-page[data-defect="hollow"] {
-  --detail-hero-image: url("/images/defects/hollow.JPG");
-}
-
-.detail-hero {
-  display: flex;
-  align-items: center;
-  min-height: 380px;
-  padding: 44px clamp(24px, 5vw, 64px);
-}
-
-.detail-hero-copy {
-  max-width: 720px;
-}
-
-.detail-hero h1 {
-  margin: 0;
-  color: #071637;
-  font-size: clamp(40px, 4.2vw, 58px);
-  line-height: 1.08;
-  font-weight: 800;
-}
-
-.detail-hero p {
-  max-width: 650px;
-  margin: 18px 0 24px;
-  color: #40506d;
-  font-size: clamp(15px, 1.45vw, 18px);
-  line-height: 1.7;
 }
 
 .detail-actions {
@@ -1564,10 +1479,6 @@ body {
     max-width: 760px;
   }
 
-  .defect-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
 }
 
 @media (max-width: 820px) {
@@ -1624,17 +1535,6 @@ body {
     transform: scale(0.86);
   }
 
-.defect-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .detail-hero {
-    min-height: 380px;
-    padding-top: 44px;
-    padding-bottom: 44px;
-    background-position: 66% center;
-  }
-
 .project-workspace {
     padding-top: 0;
   }
@@ -1685,36 +1585,9 @@ body {
     font-size: 32px;
   }
 
-  .detail-hero {
-    min-height: 380px;
-    padding-top: 32px;
-    padding-bottom: 32px;
-    padding-right: 18px;
-    padding-left: 18px;
-    background: var(--detail-hero-image, linear-gradient(90deg, #f7fbff, #dce8f3)) 70% center / cover no-repeat;
-  }
-
-  .detail-hero h1 {
-    font-size: 38px;
-  }
-
-  .detail-hero p {
-    margin: 16px 0 20px;
-    font-size: 15px;
-    line-height: 1.65;
-  }
-
-  .detail-actions .button {
-    width: 100%;
-  }
-
 .drone {
     top: 0;
     right: 14%;
-  }
-
-.defect-media {
-    aspect-ratio: 16 / 10;
   }
 
 .projects,

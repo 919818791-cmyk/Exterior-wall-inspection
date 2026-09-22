@@ -7,11 +7,10 @@ from typing import Any
 
 DEFECT_NUMBER_LABELS = {
     "crack": "裂缝",
-    "missing": "剥落",
-    "spalling": "剥落",
+    "missing": "脱落",
+    "spalling": "脱落",
     "peeling": "起皮",
     "damage": "面板破损",
-    "detachment": "脱落",
     "moisture": "潮湿",
     "corrosion": "锈蚀",
     "hollow": "空鼓",

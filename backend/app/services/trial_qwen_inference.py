@@ -83,7 +83,7 @@ TRIAL_QWEN_CRACK_PROMPT = """你是建筑外墙裂缝检测助手。
 8. 位于正常接缝上的异常只有在可见局部扩宽、宽度不均、边缘破损、错位、分叉离开接缝或延伸进入板面时，才可输出 crack；description 必须描述该异常证据，不能只写“分格缝”“拼缝裂纹”或“接缝细纹”。
 9. 当候选与窗框下沿、面砖缝或板缝邻近或部分重合，但裂口本身连续可见，并有宽度不均、锯齿/破损边缘、局部扩宽、错位、偏离接缝或延伸进入板面等异常证据时，不得仅因其走向较直、靠近构件边界或沿接缝延伸就排除；应输出 crack。
 10. 对同一条连续裂缝，bbox 必须覆盖从可确认起点到终点的完整可见长度，包括较细但仍连续的中间段；不得只框最宽、最明显或破损最重的一小段。裂缝不可见的正常接缝不得纳入 bbox。
-11. 剥落、空鼓、污渍、阴影、反光、修补带、补漆、腻子痕迹和普通划痕都不是 crack，不要输出其他缺陷类型。
+11. 脱落、空鼓、污渍、阴影、反光、修补带、补漆、腻子痕迹和普通划痕都不是 crack，不要输出其他缺陷类型。
 12. 只有当裂缝较明显时才输出；不确定时请降低 confidence，低于 0.50 的目标不要输出。被规则5至6排除的正常构造线无论 confidence 多高都不得输出。
 13. 返回前逐项自检：若 description 表示“正常”“非缺陷”，或只表示瓷砖缝、分格缝、拼缝、构造缝、板缝、接缝而没有规则7至9要求的异常证据，必须删除该项。
 以下反例都必须输出 []：
@@ -101,12 +101,12 @@ TRIAL_QWEN_CRACK_PROMPT = """你是建筑外墙裂缝检测助手。
   }
 ]"""
 
-TRIAL_QWEN_SPALLING_PROMPT = """你是建筑外墙剥落检测助手。
+TRIAL_QWEN_SPALLING_PROMPT = """你是建筑外墙脱落检测助手。
 当前输入是一张建筑外墙的局部切片图片，不是完整建筑立面。请只判断该切片中是否存在以下外墙缺陷：
  - spalling：外墙瓷砖/面砖、涂层或抹灰层已经发生块状、面状的实体材料脱落缺失
 规则：
 1. 只输出 JSON 数组，不要输出解释、Markdown、标题或其他文字。
-2. 如果没有发现明显剥落，输出 []。
+2. 如果没有发现明显脱落，输出 []。
 3. 每个结果必须包含以下字段：
  - type：只能是 spalling
  - confidence：0 到 1 的小数
@@ -119,7 +119,7 @@ TRIAL_QWEN_SPALLING_PROMPT = """你是建筑外墙剥落检测助手。
 8. 正常瓷砖缝、分格缝、拼缝、构造缝、窗框边缘、装饰线条、伸缩缝、墙体阴阳角和规则板块边界都不是 spalling。
 9. 裂缝、空鼓和锈蚀不是 spalling，不要输出其他缺陷类型。只有裂纹而没有成片实体材料缺失时必须输出 []。
 10. bbox 应紧密包围实际材料脱落区域，不要把大面积完整墙面、阴影或相邻正常接缝框入。
-11. 只有当剥落较明显时才输出；不确定时请降低 confidence，低于 0.50 的目标不要输出。
+11. 只有当脱落较明显时才输出；不确定时请降低 confidence，低于 0.50 的目标不要输出。
 12. 返回前逐项自检：若候选区域没有规则5要求的实体材料损失证据，或 description 只描述色差、污渍、阴影、修补痕迹，必须删除该项。
 输出示例：
 [
@@ -132,7 +132,7 @@ TRIAL_QWEN_SPALLING_PROMPT = """你是建筑外墙剥落检测助手。
 ]"""
 
 TRIAL_QWEN_THERMAL_PROMPT = """你是建筑外墙热成像空鼓检测助手。
-当前输入是一张采用 IronRed（铁红）色板的建筑外墙热成像局部切片，不是完整建筑立面。该图片只用于识别空鼓，不检测裂缝、剥落、锈蚀或其他缺陷。
+当前输入是一张采用 IronRed（铁红）色板的建筑外墙热成像局部切片，不是完整建筑立面。该图片只用于识别空鼓，不检测裂缝、脱落、锈蚀或其他缺陷。
 请只判断墙面区域中是否存在以下热异常：
  - hollow：疑似空鼓
 判定特征：
@@ -188,21 +188,20 @@ QWEN_BBOX_COORDINATE_SCALE = 1000.0
 QWEN_BBOX_COORDINATE_MAX = 1000.0
 DEFECT_TYPE_NAMES = {
     "crack": "裂缝",
-    "spalling": "剥落",
+    "spalling": "脱落",
     "peeling": "起皮",
     "damage": "面板破损",
-    "detachment": "脱落",
     "corrosion": "锈蚀",
     "hollow": "空鼓",
 }
 SUPPORTED_IMAGE_FORMATS = {"JPEG", "MPO", "PNG"}
 VISIBLE_LIGHT_DEFECT_TYPES = frozenset({"crack", "spalling"})
 SUPPORTED_VISIBLE_DEFECT_TYPES = frozenset(
-    {"crack", "spalling", "peeling", "damage", "detachment"}
+    {"crack", "spalling", "peeling", "damage"}
 )
 THERMAL_DEFECT_TYPES = frozenset({"hollow"})
 VISIBLE_LIGHT_REQUESTED_MODELS = ("crack", "spalling")
-VISIBLE_LIGHT_MODEL_ORDER = ("crack", "spalling", "peeling", "damage", "detachment")
+VISIBLE_LIGHT_MODEL_ORDER = ("crack", "spalling", "peeling", "damage")
 THERMAL_REQUESTED_MODELS = ("hollow",)
 NORMAL_SEAM_DESCRIPTION_MARKERS = (
     "正常",
@@ -438,7 +437,7 @@ def _visible_defect_types(values: Sequence[str]) -> frozenset[str]:
     normalized = frozenset(str(value).strip() for value in values)
     if not normalized.issubset(SUPPORTED_VISIBLE_DEFECT_TYPES):
         raise ValueError(
-            "Visible defect types can only contain crack, spalling, peeling, damage, and detachment."
+            "Visible defect types can only contain crack, spalling, peeling, and damage."
         )
     return normalized
 
@@ -1183,6 +1182,8 @@ def _normalize_detection(
         return None
     defect_type = raw_type.strip().lower()
     if defect_type == "missing":
+        defect_type = "spalling"
+    if defect_type == "detachment":
         defect_type = "spalling"
     if defect_type == "hollowing":
         defect_type = "hollow"

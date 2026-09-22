@@ -41,6 +41,7 @@ class UserAccountCreate(OrmSchema):
     role: UserRole = UserRole.CUSTOMER
     account_plan: AccountPlan = AccountPlan.BASIC
     organization: str | None = None
+    detection_quota: int | None = None
     status: UserStatus = UserStatus.ACTIVE
 
 
@@ -52,6 +53,7 @@ class UserAccountRead(OrmSchema):
     role: UserRole
     account_plan: AccountPlan = AccountPlan.BASIC
     organization: str | None
+    detection_quota: int | None = None
     status: UserStatus
     last_login_at: datetime | None
     created_at: datetime

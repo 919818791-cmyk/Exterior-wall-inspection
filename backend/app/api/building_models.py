@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from io import BytesIO
 from pathlib import Path
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
+from PIL import Image, UnidentifiedImageError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -17,18 +19,47 @@ from app.api.dependencies import (
 from app.api.projects import _api_base_url, _get_project_or_404
 from app.db.session import get_db
 from app.enums.status import UserRole
-from app.models.tables import BuildingModel, Project
-from app.schemas.projects import BuildingModelRead, DeleteResponse
+from app.models.tables import BuildingModel, BuildingModelImage, Project
+from app.schemas.projects import BuildingModelImageRead, BuildingModelRead, DeleteResponse
 from app.services.object_storage import put_object, remove_object, signed_object_url
 from app.services.usage_tracking import add_building_model_upload_event
 
 router = APIRouter(tags=["building-models"])
 
 MAX_BUILDING_MODEL_BYTES = 1024 * 1024 * 1024
+MODEL_IMAGE_SLOTS = (
+    ("overview", "model"),
+    ("east", "elevation"),
+    ("east", "annotated"),
+    ("south", "elevation"),
+    ("south", "annotated"),
+    ("west", "elevation"),
+    ("west", "annotated"),
+    ("north", "elevation"),
+    ("north", "annotated"),
+)
 
 
 def _get_building_model(db: Session, project_id: UUID) -> BuildingModel | None:
     return db.scalar(select(BuildingModel).where(BuildingModel.project_id == project_id))
+
+
+def _get_building_model_images(db: Session, project_id: UUID) -> list[BuildingModelImage]:
+    return list(
+        db.scalars(
+            select(BuildingModelImage)
+            .where(BuildingModelImage.project_id == project_id)
+            .order_by(BuildingModelImage.orientation, BuildingModelImage.image_kind)
+        )
+    )
+
+
+def has_complete_building_model_images(db: Session, project_id: UUID) -> bool:
+    slots = {
+        (image.orientation, image.image_kind)
+        for image in _get_building_model_images(db, project_id)
+    }
+    return slots == set(MODEL_IMAGE_SLOTS)
 
 
 def _ensure_model_write_access(project: Project, current_user: AuthenticatedUser) -> None:
@@ -65,6 +96,31 @@ def _to_read(request: Request, model: BuildingModel) -> BuildingModelRead:
         url=url,
         uploaded_by=model.uploaded_by,
         uploaded_at=model.updated_at,
+    )
+
+
+def _image_to_read(request: Request, image: BuildingModelImage) -> BuildingModelImageRead:
+    url = signed_object_url(
+        _api_base_url(request),
+        image.storage_bucket,
+        image.storage_object_key,
+    )
+    if url is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="三维模型图片存储信息不完整。",
+        )
+    return BuildingModelImageRead(
+        id=image.id,
+        project_id=image.project_id,
+        orientation=image.orientation,
+        image_kind=image.image_kind,
+        original_filename=image.original_filename,
+        file_size=image.file_size,
+        mime_type=image.mime_type,
+        url=url,
+        uploaded_by=image.uploaded_by,
+        uploaded_at=image.updated_at,
     )
 
 
@@ -168,6 +224,171 @@ def upload_building_model(
         remove_object(*old_storage)
     db.refresh(model)
     return _to_read(request, model)
+
+
+@router.get(
+    "/projects/{project_id}/building-model-images",
+    response_model=list[BuildingModelImageRead],
+)
+def get_building_model_images(
+    project_id: UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: AuthenticatedUser | None = Depends(get_optional_current_user),
+) -> list[BuildingModelImageRead]:
+    project = _get_project_or_404(db, project_id)
+    ensure_project_access(project, current_user)
+    return [_image_to_read(request, image) for image in _get_building_model_images(db, project.id)]
+
+
+def _validated_image_upload(
+    file: UploadFile,
+    slot: tuple[str, str],
+) -> tuple[str, bytes, str, str]:
+    filename = (file.filename or "").strip()
+    if not filename:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="图片文件名不能为空。")
+    if len(filename) > 255:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{filename} 文件名不能超过 255 个字符。",
+        )
+    content = file.file.read()
+    if not content:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{filename} 不能为空。")
+    try:
+        with Image.open(BytesIO(content)) as source:
+            image_format = str(source.format or "").upper()
+            source.verify()
+    except (UnidentifiedImageError, OSError, ValueError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{filename} 不是有效的图片文件。",
+        ) from exc
+    if image_format not in {"JPEG", "PNG"}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{filename} 仅支持 JPG、JPEG 或 PNG 格式。",
+        )
+    extension = ".jpg" if image_format == "JPEG" else ".png"
+    mime_type = "image/jpeg" if image_format == "JPEG" else "image/png"
+    orientation, image_kind = slot
+    object_key = (
+        f"projects/{{project_id}}/building-model-images/"
+        f"{orientation}-{image_kind}-{{upload_id}}{extension}"
+    )
+    return filename, content, mime_type, object_key
+
+
+@router.put(
+    "/projects/{project_id}/building-model-images",
+    response_model=list[BuildingModelImageRead],
+)
+def upload_building_model_images(
+    project_id: UUID,
+    request: Request,
+    files: list[UploadFile] = File(...),
+    slots: list[str] = Form(...),
+    db: Session = Depends(get_db),
+    current_user: AuthenticatedUser = Depends(get_current_user),
+) -> list[BuildingModelImageRead]:
+    project = _get_project_or_404(db, project_id)
+    _ensure_model_write_access(project, current_user)
+    if not files or len(files) != len(slots):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="请至少选择一张图片，并确保图片与槽位一一对应。",
+        )
+
+    parsed_slots: list[tuple[str, str]] = []
+    for slot in slots:
+        orientation, separator, image_kind = slot.partition(":")
+        parsed = (orientation, image_kind)
+        if not separator or parsed not in MODEL_IMAGE_SLOTS:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="图片槽位无效。")
+        parsed_slots.append(parsed)
+    if len(set(parsed_slots)) != len(parsed_slots):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="同一图片槽位不能重复上传。",
+        )
+
+    validated = [
+        (slot, *_validated_image_upload(file, slot))
+        for file, slot in zip(files, parsed_slots, strict=True)
+    ]
+    existing_images = _get_building_model_images(db, project.id)
+    submitted_slots = set(parsed_slots)
+    replaced_images = [
+        image
+        for image in existing_images
+        if (image.orientation, image.image_kind) in submitted_slots
+    ]
+    old_storage = [
+        (image.storage_bucket, image.storage_object_key)
+        for image in replaced_images
+    ]
+    uploaded_storage: list[tuple[str, str]] = []
+    new_images: list[BuildingModelImage] = []
+    uploaded_at = datetime.now(UTC)
+    try:
+        for slot, filename, content, mime_type, object_key_template in validated:
+            upload_id = uuid4()
+            object_key = object_key_template.format(
+                project_id=project.id,
+                upload_id=upload_id,
+            )
+            bucket = put_object(
+                object_key=object_key,
+                data=BytesIO(content),
+                length=len(content),
+                content_type=mime_type,
+            )
+            uploaded_storage.append((bucket, object_key))
+            image = BuildingModelImage(
+                id=uuid4(),
+                project_id=project.id,
+                orientation=slot[0],
+                image_kind=slot[1],
+                original_filename=filename,
+                file_size=len(content),
+                mime_type=mime_type,
+                storage_bucket=bucket,
+                storage_object_key=object_key,
+                uploaded_by=current_user.id,
+                created_at=uploaded_at,
+                updated_at=uploaded_at,
+            )
+            new_images.append(image)
+
+        for image in replaced_images:
+            db.delete(image)
+        db.flush()
+        db.add_all(new_images)
+        project.updated_at = uploaded_at
+        db.commit()
+    except Exception:
+        db.rollback()
+        for storage in uploaded_storage:
+            remove_object(*storage)
+        raise
+
+    for storage in old_storage:
+        remove_object(*storage)
+    images_by_slot = {
+        (image.orientation, image.image_kind): image
+        for image in existing_images
+        if (image.orientation, image.image_kind) not in submitted_slots
+    }
+    images_by_slot.update({
+        (image.orientation, image.image_kind): image
+        for image in new_images
+    })
+    return [
+        _image_to_read(request, images_by_slot[slot])
+        for slot in MODEL_IMAGE_SLOTS
+        if slot in images_by_slot
+    ]
 
 
 @router.delete(

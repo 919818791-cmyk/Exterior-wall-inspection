@@ -60,6 +60,7 @@ export interface ReviewDetectionListItem {
   report_status: InspectionReportStatus | null;
   generate_building_model: boolean;
   has_building_model: boolean;
+  has_building_model_images: boolean;
   model_types: DefectType[];
   photo_count: number;
   ai_result_count: number;

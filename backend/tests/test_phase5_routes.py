@@ -134,7 +134,7 @@ def test_coating_facade_rejects_spalling_detection() -> None:
         _validate_facade_model_compatibility("coating", ["crack", "spalling"])
 
     assert raised.value.status_code == 400
-    assert raised.value.detail == "涂饰外墙不支持剥落检测，请调整检测类型。"
+    assert raised.value.detail == "涂饰外墙不支持脱落检测，请调整检测类型。"
 
 
 def test_coating_facade_allows_crack_peeling_and_hollow() -> None:
@@ -146,21 +146,21 @@ def test_coating_facade_allows_crack_peeling_and_hollow() -> None:
     assert allowed == frozenset({"crack", "peeling", "hollow"})
 
 
-def test_tile_facade_allows_crack_detachment_and_hollow() -> None:
+def test_tile_facade_allows_crack_spalling_and_hollow() -> None:
     allowed = _validate_facade_model_compatibility(
         "tile",
-        ["crack", "detachment", "hollow"],
+        ["crack", "spalling", "hollow"],
     )
 
-    assert allowed == frozenset({"crack", "detachment", "hollow"})
+    assert allowed == frozenset({"crack", "spalling", "hollow"})
 
 
-def test_tile_facade_rejects_plaster_spalling_detection() -> None:
+def test_tile_facade_rejects_peeling_detection() -> None:
     with pytest.raises(HTTPException) as raised:
-        _validate_facade_model_compatibility("tile", ["spalling"])
+        _validate_facade_model_compatibility("tile", ["peeling"])
 
     assert raised.value.status_code == 400
-    assert raised.value.detail == "饰面砖外墙不支持剥落检测，请调整检测类型。"
+    assert raised.value.detail == "饰面砖外墙不支持起皮检测，请调整检测类型。"
 
 
 def test_plaster_facade_allows_crack_spalling_and_hollow() -> None:
@@ -172,13 +172,13 @@ def test_plaster_facade_allows_crack_spalling_and_hollow() -> None:
     assert allowed == frozenset({"crack", "spalling", "hollow"})
 
 
-def test_panel_facade_allows_damage_and_detachment() -> None:
+def test_panel_facade_allows_damage_and_spalling() -> None:
     allowed = _validate_facade_model_compatibility(
         "panel",
-        ["damage", "detachment"],
+        ["damage", "spalling"],
     )
 
-    assert allowed == frozenset({"damage", "detachment"})
+    assert allowed == frozenset({"damage", "spalling"})
 
 
 def test_curtain_wall_facade_only_allows_damage() -> None:

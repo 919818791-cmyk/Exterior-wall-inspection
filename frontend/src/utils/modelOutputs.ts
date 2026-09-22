@@ -6,11 +6,10 @@ import type {
 
 const DEFECT_LABELS: Record<string, string> = {
   crack: "裂缝",
-  missing: "剥落",
-  spalling: "剥落",
+  missing: "脱落",
+  spalling: "脱落",
   peeling: "起皮",
   damage: "面板破损",
-  detachment: "脱落",
   moisture: "潮湿",
   leakage: "潮湿",
   corrosion: "锈蚀",
