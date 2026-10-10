@@ -10,7 +10,7 @@ from fastapi import HTTPException
 
 from app.api.photos import upload_photo
 from app.services.photo_upload_validation import MAX_PHOTO_FILE_SIZE_BYTES
-from app.enums.status import AccountPlan, PhotoType, ProjectStatus, UploadMode, UserRole
+from app.enums.status import PhotoType, ProjectStatus, UploadMode, UserRole
 from app.main import app
 from app.models.tables import Photo, Project, UploadBatch, UsageEvent
 from app.schemas.phase4 import DetectionConfigUpdateRequest, UploadBatchCreateRequest
@@ -141,7 +141,7 @@ def test_photo_upload_rejects_files_larger_than_twenty_megabytes(monkeypatch) ->
     assert fake_db.usage_events == []
 
 
-def test_basic_customer_upload_does_not_consume_detection_quota(monkeypatch) -> None:
+def test_customer_upload_does_not_consume_detection_quota(monkeypatch) -> None:
     owner_id = uuid4()
     project = Project(
         id=uuid4(),
@@ -160,11 +160,10 @@ def test_basic_customer_upload_does_not_consume_detection_quota(monkeypatch) -> 
     )
     current_user = AuthenticatedUser(
         id=owner_id,
-        username="basic-customer",
-        real_name="基础版客户",
+        username="customer",
+        real_name="客户",
         role=UserRole.CUSTOMER.value,
         organization=None,
-        account_plan=AccountPlan.BASIC.value,
     )
     file = SimpleNamespace(
         file=SizedUploadStream(1024),
@@ -214,7 +213,6 @@ def test_basic_customer_upload_does_not_consume_detection_quota(monkeypatch) -> 
     assert capacity_checks == [{
         "source": "formal",
         "role": UserRole.CUSTOMER.value,
-        "account_plan": AccountPlan.BASIC.value,
     }]
 
 

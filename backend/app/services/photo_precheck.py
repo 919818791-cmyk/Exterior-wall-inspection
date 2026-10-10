@@ -19,6 +19,7 @@ from app.services.photo_guard import (
     photo_guard_model_name,
 )
 from app.services.trial_inference_provider import trial_prompts
+from app.services.photo_guard_strategy import photo_guard_strategy_settings
 
 
 logger = logging.getLogger(__name__)
@@ -62,6 +63,7 @@ def run_stored_photo_precheck(db: Session, photo: Any) -> Any:
         )
 
     try:
+        settings, strategy = photo_guard_strategy_settings(db, settings)
         original = get_object_bytes(
             photo.storage_bucket,
             photo.storage_object_key,
@@ -137,7 +139,7 @@ def run_stored_photo_precheck(db: Session, photo: Any) -> Any:
         reason=result.reason,
         model=result.model,
         error=None,
-        result_metadata=result.metadata(),
+        result_metadata={**result.metadata(), "strategy_key": "photo_guard_prompt", "model_id": strategy["model_id"], "model_kind": strategy["model_kind"]},
         source_width=result.source_width,
         source_height=result.source_height,
     )

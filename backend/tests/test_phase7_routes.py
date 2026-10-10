@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from starlette.datastructures import Headers
 
 from app.api import reports
-from app.api.dependencies import AuthenticatedUser, get_current_user
+from app.api.dependencies import AuthenticatedUser, get_current_user, get_optional_current_user
 from app.api.reports import (
     _append_trial_detection_result,
     _project_reviewed_result_visible,
@@ -30,7 +30,7 @@ from app.services.photo_upload_quota import (
     reserve_photo_detection_quota,
 )
 from app.db.session import get_db
-from app.enums.status import AccountPlan, InspectionReportStatus, UserRole
+from app.enums.status import InspectionReportStatus, UserRole
 from app.main import app
 from app.models.tables import (
     InspectionReport,
@@ -196,6 +196,9 @@ class ProjectResultVisibilityDb:
         if model is InspectionReport:
             return self.report
         return None
+
+    def scalars(self, _: object) -> EmptyReportScalars:
+        return EmptyReportScalars()
 
 
 class TrackingUploadedPhoto:
@@ -453,7 +456,7 @@ def test_project_reviewed_results_endpoint_enforces_review_boundary(
         deleted_at=None,
         status=project_status,
     )
-    app.dependency_overrides[get_current_user] = _trial_customer
+    app.dependency_overrides[get_optional_current_user] = _trial_customer
     app.dependency_overrides[get_db] = lambda: ProjectResultVisibilityDb(project, report)
     try:
         response = client.get(f"/api/projects/{project_id}/reviewed-result")
@@ -511,7 +514,6 @@ def test_trial_photo_precheck_rejection_keeps_stored_original(monkeypatch) -> No
     assert capacity_checks == [{
         "source": "trial",
         "role": UserRole.CUSTOMER.value,
-        "account_plan": "basic",
     }]
 
 
@@ -1060,6 +1062,9 @@ def test_trial_generate_endpoint_hides_findings_at_point_six(monkeypatch) -> Non
             "bbox": {"x": 100, "y": 50, "width": 240, "height": 80},
             "severity": None,
             "description": None,
+                "strategy_key": "visible_prompt",
+                "model_version": "qwen3-vl-plus",
+                "model_provider": "qwen",
             "visible": False,
         }
     ]
@@ -1426,7 +1431,9 @@ def test_trial_generate_accepts_more_than_thirty_uploaded_photo_ids() -> None:
     assert [photo.id for photo in selected] == photo_ids
 
 
-def test_upload_capacity_rejects_photos_beyond_remaining_detection_balance(monkeypatch) -> None:
+@pytest.mark.parametrize("role", ["customer", "admin"])
+@pytest.mark.parametrize(("source", "label"), [("trial", "快速体验"), ("formal", "专业检测")])
+def test_upload_capacity_rejects_photos_beyond_remaining_detection_balance(monkeypatch, role, source, label) -> None:
     db = Session()
     monkeypatch.setattr(photo_upload_quota, "_lock_account_quota", lambda *_: None)
     monkeypatch.setattr(
@@ -1440,18 +1447,21 @@ def test_upload_capacity_rejects_photos_beyond_remaining_detection_balance(monke
         ensure_photo_upload_capacity(
             db,
             _trial_customer().id,
-            source="trial",
+            source=source,
+            role=role,
             amount=2,
         )
 
     assert raised.value.status_code == 409
     assert raised.value.detail == (
-        "账号当前快速体验照片额度剩余 5 张，"
+        f"账号当前{label}照片额度剩余 5 张，"
         "已有 4 张未送检照片，本次最多还能上传 1 张。"
     )
 
 
-def test_upload_capacity_allows_photos_within_remaining_detection_balance(monkeypatch) -> None:
+@pytest.mark.parametrize("role", ["customer", "admin"])
+@pytest.mark.parametrize("source", ["trial", "formal"])
+def test_upload_capacity_allows_photos_within_remaining_detection_balance(monkeypatch, role, source) -> None:
     db = Session()
     monkeypatch.setattr(photo_upload_quota, "_lock_account_quota", lambda *_: None)
     monkeypatch.setattr(
@@ -1464,19 +1474,18 @@ def test_upload_capacity_allows_photos_within_remaining_detection_balance(monkey
     ensure_photo_upload_capacity(
         db,
         _trial_customer().id,
-        source="trial",
+        source=source,
+        role=role,
         amount=1,
     )
 
 
-def test_basic_trial_lifetime_photo_detection_limit_allows_fifty_per_account(monkeypatch) -> None:
+def test_trial_lifetime_photo_detection_limit_allows_fifty_per_account(monkeypatch) -> None:
     monkeypatch.setattr(
         "app.services.photo_upload_quota.get_settings",
         lambda: SimpleNamespace(
-            trial_monthly_photo_upload_limit=50,
-            basic_formal_monthly_photo_upload_limit=50,
-            professional_monthly_photo_upload_limit=1000,
-            professional_trial_monthly_photo_upload_limit=500,
+            trial_photo_detection_limit=50,
+            formal_photo_detection_limit=50,
         ),
     )
 
@@ -1493,23 +1502,22 @@ def test_basic_trial_lifetime_photo_detection_limit_allows_fifty_per_account(mon
     assert raised.value.headers is None
 
 
-def test_account_detection_quota_overrides_plan_default(monkeypatch) -> None:
+@pytest.mark.parametrize(("source", "expected"), [("trial", 7), ("formal", 19)])
+def test_account_detection_quota_overrides_system_default(monkeypatch, source, expected) -> None:
     actor_id = _trial_customer().id
 
     class FakeDb:
         def get(self, model: object, key: object) -> SimpleNamespace | None:
             if model is UserAccount and key == actor_id:
-                return SimpleNamespace(detection_quota=7)
+                return SimpleNamespace(trial_detection_quota=7, formal_detection_quota=19)
             return None
 
     monkeypatch.setattr(
         photo_upload_quota,
         "trial_scheduling_settings",
         lambda *_: SimpleNamespace(
-            monthly_photo_upload_limit=50,
-            basic_formal_monthly_photo_upload_limit=50,
-            professional_monthly_photo_upload_limit=1000,
-            professional_trial_monthly_photo_upload_limit=500,
+            trial_photo_detection_limit=50,
+            formal_photo_detection_limit=50,
         ),
     )
     monkeypatch.setattr(photo_upload_quota, "_photo_detection_count", lambda *_args, **_kwargs: 3)
@@ -1517,19 +1525,16 @@ def test_account_detection_quota_overrides_plan_default(monkeypatch) -> None:
     assert photo_upload_quota._quota_limit_and_baseline(
         FakeDb(),
         actor_id,
-        "formal",
-        AccountPlan.BASIC.value,
-    ) == (7, 3)
+        source,
+    ) == (expected, 3)
 
 
-def test_basic_formal_lifetime_photo_detection_limit_allows_fifty_per_account(monkeypatch) -> None:
+def test_formal_lifetime_photo_detection_limit_allows_fifty_per_account(monkeypatch) -> None:
     monkeypatch.setattr(
         "app.services.photo_upload_quota.get_settings",
         lambda: SimpleNamespace(
-            trial_monthly_photo_upload_limit=50,
-            basic_formal_monthly_photo_upload_limit=50,
-            professional_monthly_photo_upload_limit=1000,
-            professional_trial_monthly_photo_upload_limit=500,
+            trial_photo_detection_limit=50,
+            formal_photo_detection_limit=50,
         ),
     )
 
@@ -1550,10 +1555,8 @@ def test_detection_quota_error_reports_current_remaining_balance(monkeypatch) ->
     monkeypatch.setattr(
         "app.services.photo_upload_quota.get_settings",
         lambda: SimpleNamespace(
-            trial_monthly_photo_upload_limit=50,
-            basic_formal_monthly_photo_upload_limit=50,
-            professional_monthly_photo_upload_limit=1000,
-            professional_trial_monthly_photo_upload_limit=500,
+            trial_photo_detection_limit=50,
+            formal_photo_detection_limit=50,
         ),
     )
 
@@ -1568,35 +1571,21 @@ def test_detection_quota_error_reports_current_remaining_balance(monkeypatch) ->
     )
 
 
-def test_professional_formal_and_trial_monthly_quotas_are_independent(monkeypatch) -> None:
+@pytest.mark.parametrize("role", ["customer", "admin"])
+def test_formal_and_trial_detection_quotas_are_independent(monkeypatch, role) -> None:
     monkeypatch.setattr(
         "app.services.photo_upload_quota.get_settings",
-        lambda: SimpleNamespace(
-            trial_monthly_photo_upload_limit=50,
-            basic_formal_monthly_photo_upload_limit=50,
-            professional_monthly_photo_upload_limit=1000,
-            professional_trial_monthly_photo_upload_limit=500,
-        ),
+        lambda: SimpleNamespace(trial_photo_detection_limit=5, formal_photo_detection_limit=10),
     )
-
-    for _ in range(1000):
-        reserve_photo_detection_quota(_trial_customer().id, source="formal", account_plan="professional")
-    for _ in range(500):
-        reserve_photo_detection_quota(_trial_customer().id, source="trial", account_plan="professional")
-
-    with raises(HTTPException) as formal_raised:
-        reserve_photo_detection_quota(_trial_customer().id, source="formal", account_plan="professional")
-    with raises(HTTPException) as trial_raised:
-        reserve_photo_detection_quota(_trial_customer().id, source="trial", account_plan="professional")
-
-    assert formal_raised.value.detail == (
-        "账号当前专业检测照片额度剩余 0 张，"
-        "本次检测包含 1 张照片，请减少照片数量后重试。"
-    )
-    assert trial_raised.value.detail == (
-        "账号当前快速体验照片额度剩余 0 张，"
-        "本次检测包含 1 张照片，请减少照片数量后重试。"
-    )
+    reserve_photo_detection_quota(_trial_customer().id, source="formal", role=role, amount=10)
+    reserve_photo_detection_quota(_trial_customer().id, source="trial", role=role, amount=5)
+    for source, label in [("formal", "专业检测"), ("trial", "快速体验")]:
+        with raises(HTTPException) as raised:
+            reserve_photo_detection_quota(_trial_customer().id, source=source, role=role)
+        assert raised.value.detail == (
+            f"账号当前{label}照片额度剩余 0 张，"
+            "本次检测包含 1 张照片，请减少照片数量后重试。"
+        )
 
 
 def test_trial_generate_rate_limit_allows_five_per_ten_minutes(monkeypatch) -> None:
@@ -1605,10 +1594,8 @@ def test_trial_generate_rate_limit_allows_five_per_ten_minutes(monkeypatch) -> N
         lambda: SimpleNamespace(
             trial_generate_limit_per_user=5,
             trial_generate_window_seconds=600,
-            trial_monthly_photo_upload_limit=50,
-            basic_formal_monthly_photo_upload_limit=50,
-            professional_monthly_photo_upload_limit=1000,
-            professional_trial_monthly_photo_upload_limit=500,
+            trial_photo_detection_limit=50,
+            formal_photo_detection_limit=50,
             trial_job_lock_seconds=900,
             trial_global_job_concurrency=4,
         ),
@@ -1622,7 +1609,7 @@ def test_trial_generate_rate_limit_allows_five_per_ten_minutes(monkeypatch) -> N
         _reserve_trial_usage(_trial_customer(), api_request_count=1)
 
     assert raised.value.status_code == 429
-    assert raised.value.detail == "免费版每 10 分钟最多可试用 3 次，请 10 分钟后再试。"
+    assert raised.value.detail == "每 10 分钟最多发起 5 次检测，请稍后再试。"
 
 
 def test_model_api_request_count_is_not_limited() -> None:

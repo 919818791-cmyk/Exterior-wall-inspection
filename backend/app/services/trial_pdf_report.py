@@ -25,7 +25,9 @@ from app.services.defect_annotation import (
 )
 
 
-WATERMARK_TEXT = "外墙智能巡检平台（试用版本）"
+WATERMARK_TEXT = "外墙智能巡检平台-快速体验"
+PDF_IMAGE_DPI = 300
+PDF_IMAGE_JPEG_QUALITY = 90
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 FONT_CANDIDATES = (
@@ -104,7 +106,13 @@ def _photo_rows(data: dict[str, Any]) -> list[tuple[dict[str, Any], list[dict[st
     return [(photo, defects_by_photo.get(_photo_key(photo), [])) for photo in photos]
 
 
-def _annotated_original(original_bytes: bytes, defects: list[dict[str, Any]]) -> BytesIO:
+def _annotated_pdf_image(
+    original_bytes: bytes,
+    defects: list[dict[str, Any]],
+    *,
+    max_width: float,
+    max_height: float,
+) -> BytesIO:
     try:
         with PilImage.open(BytesIO(original_bytes)) as source:
             image = ImageOps.exif_transpose(source).convert("RGB")
@@ -138,8 +146,24 @@ def _annotated_original(original_bytes: bytes, defects: list[dict[str, Any]]) ->
         fill=(255, 255, 255, 230),
     )
 
+    # Annotate at the original dimensions so pixel and normalized boxes keep
+    # their existing coordinate mapping, then fit the PDF's physical image area.
+    # This changes only the export copy and never enlarges smaller source images.
+    image.thumbnail(
+        (
+            max(1, round(max_width / 72 * PDF_IMAGE_DPI)),
+            max(1, round(max_height / 72 * PDF_IMAGE_DPI)),
+        ),
+        resample=PilImage.Resampling.LANCZOS,
+    )
     output = BytesIO()
-    image.save(output, format="PNG", compress_level=6, optimize=False)
+    image.save(
+        output,
+        format="JPEG",
+        quality=PDF_IMAGE_JPEG_QUALITY,
+        subsampling=0,
+        optimize=True,
+    )
     output.seek(0)
     return output
 
@@ -242,8 +266,15 @@ def build_trial_result_pdf(
             except Exception as exc:
                 raise TrialPdfExportError(f"第 {index} 张原始照片读取失败，无法导出 PDF。") from exc
 
-            annotated = _annotated_original(original_bytes, defects)
-            photo_flowable = _pdf_image(annotated, column_widths[1] - 8 * mm, 135 * mm)
+            image_max_width = column_widths[1] - 8 * mm
+            image_max_height = 135 * mm
+            annotated = _annotated_pdf_image(
+                original_bytes,
+                defects,
+                max_width=image_max_width,
+                max_height=image_max_height,
+            )
+            photo_flowable = _pdf_image(annotated, image_max_width, image_max_height)
             filename = escape(str(photo.get("original_filename") or "检测结果照片"))
             photo_cell = [
                 photo_flowable,

@@ -38,6 +38,9 @@ def _settings() -> SimpleNamespace:
     return SimpleNamespace(
         photo_guard_enabled=True,
         photo_guard_model="guard-test",
+        photo_guard_provider="dashscope",
+        photo_guard_api_base_url="https://guard.test/v1",
+        photo_guard_api_key="test-key",
     )
 
 

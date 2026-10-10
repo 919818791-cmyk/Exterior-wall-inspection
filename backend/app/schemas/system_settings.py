@@ -6,12 +6,12 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 
-TrialInferenceProvider = Literal["qwen", "qwen3_vl_flash", "zhipu", "local_qwen"]
+TrialInferenceProvider = Literal["qwen", "local_qwen"]
 LocalQwenRuntimeStatus = Literal["running", "starting", "stopped", "disabled", "error"]
 
 
 class TrialInferenceProviderOption(BaseModel):
-    provider: TrialInferenceProvider
+    provider: Literal["qwen", "local_qwen", "yolo"]
     label: str
     model: str
     configured: bool
@@ -25,13 +25,6 @@ class TrialInferenceDisclosureRead(BaseModel):
     is_cloud: bool
     recipient: str
     privacy_policy_url: str | None = None
-
-
-class PricingQuotaSettingRead(BaseModel):
-    monthly_photo_upload_limit: int
-    basic_formal_monthly_photo_upload_limit: int
-    professional_monthly_photo_upload_limit: int
-    professional_trial_monthly_photo_upload_limit: int
 
 
 class FormalDetectionPromptSettingRead(BaseModel):
@@ -49,6 +42,7 @@ class FormalDetectionPromptSettingRead(BaseModel):
     plaster_thermal_prompt: str
     panel_damage_prompt: str
     panel_spalling_prompt: str
+    panel_damage_spalling_prompt: str
     curtain_wall_damage_prompt: str
 
 
@@ -69,6 +63,7 @@ class FormalDetectionPromptSettingUpdate(BaseModel):
     plaster_thermal_prompt: str | None = Field(default=None, min_length=20, max_length=20_000)
     panel_damage_prompt: str | None = Field(default=None, min_length=20, max_length=20_000)
     panel_spalling_prompt: str | None = Field(default=None, min_length=20, max_length=20_000)
+    panel_damage_spalling_prompt: str | None = Field(default=None, min_length=20, max_length=20_000)
     curtain_wall_damage_prompt: str | None = Field(default=None, min_length=20, max_length=20_000)
 
 
@@ -76,10 +71,8 @@ class TrialInferenceSettingRead(BaseModel):
     provider: TrialInferenceProvider
     global_job_concurrency: int
     request_concurrency: int
-    monthly_photo_upload_limit: int
-    basic_formal_monthly_photo_upload_limit: int
-    professional_monthly_photo_upload_limit: int
-    professional_trial_monthly_photo_upload_limit: int
+    trial_photo_detection_limit: int
+    formal_photo_detection_limit: int
     generate_limit_per_user: int
     visible_prompt: str
     crack_prompt: str
@@ -97,10 +90,8 @@ class TrialInferenceSettingUpdate(BaseModel):
     provider: TrialInferenceProvider | None = None
     global_job_concurrency: int | None = Field(default=None, ge=1, le=10)
     request_concurrency: int | None = Field(default=None, ge=1, le=10)
-    monthly_photo_upload_limit: int | None = Field(default=None, ge=1, le=100_000)
-    basic_formal_monthly_photo_upload_limit: int | None = Field(default=None, ge=1, le=100_000)
-    professional_monthly_photo_upload_limit: int | None = Field(default=None, ge=1, le=100_000)
-    professional_trial_monthly_photo_upload_limit: int | None = Field(default=None, ge=1, le=100_000)
+    trial_photo_detection_limit: int | None = Field(default=None, ge=1, le=100_000)
+    formal_photo_detection_limit: int | None = Field(default=None, ge=1, le=100_000)
     generate_limit_per_user: int | None = Field(default=None, ge=1, le=10_000)
     visible_prompt: str | None = Field(default=None, min_length=20, max_length=20_000)
     crack_prompt: str | None = Field(default=None, min_length=20, max_length=20_000)

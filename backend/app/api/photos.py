@@ -220,7 +220,6 @@ def upload_photo(
             current_user.id,
             source="formal",
             role=current_user.role,
-            account_plan=current_user.account_plan,
         )
     except Exception:
         db.rollback()

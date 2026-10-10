@@ -1,7 +1,7 @@
-import { BarChart3, KeyRound, RefreshCcw, Save, X } from "lucide-react";
+import { KeyRound, RefreshCcw, Save, X } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
 
-import type { AccountPlan, UserRole, UserStatus } from "@/types/auth";
+import type { UserRole, UserStatus } from "@/types/auth";
 
 export interface AccountFormState {
   username: string;
@@ -9,9 +9,9 @@ export interface AccountFormState {
   real_name: string;
   phone: string;
   organization: string;
-  detection_quota: string;
+  trial_detection_quota: string;
+  formal_detection_quota: string;
   role: UserRole;
-  account_plan: AccountPlan;
   status: UserStatus;
 }
 
@@ -25,7 +25,6 @@ interface AccountEditorModalProps {
   notice: string;
   onChangePassword?: () => void;
   onClose: () => void;
-  onOpenUsage?: () => void;
   onResetPassword?: () => void;
   onResetQuotas?: () => void;
   onSubmit: (form: AccountFormState) => void;
@@ -41,7 +40,6 @@ export function AccountEditorModal({
   notice,
   onChangePassword,
   onClose,
-  onOpenUsage,
   onResetPassword,
   onResetQuotas,
   onSubmit
@@ -164,31 +162,23 @@ export function AccountEditorModal({
                 </select>
               </label>
             ) : null}
-            <label className="auth-field">
-              <span>套餐</span>
-              <select
-                disabled={isProfile || form.role !== "customer"}
-                value={form.account_plan}
-                onChange={(event) => updateField("account_plan", event.target.value as AccountPlan)}
-              >
-                <option value="basic">基础版</option>
-                <option value="professional">专业版</option>
-              </select>
-            </label>
-            {!isProfile ? (
-              <label className="auth-field">
-                <span>检测额度</span>
+            {!isProfile ? ([
+              { field: "trial_detection_quota", label: "基础版额度" },
+              { field: "formal_detection_quota", label: "专业版额度" }
+            ] as const).map(({ field, label }) => (
+              <label className="auth-field" key={field}>
+                <span>{label}</span>
                 <input
                   inputMode="numeric"
                   max="100000"
                   min="1"
-                  placeholder="按套餐默认额度"
+                  placeholder="默认 1000"
                   type="number"
-                  value={form.detection_quota}
-                  onChange={(event) => updateField("detection_quota", event.target.value)}
+                  value={form[field]}
+                  onChange={(event) => updateField(field, event.target.value)}
                 />
               </label>
-            ) : null}
+            )) : null}
           </div>
           {notice ? <p className="account-editor-notice" role="status">{notice}</p> : null}
           {error ? <p className="auth-status auth-status-error" role="alert">{error}</p> : null}
@@ -204,13 +194,8 @@ export function AccountEditorModal({
               </div>
             ) : null}
             <div className={`account-editor-primary-actions${mode === "edit" ? " is-editing" : ""}`}>
-              {mode === "edit" && onOpenUsage ? (
-                <button className="button primary-action-button" disabled={isPending || isResetting || isResettingQuota} type="button" onClick={onOpenUsage}>
-                  <BarChart3 aria-hidden="true" />用量
-                </button>
-              ) : null}
               {isProfile && onChangePassword ? (
-                <button className="button primary-action-button" disabled={isPending} type="button" onClick={onChangePassword}>
+                <button className="button back-cancel-button" disabled={isPending} type="button" onClick={onChangePassword}>
                   <KeyRound aria-hidden="true" />修改密码
                 </button>
               ) : null}

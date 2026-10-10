@@ -9,6 +9,7 @@ from app.models.tables import (
     DetectionTaskPhoto,
     InspectionReport,
     Photo,
+    PhotoLibraryClassification,
     Project,
     QuickDetectionPhoto,
     ReportPushLog,
@@ -18,6 +19,10 @@ from app.models.tables import (
     UploadBatch,
     UsageEvent,
     UserAccount,
+    YoloModel,
+    YoloModelDetectionType,
+    YoloModelFacadeType,
+    YoloModelVersion,
 )
 
 __all__ = [
@@ -31,6 +36,7 @@ __all__ = [
     "DetectionTaskPhoto",
     "InspectionReport",
     "Photo",
+    "PhotoLibraryClassification",
     "Project",
     "QuickDetectionPhoto",
     "ReportPushLog",
@@ -40,4 +46,8 @@ __all__ = [
     "UploadBatch",
     "UsageEvent",
     "UserAccount",
+    "YoloModel",
+    "YoloModelDetectionType",
+    "YoloModelFacadeType",
+    "YoloModelVersion",
 ]

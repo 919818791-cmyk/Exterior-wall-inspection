@@ -300,7 +300,7 @@ async def infer_trial_images(
     api_key: str,
     base_url: str,
     model: str = "qwen3-vl-plus",
-    provider: Literal["qwen", "zhipu"] = "qwen",
+    provider: Literal["qwen"] = "qwen",
     visible_prompt: str = TRIAL_QWEN_PROMPT,
     thermal_prompt: str = TRIAL_QWEN_THERMAL_PROMPT,
     visible_defect_types: Sequence[str] = VISIBLE_LIGHT_REQUESTED_MODELS,
@@ -321,7 +321,7 @@ async def infer_trial_images(
         raise ValueError("Qwen API base URL is required.")
     if not normalized_model:
         raise ValueError("Qwen model is required.")
-    if provider not in ("qwen", "zhipu"):
+    if provider != "qwen":
         raise ValueError("Unsupported trial inference provider.")
     if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
         raise ValueError("Qwen timeout must be a positive finite number.")
@@ -375,7 +375,6 @@ async def infer_trial_images(
                     client=client,
                     endpoint=endpoint,
                     model=normalized_model,
-                    provider=provider,
                     visible_prompt=visible_prompt,
                     thermal_prompt=thermal_prompt,
                     visible_defect_types=normalized_visible_defect_types,
@@ -500,7 +499,6 @@ async def _tile_worker(
     client: httpx.AsyncClient,
     endpoint: str,
     model: str,
-    provider: Literal["qwen", "zhipu"],
     visible_prompt: str,
     thermal_prompt: str,
     visible_defect_types: frozenset[str],
@@ -512,7 +510,6 @@ async def _tile_worker(
         image_input = states[job.image_index].image_input
         prompt, allowed_defect_types = _inference_contract(
             image_input,
-            provider=provider,
             visible_prompt=visible_prompt,
             thermal_prompt=thermal_prompt,
             visible_defect_types=visible_defect_types,
@@ -521,7 +518,6 @@ async def _tile_worker(
             client,
             endpoint=endpoint,
             model=model,
-            provider=provider,
             tile_png=job.content,
             prompt=prompt,
         )
@@ -552,7 +548,6 @@ async def _tile_worker(
 def _inference_contract(
     image_input: TrialQwenImageInput,
     *,
-    provider: Literal["qwen", "zhipu"] = "qwen",
     visible_prompt: str = TRIAL_QWEN_PROMPT,
     thermal_prompt: str = TRIAL_QWEN_THERMAL_PROMPT,
     visible_defect_types: frozenset[str] = VISIBLE_LIGHT_DEFECT_TYPES,
@@ -563,8 +558,6 @@ def _inference_contract(
     else:
         prompt = visible_prompt
         defect_types = visible_defect_types
-    if provider == "zhipu":
-        prompt = prompt.replace("Qwen3-VL 原生归一化坐标", "0 到 999 的归一化坐标")
     return prompt, defect_types
 
 
@@ -572,7 +565,7 @@ def _inference_result(
     state: _ImageState,
     *,
     model: str,
-    provider: Literal["qwen", "zhipu"],
+    provider: Literal["qwen"],
     concurrency: int,
     visible_requested_models: frozenset[str] = VISIBLE_LIGHT_DEFECT_TYPES,
 ) -> dict[str, Any]:
@@ -860,16 +853,11 @@ async def _request_tile(
     *,
     endpoint: str,
     model: str,
-    provider: Literal["qwen", "zhipu"] = "qwen",
     tile_png: bytes,
     prompt: str = TRIAL_QWEN_PROMPT,
 ) -> dict[str, Any]:
     encoded_image = base64.b64encode(tile_png).decode("ascii")
-    image_url = (
-        encoded_image
-        if provider == "zhipu"
-        else f"data:image/png;base64,{encoded_image}"
-    )
+    image_url = f"data:image/png;base64,{encoded_image}"
     request_payload = {
         "model": model,
         "messages": [
@@ -889,14 +877,9 @@ async def _request_tile(
         ],
         "stream": False,
     }
-    if provider == "qwen" and model.lower().startswith("qwen3"):
+    if model.lower().startswith("qwen3"):
         request_payload["enable_thinking"] = False
-    elif provider == "zhipu":
-        # Trial detection needs a short structured answer for every tile. Deep
-        # thinking adds substantial latency across large tiled batches without
-        # improving the response contract.
-        request_payload["thinking"] = {"type": "disabled"}
-    provider_label = "Zhipu" if provider == "zhipu" else "Qwen"
+    provider_label = "Qwen"
     response: httpx.Response | None = None
     for attempt in range(1, UPSTREAM_REQUEST_MAX_ATTEMPTS + 1):
         try:

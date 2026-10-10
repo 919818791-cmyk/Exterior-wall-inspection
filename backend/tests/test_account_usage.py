@@ -147,14 +147,10 @@ def test_current_account_usage_returns_month_usage_and_photo_balances() -> None:
     class FakeDb:
         def get(self, model: object, key: str) -> SystemSetting | None:
             if model is SystemSetting and key in {
-                "trial_monthly_photo_upload_limit",
-                "basic_formal_monthly_photo_upload_limit",
+                "trial_photo_detection_limit",
+                "formal_photo_detection_limit",
             }:
                 return SimpleNamespace(value="50")
-            if model is SystemSetting and key == "professional_monthly_photo_upload_limit":
-                return SimpleNamespace(value="1000")
-            if model is SystemSetting and key == "professional_trial_monthly_photo_upload_limit":
-                return SimpleNamespace(value="500")
             return None
 
         def execute(self, _: object) -> Rows:
@@ -235,14 +231,10 @@ def test_current_account_usage_returns_month_usage_and_photo_balances() -> None:
     assert response.usage.detected_photo_count == 3
     assert response.usage.api_request_count == 10
     assert response.usage.token_count == 1000
-    assert response.trial_monthly_photo_upload_balance.used == 5
-    assert response.trial_monthly_photo_upload_balance.limit == 50
-    assert response.basic_formal_monthly_photo_upload_balance.used == 5
-    assert response.basic_formal_monthly_photo_upload_balance.limit == 50
-    assert response.professional_formal_monthly_photo_upload_balance.used == 1
-    assert response.professional_formal_monthly_photo_upload_balance.limit == 1000
-    assert response.professional_trial_monthly_photo_upload_balance.used == 2
-    assert response.professional_trial_monthly_photo_upload_balance.limit == 500
+    assert response.trial_photo_detection_balance.used == 5
+    assert response.trial_photo_detection_balance.limit == 50
+    assert response.formal_photo_detection_balance.used == 5
+    assert response.formal_photo_detection_balance.limit == 50
 
 
 def test_admin_can_reset_all_account_quotas_without_deleting_usage_history(monkeypatch) -> None:

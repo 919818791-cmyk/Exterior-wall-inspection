@@ -699,7 +699,7 @@ body {
   transform: translateY(-50%);
 }
 
-.select-control select:focus,
+.select-control select:not(:where(.prompt-setting-filter-column select)):focus,
 .project-dialog input:focus,
 .project-dialog select:focus {
   border-color: rgba(36, 92, 255, 0.75);
@@ -1275,6 +1275,7 @@ body {
 
 .project-pagination > div {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }

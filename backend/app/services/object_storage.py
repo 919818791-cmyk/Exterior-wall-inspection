@@ -60,12 +60,14 @@ def put_object(
     return bucket
 
 
-def remove_object(bucket: str, object_key: str | None) -> None:
+def remove_object(bucket: str, object_key: str | None, *, strict: bool = False) -> None:
     if not object_key:
         return
     try:
         _client().remove_object(bucket, object_key)
     except S3Error:
+        if strict:
+            raise
         return
 
 
@@ -76,6 +78,11 @@ def get_object_bytes(bucket: str, object_key: str) -> bytes:
     finally:
         response.close()
         response.release_conn()
+
+
+def open_object(bucket: str, object_key: str):
+    """Open a streaming response; callers must close it and release the connection."""
+    return _client().get_object(bucket, object_key)
 
 
 def presigned_get_url(bucket: str, object_key: str | None, expires_minutes: int = 60) -> str | None:

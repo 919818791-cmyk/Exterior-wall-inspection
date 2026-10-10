@@ -3,10 +3,10 @@ import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 
 export interface ListPageHeaderConfig {
-  actionClassName: "back-cancel-button" | "primary-action-button";
-  actionIcon: ReactNode;
-  actionLabel: string;
-  actionTo: string;
+  actionClassName?: "back-cancel-button" | "primary-action-button";
+  actionIcon?: ReactNode;
+  actionLabel?: string;
+  actionTo?: string;
   icon?: ReactNode;
   title: string;
   subtitle?: string;
@@ -14,6 +14,17 @@ export interface ListPageHeaderConfig {
 
 export function getListPageHeader(pathname: string): ListPageHeaderConfig | null {
   switch (pathname) {
+    case "/photos":
+      return {
+        title: "照片管理",
+        subtitle: "集中检索检测照片，按墙面与缺陷分类管理"
+      };
+    case "/system-settings":
+      return { title: "推理设置" };
+    case "/detection-prompts":
+      return { title: "检测策略" };
+    case "/model-management":
+      return { title: "模型管理" };
     case "/detections":
       return {
         actionClassName: "primary-action-button",
@@ -61,7 +72,7 @@ export function getListPageHeader(pathname: string): ListPageHeaderConfig | null
   }
 }
 
-export function ListPageHeader({ config }: { config: ListPageHeaderConfig }) {
+export function ListPageHeader({ config, action }: { config: ListPageHeaderConfig; action?: ReactNode }) {
   return (
     <>
       <div className="list-page-header-copy">
@@ -73,10 +84,10 @@ export function ListPageHeader({ config }: { config: ListPageHeaderConfig }) {
       </div>
 
       <div className="list-page-header-action-slot">
-        <Link className={`list-page-header-action ${config.actionClassName}`} to={config.actionTo}>
+        {action ?? (config.actionTo ? <Link className={`list-page-header-action ${config.actionClassName}`} to={config.actionTo}>
           {config.actionIcon}
           {config.actionLabel}
-        </Link>
+        </Link> : null)}
       </div>
     </>
   );

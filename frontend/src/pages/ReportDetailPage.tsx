@@ -224,74 +224,85 @@ function TrialResultDetail({
 
   return (
     <div className={`trial-result-detail-page formal-result-detail-page${isTrialResult ? " quick-result-detail-page" : ""}${isBuildingModelReport ? " building-model-report-detail-page" : ""}`}>
-      <WorkspaceTitleBar
-        backLabel={reviewTaskId ? "返回修改" : isTrialResult ? "返回快速体验" : "返回专业检测"}
-        backTo={reviewTaskId ? `/review/detections/${reviewTaskId}` : isTrialResult ? "/trials" : "/detections"}
-        className="trial-result-toolbar result-title-bar"
-        meta={<time dateTime={report.generated_at}>{formatDateTime(report.generated_at)}</time>}
-        title={report.project.name || report.title || report.project.project_no || report.report_no}
-        actions={reviewTaskId ? (
-            <button
-              aria-busy={completeReviewMutation.isPending}
-              className="button primary-action-button review-preview-complete-button"
-              disabled={completeReviewMutation.isPending}
-              type="button"
-              onClick={requestCompleteReview}
-            >
-              <CheckCircle2 aria-hidden="true" />
-              <span className="workspace-title-bar-action-label">
-                {completeReviewMutation.isPending ? "正在完成审核…" : "完成审核"}
-              </span>
-            </button>
-          ) : (
-            <>
-              {canExport ? (
-                <button
-                  aria-busy={exportMutation.isPending}
-                  className="button primary-action-button report-export-button"
-                  disabled={exportMutation.isPending || deleteReportMutation.isPending}
-                  type="button"
-                  onClick={() => {
-                    if (confirmReportExport()) exportMutation.mutate();
-                  }}
-                >
-                  <Download aria-hidden="true" />
-                  <span className="workspace-title-bar-action-label">
-                    {exportMutation.isPending ? "正在导出" : `导出 ${exportFormat}`}
-                  </span>
-                </button>
-              ) : null}
-              {isTrialResult ? (
-                <button
-                  aria-busy={deleteReportMutation.isPending}
-                  className="button destructive-action-button report-delete-button"
-                  disabled={report.is_example || exportMutation.isPending || deleteReportMutation.isPending}
-                  title={report.is_example ? "示例项目为所有账号共享，无法删除" : `删除：${report.title}`}
-                  type="button"
-                  onClick={() => {
-                    if (window.confirm(`确认删除试用结果“${report.title}”？删除后将无法恢复。`)) {
-                      deleteReportMutation.mutate();
-                    }
-                  }}
-                >
-                  <Trash2 aria-hidden="true" />
-                  <span className="workspace-title-bar-action-label">
-                    {deleteReportMutation.isPending ? "正在删除" : "删除"}
-                  </span>
-                </button>
-              ) : null}
-            </>
-          )}
-      />
-      {exportMutation.isError ? (
-        <p className="project-list-error">{exportFormat} 导出失败：{getErrorMessage(exportMutation.error)}<button className="inline-retry-button" type="button" onClick={() => exportMutation.mutate()}>重试</button></p>
-      ) : null}
-      {completeReviewMutation.isError ? (
-        <p className="project-list-error">完成审核失败：{getErrorMessage(completeReviewMutation.error)}<button className="inline-retry-button" type="button" onClick={() => completeReviewMutation.mutate()}>重试</button></p>
-      ) : null}
-      {deleteReportMutation.isError ? (
-        <p className="project-list-error">删除失败：{getErrorMessage(deleteReportMutation.error)}<button className="inline-retry-button" type="button" onClick={() => deleteReportMutation.mutate()}>重试</button></p>
-      ) : null}
+      <div className="grid gap-3">
+        <WorkspaceTitleBar
+          backLabel={reviewTaskId ? "返回修改" : isTrialResult ? "返回快速体验" : "返回专业检测"}
+          backTo={reviewTaskId ? `/review/detections/${reviewTaskId}` : isTrialResult ? "/trials" : "/detections"}
+          className="trial-result-toolbar result-title-bar"
+          meta={<time dateTime={report.generated_at}>{formatDateTime(report.generated_at)}</time>}
+          title={isTrialResult
+            ? report.title || report.report_no
+            : report.project.name || report.title || report.project.project_no || report.report_no}
+          actions={reviewTaskId ? (
+              <button
+                aria-busy={completeReviewMutation.isPending}
+                aria-label="完成审核"
+                className="button primary-action-button review-preview-complete-button"
+                disabled={completeReviewMutation.isPending}
+                type="button"
+                onClick={requestCompleteReview}
+              >
+                <CheckCircle2 aria-hidden="true" />
+                <span className="workspace-title-bar-action-label">
+                  {completeReviewMutation.isPending ? "正在完成审核…" : "完成审核"}
+                </span>
+              </button>
+            ) : (
+              <>
+                {canExport ? (
+                  <button
+                    aria-busy={exportMutation.isPending}
+                    className="button primary-action-button report-export-button"
+                    disabled={exportMutation.isPending || deleteReportMutation.isPending}
+                    type="button"
+                    onClick={() => {
+                      if (confirmReportExport()) exportMutation.mutate();
+                    }}
+                  >
+                    <Download aria-hidden="true" />
+                    <span className="workspace-title-bar-action-label">
+                      {exportMutation.isPending ? "正在导出" : `导出 ${exportFormat}`}
+                    </span>
+                  </button>
+                ) : null}
+                {isTrialResult ? (
+                  <button
+                    aria-busy={deleteReportMutation.isPending}
+                    className="button destructive-action-button report-delete-button"
+                    disabled={report.is_example || exportMutation.isPending || deleteReportMutation.isPending}
+                    title={report.is_example ? "示例项目为所有账号共享，无法删除" : `删除：${report.title}`}
+                    type="button"
+                    onClick={() => {
+                      if (window.confirm(`确认删除试用结果“${report.title}”？删除后将无法恢复。`)) {
+                        deleteReportMutation.mutate();
+                      }
+                    }}
+                  >
+                    <Trash2 aria-hidden="true" />
+                    <span className="workspace-title-bar-action-label">
+                      {deleteReportMutation.isPending ? "正在删除" : "删除"}
+                    </span>
+                  </button>
+                ) : null}
+              </>
+            )}
+        />
+        {exportMutation.isError ? (
+          <p className="project-list-error">{exportFormat} 导出失败：{getErrorMessage(exportMutation.error)}<button className="inline-retry-button" type="button" onClick={() => exportMutation.mutate()}>重试</button></p>
+        ) : null}
+        {completeReviewMutation.isError ? (
+          <p className="project-list-error">完成审核失败：{getErrorMessage(completeReviewMutation.error)}<button className="inline-retry-button" type="button" onClick={() => completeReviewMutation.mutate()}>重试</button></p>
+        ) : null}
+        {deleteReportMutation.isError ? (
+          <p className="project-list-error">删除失败：{getErrorMessage(deleteReportMutation.error)}<button className="inline-retry-button" type="button" onClick={() => deleteReportMutation.mutate()}>重试</button></p>
+        ) : null}
+        {!isTrialResult && report.detection_config?.config_json?.building_model_fallback ? (
+          <div className="mx-4 mb-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900 md:mx-12" role="status">
+            <strong className="block">报告类型调整说明</strong>
+            <p>因照片质量问题，无法生成三维模型，已替换为常规检测报告。</p>
+          </div>
+        ) : null}
+      </div>
       <div className="trial-experience-shell trial-experience-content-shell trial-result-detail-shell">
         <section className="trial-experience-grid">
           <aside className="trial-report-panel">
@@ -396,6 +407,12 @@ function TrialResultDetail({
             </div>
           </aside>
         </section>
+        {isTrialResult ? (
+          <p className="trial-result-report-hint">
+            如需更详细的检测报告，可使用{" "}
+            <RouterLink to="/detections/new"><strong>专业检测</strong></RouterLink>
+          </p>
+        ) : null}
       </div>
       {annotatedPreview ? (
         <div

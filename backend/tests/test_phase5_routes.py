@@ -16,7 +16,7 @@ from app.api.detection_tasks import (
     _validate_facade_model_compatibility,
     _validate_formal_photo_model_compatibility,
 )
-from app.enums.status import AccountPlan, PhotoPrecheckStatus, ProjectStatus, UserRole
+from app.enums.status import PhotoPrecheckStatus, ProjectStatus, UserRole
 from app.main import app
 from app.schemas.phase5 import (
     AlgorithmResultPayload,
@@ -96,17 +96,16 @@ def test_detection_start_accepts_building_model_generation() -> None:
     assert payload.generate_building_model is True
 
 
-def test_basic_customer_cannot_request_building_model_generation(
+def test_customer_model_generation_uses_normal_project_validation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    project = SimpleNamespace(id=uuid4())
+    project = SimpleNamespace(id=uuid4(), status=ProjectStatus.COMPLETED.value)
     current_user = AuthenticatedUser(
         id=uuid4(),
-        username="basic-customer",
-        real_name="基础版客户",
+        username="customer",
+        real_name="客户",
         role=UserRole.CUSTOMER.value,
         organization=None,
-        account_plan=AccountPlan.BASIC.value,
     )
     monkeypatch.setattr(detection_tasks, "_get_project_or_404", lambda *_: project)
     monkeypatch.setattr(detection_tasks, "ensure_project_write_access", lambda *_: None)
@@ -121,8 +120,8 @@ def test_basic_customer_cannot_request_building_model_generation(
             )
         )
 
-    assert exc_info.value.status_code == 403
-    assert exc_info.value.detail == "使用此功能需提升到专业版"
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail == "Only draft projects can start AI detection."
 
 
 def test_detection_start_uses_project_facade_type_instead_of_request_payload() -> None:

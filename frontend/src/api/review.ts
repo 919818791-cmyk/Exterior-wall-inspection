@@ -95,6 +95,12 @@ export function completeDetectionReview(taskId: string) {
   });
 }
 
+export function useRegularDetectionReport(taskId: string) {
+  return apiRequest<ReviewDetectionListItem>(`/review/detections/${taskId}/regular-report`, {
+    method: "POST"
+  });
+}
+
 export function reviewProjectQueryOptions(projectId: string) {
   return queryOptions({
     queryKey: ["review", "projects", projectId],

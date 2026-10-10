@@ -26,7 +26,8 @@ import {
 import {
   downloadReviewOriginalPhotos,
   reviewDetectionAnnotationsQueryOptions,
-  saveReviewDetectionAnnotations
+  saveReviewDetectionAnnotations,
+  useRegularDetectionReport
 } from "@/api/review";
 import { ErrorNoticeModal } from "@/components/project/PhotoLimitModal";
 import { TilePreviewDialog, type TilePreviewSource } from "@/components/TilePreviewDialog";
@@ -296,6 +297,24 @@ export function ReviewAnnotationWorkbench({
       setImportNotice({ tone: "error", message: errorMessage(error) });
     }
   });
+  const regularReportMutation = useMutation({
+    mutationFn: () => useRegularDetectionReport(reviewTaskId),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["review", "detections"] }),
+        queryClient.invalidateQueries({ queryKey: ["reports"] }),
+        queryClient.invalidateQueries({ queryKey: ["projects"] })
+      ]);
+      setPreviewRequirementError("");
+      const reportId = detailQuery.data?.result.id;
+      if (reportId) {
+        navigate(`/detections/results/${reportId}?${new URLSearchParams({ reviewTaskId })}`);
+      }
+    },
+    onError: (error) => setPreviewRequirementError(
+      `切换失败：${errorMessage(error)}。可重试改用常规报告。`
+    )
+  });
   const hasBlockingWork = hasUnsavedChanges || isAnyEditorSaving || importMutation.isPending;
   const navigationBlocker = useBlocker(({ currentLocation, nextLocation }) => (
     hasBlockingWork
@@ -489,7 +508,7 @@ export function ReviewAnnotationWorkbench({
         || !detailQuery.data.has_building_model_images
       )
     ) {
-      setPreviewRequirementError("请先上传三维模型及所需图片");
+      setPreviewRequirementError("请先上传三维模型及所需图片。若照片质量不足，无法生成三维模型，可改用常规检测报告并继续预览；完成审核后，用户将在报告详情中看到替换说明。");
       return;
     }
     const query = new URLSearchParams({ reviewTaskId });
@@ -516,7 +535,7 @@ export function ReviewAnnotationWorkbench({
               />
               <button
                 className="button primary-action-button annotation-complete-review"
-                disabled={readOnly || hasUnsavedChanges || isAnyEditorSaving || importMutation.isPending}
+                disabled={readOnly || hasUnsavedChanges || isAnyEditorSaving || importMutation.isPending || regularReportMutation.isPending}
                 type="button"
                 onClick={previewAnnotations}
               >
@@ -655,7 +674,10 @@ export function ReviewAnnotationWorkbench({
         </Card>
       )}
       <ErrorNoticeModal
+        actionDisabled={regularReportMutation.isPending || readOnly || hasUnsavedChanges || isAnyEditorSaving || importMutation.isPending}
+        actionLabel={regularReportMutation.isPending ? "切换中…" : "改用常规报告"}
         message={previewRequirementError}
+        onAction={() => regularReportMutation.mutate()}
         onOpenChange={(isOpen) => {
           if (!isOpen) setPreviewRequirementError("");
         }}

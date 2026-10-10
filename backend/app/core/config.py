@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     minio_access_key: str = "building_exterior_minio"
     minio_secret_key: str = "building_exterior_minio_secret"
     minio_bucket: str = "building-exterior"
+    yolo_model_max_upload_bytes: int = Field(default=1024 * 1024 * 1024, ge=1)
 
     redis_url: str = "redis://127.0.0.1:6379/0"
     rq_default_queue: str = "algorithm"
@@ -76,10 +77,8 @@ class Settings(BaseSettings):
     sms_verification_check_window_seconds: int = Field(default=600, ge=60, le=3600)
     sms_verification_request_timeout_seconds: int = Field(default=10, ge=3, le=30)
 
-    trial_monthly_photo_upload_limit: int = Field(default=50, ge=1)
-    basic_formal_monthly_photo_upload_limit: int = Field(default=50, ge=1)
-    professional_monthly_photo_upload_limit: int = Field(default=1000, ge=1)
-    professional_trial_monthly_photo_upload_limit: int = Field(default=500, ge=1)
+    trial_photo_detection_limit: int = Field(default=1000, ge=1)
+    formal_photo_detection_limit: int = Field(default=1000, ge=1)
     trial_max_image_pixels: int = Field(default=64_000_000, ge=1_000_000)
     trial_inference_max_image_pixels: int = Field(default=64_000_000, ge=1_000_000)
     trial_max_tiles_per_image: int = Field(default=100, ge=1)
@@ -151,11 +150,6 @@ class Settings(BaseSettings):
     local_qwen_runtime_dir: str = ""
     qwen_request_timeout_seconds: float = 120
     qwen_max_concurrency: int = Field(default=5, ge=1, le=10)
-    zhipu_api_key: str = ""
-    zhipu_api_base_url: str = "https://open.bigmodel.cn/api/paas/v4"
-    zhipu_model: str = "glm-4.6v"
-    zhipu_request_timeout_seconds: float = 120
-    zhipu_max_concurrency: int = Field(default=5, ge=1, le=10)
 
     auth_secret_key: str = "change-this-auth-secret-key-before-production"
     auth_access_token_expire_minutes: int = 480
@@ -263,11 +257,10 @@ class Settings(BaseSettings):
         )
         if (
             not self.dashscope_api_key.strip()
-            and not self.zhipu_api_key.strip()
             and not local_qwen_configured
         ):
             problems.append(
-                "DASHSCOPE_API_KEY, ZHIPU_API_KEY, or a local Qwen endpoint is required"
+                "DASHSCOPE_API_KEY or a local Qwen endpoint is required"
             )
         if problems:
             raise ValueError("Unsafe production configuration: " + "; ".join(problems))

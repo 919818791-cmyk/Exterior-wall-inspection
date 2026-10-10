@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+from copy import deepcopy
 from datetime import UTC, datetime
 from tempfile import SpooledTemporaryFile
 from typing import BinaryIO, Callable, Iterable, Iterator
@@ -731,6 +732,78 @@ def get_review_detection_preview(
         )
     )
     return _review_preview_result(result, edits)
+
+
+@router.post(
+    "/review/detections/{task_id}/regular-report",
+    response_model=ReviewDetectionListItem,
+)
+def use_regular_detection_report(
+    task_id: UUID,
+    db: Session = Depends(get_db),
+    reviewer: AuthenticatedUser = Depends(get_current_user),
+) -> ReviewDetectionListItem:
+    task, report = _review_annotation_report(db, task_id)
+    _ensure_report_reviewable(report)
+    if task.status != DetectionTaskStatus.SUCCESS.value:
+        raise HTTPException(status_code=409, detail="仅检测成功的项目可以切换报告类型。")
+    project = _get_project_or_404(db, task.project_id)
+    if project.is_example:
+        raise HTTPException(status_code=403, detail="示例项目为只读项目。")
+    snapshot, config = _task_detection_config(db, task)
+    if not _building_model_requested(snapshot, config):
+        return _review_detection_item(db, task, project)
+
+    now = datetime.now(UTC)
+    regular_config = deepcopy(snapshot or (config.config_json if config else None) or {})
+    # Legacy snapshots can wrap the flag in config_json. Clear every level so
+    # both browser previews and DOCX template selection use the regular report.
+    current_config = regular_config
+    while isinstance(current_config, dict):
+        current_config["generate_building_model"] = False
+        current_config = current_config.get("config_json")
+    regular_config["building_model_fallback"] = {
+        "reason": "photo_quality",
+        "message": "因照片质量问题，无法生成三维模型，已替换为常规检测报告。",
+        "changed_by": str(reviewer.id),
+        "changed_at": now.isoformat(),
+    }
+    task.result_summary = {
+        **(task.result_summary or {}),
+        "detection_config": regular_config,
+    }
+    if project.current_task_id == task.id and config is not None:
+        config.config_json = deepcopy(regular_config)
+    task.updated_at = now
+    data = deepcopy(report.report_data_json or {})
+    data["detection_config"] = {
+        **(data.get("detection_config") or {}),
+        "generate_building_model": False,
+        "config_json": regular_config,
+    }
+    report.report_data_json = data
+    report.docx_bucket = None
+    report.docx_object_key = None
+    report.updated_at = now
+    project.updated_at = now
+    _write_operation_log(
+        db,
+        result=None,
+        project_id=project.id,
+        detection_task_id=task.id,
+        photo_id=None,
+        ai_result_id=None,
+        operator_id=reviewer.id,
+        operation_type=ReviewOperationType.MODIFY.value,
+        before_json={"generate_building_model": True},
+        after_json={
+            "generate_building_model": False,
+            "building_model_fallback": regular_config["building_model_fallback"],
+        },
+        note="因照片质量问题，将三维模型报告替换为常规检测报告",
+    )
+    db.commit()
+    return _review_detection_item(db, task, project)
 
 
 @router.put(

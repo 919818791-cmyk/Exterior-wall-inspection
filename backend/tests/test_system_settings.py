@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 from uuid import UUID
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.api.dependencies import AuthenticatedUser, get_current_user
@@ -66,18 +67,11 @@ def _settings() -> SimpleNamespace:
         local_qwen_max_concurrency=1,
         qwen_request_timeout_seconds=120,
         qwen_max_concurrency=5,
-        zhipu_api_key="zhipu-key",
-        zhipu_api_base_url="https://open.bigmodel.cn/api/paas/v4",
-        zhipu_model="glm-4.6v",
-        zhipu_request_timeout_seconds=120,
-        zhipu_max_concurrency=5,
         trial_global_job_concurrency=4,
         trial_request_timeout_seconds=300,
         trial_request_concurrency=5,
-        trial_monthly_photo_upload_limit=50,
-        basic_formal_monthly_photo_upload_limit=50,
-        professional_monthly_photo_upload_limit=1000,
-        professional_trial_monthly_photo_upload_limit=500,
+        trial_photo_detection_limit=50,
+        formal_photo_detection_limit=50,
         trial_generate_limit_per_user=5,
         trial_generate_window_seconds=600,
         trial_job_lock_seconds=900,
@@ -90,41 +84,20 @@ def test_system_setting_routes_require_authentication() -> None:
     assert response.status_code == 401
 
 
-def test_pricing_quotas_are_public_and_follow_runtime_settings(monkeypatch) -> None:
-    fake_db = FakeSettingsDb()
-    settings = _settings()
-    for key, value in {
-        "trial_monthly_photo_upload_limit": "61",
-        "basic_formal_monthly_photo_upload_limit": "62",
-        "professional_monthly_photo_upload_limit": "1063",
-        "professional_trial_monthly_photo_upload_limit": "564",
-    }.items():
-        fake_db.add(SystemSetting(key=key, value=value, updated_by=None))
-    monkeypatch.setattr("app.api.system_settings.get_settings", lambda: settings)
-    app.dependency_overrides[get_db] = lambda: fake_db
-
-    try:
-        response = TestClient(app).get("/api/system-settings/pricing-quotas")
-    finally:
-        app.dependency_overrides.clear()
-
-    assert response.status_code == 200
-    assert response.json() == {
-        "monthly_photo_upload_limit": 61,
-        "basic_formal_monthly_photo_upload_limit": 62,
-        "professional_monthly_photo_upload_limit": 1063,
-        "professional_trial_monthly_photo_upload_limit": 564,
-    }
+def test_pricing_quotas_endpoint_is_removed() -> None:
+    response = TestClient(app).get("/api/system-settings/pricing-quotas")
+    assert response.status_code == 404
 
 
 def test_admin_can_switch_trial_inference_provider(monkeypatch) -> None:
     fake_db = FakeSettingsDb()
+    fake_db.settings["trial_inference_provider"].value = "local_qwen"
     settings = _settings()
     lifecycle_calls: list[str] = []
     monkeypatch.setattr("app.api.system_settings.get_settings", lambda: settings)
     monkeypatch.setattr("app.services.trial_inference_provider.get_settings", lambda: settings)
     monkeypatch.setattr(
-        "app.api.system_settings.reconcile_local_qwen",
+        "app.services.local_qwen_lifecycle.reconcile_local_qwen",
         lambda provider, _settings: lifecycle_calls.append(provider),
     )
     app.dependency_overrides[get_current_user] = _admin
@@ -133,17 +106,24 @@ def test_admin_can_switch_trial_inference_provider(monkeypatch) -> None:
     try:
         response = TestClient(app).put(
             "/api/system-settings/trial-inference",
-            json={"provider": "zhipu"},
+            json={"provider": "qwen"},
         )
     finally:
         app.dependency_overrides.clear()
 
     assert response.status_code == 200
-    assert response.json()["provider"] == "zhipu"
+    assert response.json()["provider"] == "qwen"
     options = {option["provider"]: option for option in response.json()["options"]}
     assert options["qwen"]["label"] == "通义千问 Qwen3-VL-Plus"
     assert options["qwen"]["model"] == "qwen3-vl-plus"
-    assert options["zhipu"]["label"] == "智谱GLM-4.6V"
+    assert options["yolo"] == {
+        "provider": "yolo",
+        "label": "YOLO模型",
+        "model": "",
+        "configured": False,
+        "runtime_status": None,
+        "runtime_message": "YOLO模型待接入。",
+    }
     assert options["local_qwen"] == {
         "provider": "local_qwen",
         "label": "本地 Qwen3-VL-32B",
@@ -154,17 +134,17 @@ def test_admin_can_switch_trial_inference_provider(monkeypatch) -> None:
     }
     assert {option["provider"]: option["configured"] for option in response.json()["options"]} == {
         "qwen": True,
-        "qwen3_vl_flash": True,
         "local_qwen": True,
-        "zhipu": True,
+        "yolo": False,
     }
-    assert fake_db.settings["trial_inference_provider"].value == "zhipu"
+    assert fake_db.settings["trial_inference_provider"].value == "qwen"
     assert fake_db.settings["trial_inference_provider"].updated_by == _admin().id
     assert fake_db.committed
-    assert lifecycle_calls == ["zhipu"]
+    assert lifecycle_calls == []
 
 
-def test_admin_can_select_qwen3_vl_flash_with_existing_dashscope_key(monkeypatch) -> None:
+@pytest.mark.parametrize("provider", ["qwen3_vl_flash", "zhipu", "yolo"])
+def test_admin_cannot_select_unavailable_provider(monkeypatch, provider) -> None:
     fake_db = FakeSettingsDb()
     settings = _settings()
     monkeypatch.setattr("app.api.system_settings.get_settings", lambda: settings)
@@ -175,32 +155,24 @@ def test_admin_can_select_qwen3_vl_flash_with_existing_dashscope_key(monkeypatch
     try:
         response = TestClient(app).put(
             "/api/system-settings/trial-inference",
-            json={"provider": "qwen3_vl_flash"},
+            json={"provider": provider},
         )
     finally:
         app.dependency_overrides.clear()
 
-    assert response.status_code == 200
-    assert response.json()["provider"] == "qwen3_vl_flash"
-    flash_option = next(
-        option for option in response.json()["options"] if option["provider"] == "qwen3_vl_flash"
-    )
-    assert flash_option == {
-        "provider": "qwen3_vl_flash",
-        "label": "通义千问 Qwen3-VL-Flash",
-        "model": "qwen3-vl-flash",
-        "configured": True,
-        "runtime_status": None,
-        "runtime_message": None,
-    }
-    assert fake_db.settings["trial_inference_provider"].value == "qwen3_vl_flash"
+    assert response.status_code == 422
+    assert fake_db.settings["trial_inference_provider"].value == "qwen"
+    assert not fake_db.committed
 
 
-def test_legacy_qwen_vl_max_selection_maps_to_qwen3_vl_flash() -> None:
+@pytest.mark.parametrize("provider", ["qwen_vl_max", "qwen3_vl_flash", "zhipu"])
+def test_retired_saved_provider_resolves_to_qwen(provider) -> None:
     fake_db = FakeSettingsDb()
-    fake_db.settings["trial_inference_provider"].value = "qwen_vl_max"
+    fake_db.settings["trial_inference_provider"].value = provider
 
-    assert get_trial_inference_provider(fake_db) == "qwen3_vl_flash"
+    assert get_trial_inference_provider(fake_db) == "qwen"
+    with pytest.raises(ValueError, match="Unsupported trial inference provider"):
+        trial_inference_runtime(provider, _settings(), fake_db)
 
 
 def test_local_qwen_runtime_caps_shared_request_concurrency() -> None:
@@ -222,7 +194,7 @@ def test_admin_can_select_unauthenticated_local_qwen(monkeypatch) -> None:
     monkeypatch.setattr("app.api.system_settings.get_settings", lambda: settings)
     monkeypatch.setattr("app.services.trial_inference_provider.get_settings", lambda: settings)
     monkeypatch.setattr(
-        "app.api.system_settings.reconcile_local_qwen",
+        "app.services.local_qwen_lifecycle.reconcile_local_qwen",
         lambda provider, _settings: lifecycle_calls.append(provider),
     )
     app.dependency_overrides[get_current_user] = _admin
@@ -239,7 +211,7 @@ def test_admin_can_select_unauthenticated_local_qwen(monkeypatch) -> None:
     assert response.status_code == 200
     assert response.json()["provider"] == "local_qwen"
     assert fake_db.settings["trial_inference_provider"].value == "local_qwen"
-    assert lifecycle_calls == ["local_qwen"]
+    assert lifecycle_calls == []
 
 
 def test_admin_cannot_select_local_qwen_without_endpoint(monkeypatch) -> None:
@@ -264,13 +236,13 @@ def test_admin_cannot_select_local_qwen_without_endpoint(monkeypatch) -> None:
     assert not fake_db.committed
 
 
-def test_admin_cannot_select_local_qwen_when_process_start_fails(monkeypatch) -> None:
+def test_saving_legacy_provider_does_not_start_local_model(monkeypatch) -> None:
     fake_db = FakeSettingsDb()
     settings = _settings()
     monkeypatch.setattr("app.api.system_settings.get_settings", lambda: settings)
     monkeypatch.setattr("app.services.trial_inference_provider.get_settings", lambda: settings)
     monkeypatch.setattr(
-        "app.api.system_settings.reconcile_local_qwen",
+        "app.services.local_qwen_lifecycle.reconcile_local_qwen",
         lambda *_args: (_ for _ in ()).throw(LocalQwenLifecycleError("vLLM 启动失败")),
     )
     app.dependency_overrides[get_current_user] = _admin
@@ -284,15 +256,14 @@ def test_admin_cannot_select_local_qwen_when_process_start_fails(monkeypatch) ->
     finally:
         app.dependency_overrides.clear()
 
-    assert response.status_code == 409
-    assert "vLLM 启动失败" in response.json()["message"]
-    assert not fake_db.committed
+    assert response.status_code == 200
+    assert fake_db.committed
 
 
 def test_admin_cannot_select_provider_without_server_key(monkeypatch) -> None:
     fake_db = FakeSettingsDb()
     settings = _settings()
-    settings.zhipu_api_key = ""
+    settings.dashscope_api_key = ""
     monkeypatch.setattr("app.api.system_settings.get_settings", lambda: settings)
     monkeypatch.setattr("app.services.trial_inference_provider.get_settings", lambda: settings)
     app.dependency_overrides[get_current_user] = _admin
@@ -301,7 +272,7 @@ def test_admin_cannot_select_provider_without_server_key(monkeypatch) -> None:
     try:
         response = TestClient(app).put(
             "/api/system-settings/trial-inference",
-            json={"provider": "zhipu"},
+            json={"provider": "qwen"},
         )
     finally:
         app.dependency_overrides.clear()
@@ -322,13 +293,11 @@ def test_admin_updates_runtime_limits_and_prompts(monkeypatch) -> None:
         response = TestClient(app).put(
             "/api/system-settings/trial-inference",
             json={
-                "provider": "zhipu",
+                "provider": "qwen",
                 "global_job_concurrency": 7,
                 "request_concurrency": 3,
-                "monthly_photo_upload_limit": 50,
-                "basic_formal_monthly_photo_upload_limit": 50,
-                "professional_monthly_photo_upload_limit": 1000,
-                "professional_trial_monthly_photo_upload_limit": 500,
+                "trial_photo_detection_limit": 50,
+                "formal_photo_detection_limit": 50,
                 "generate_limit_per_user": 8,
                 "visible_prompt": "可见光检测提示词，必须只输出符合约定的 JSON 数组。",
                 "crack_prompt": "裂缝单独检测提示词，必须只输出符合约定的 JSON 数组。",
@@ -347,28 +316,24 @@ def test_admin_updates_runtime_limits_and_prompts(monkeypatch) -> None:
     body = response.json()
     assert body["global_job_concurrency"] == 7
     assert body["request_concurrency"] == 3
-    assert body["monthly_photo_upload_limit"] == 50
-    assert body["basic_formal_monthly_photo_upload_limit"] == 50
-    assert body["professional_monthly_photo_upload_limit"] == 1000
-    assert body["professional_trial_monthly_photo_upload_limit"] == 500
+    assert body["trial_photo_detection_limit"] == 50
+    assert body["formal_photo_detection_limit"] == 50
     assert body["generate_limit_per_user"] == 8
     assert body["visible_prompt"].startswith("可见光检测提示词")
     assert body["crack_prompt"].startswith("裂缝单独检测提示词")
     assert body["spalling_prompt"].startswith("脱落单独检测提示词")
     assert body["photo_guard_prompt"].startswith("建筑照片相关性判断提示词")
     assert body["formal_prompts"]["tile_crack_prompt"].startswith("自定义面砖裂缝")
-    assert fake_db.settings["trial_monthly_photo_upload_limit"].value == "50"
-    assert fake_db.settings["basic_formal_monthly_photo_upload_limit"].value == "50"
-    assert fake_db.settings["professional_monthly_photo_upload_limit"].value == "1000"
-    assert fake_db.settings["professional_trial_monthly_photo_upload_limit"].value == "500"
+    assert fake_db.settings["trial_photo_detection_limit"].value == "50"
+    assert fake_db.settings["formal_photo_detection_limit"].value == "50"
     assert fake_db.settings["trial_generate_limit_per_user"].value == "8"
     assert fake_db.settings["trial_crack_prompt"].value.startswith("裂缝单独检测提示词")
     assert fake_db.settings["trial_spalling_prompt"].value.startswith("脱落单独检测提示词")
     assert fake_db.settings["photo_guard_prompt"].value.startswith("建筑照片相关性判断提示词")
     assert fake_db.settings["formal_tile_crack_prompt"].value.startswith("自定义面砖裂缝")
-    runtime = trial_inference_runtime("zhipu", settings, fake_db)
+    runtime = trial_inference_runtime("qwen", settings, fake_db)
     assert runtime.max_concurrency == 3
     assert runtime.timeout_seconds == 300
-    zhipu = next(option for option in body["options"] if option["provider"] == "zhipu")
-    assert "api_key" not in zhipu
-    assert "api_key_hint" not in zhipu
+    for option in body["options"]:
+        assert "api_key" not in option
+        assert "api_key_hint" not in option

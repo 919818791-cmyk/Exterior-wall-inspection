@@ -17,8 +17,8 @@ def test_atomic_daily_photo_quota_allows_exactly_fifty_and_supports_refund() -> 
 def test_non_expiring_quota_remains_without_an_expiry() -> None:
     store = UsageControlStore(get_settings())
 
-    assert store.consume("basic:lifetime", "customer", amount=50, limit=50, ttl_seconds=None).allowed
-    result = store.consume("basic:lifetime", "customer", amount=1, limit=50, ttl_seconds=None)
+    assert store.consume("photo-detection:lifetime", "customer", amount=50, limit=50, ttl_seconds=None).allowed
+    result = store.consume("photo-detection:lifetime", "customer", amount=1, limit=50, ttl_seconds=None)
 
     assert not result.allowed
     assert result.retry_after is None
@@ -28,7 +28,7 @@ def test_non_expiring_quota_starts_from_persisted_usage_baseline() -> None:
     store = UsageControlStore(get_settings())
 
     assert store.consume(
-        "basic:lifetime-baseline",
+        "photo-detection:lifetime-baseline",
         "customer",
         amount=1,
         limit=50,
@@ -36,7 +36,7 @@ def test_non_expiring_quota_starts_from_persisted_usage_baseline() -> None:
         baseline=49,
     ).allowed
     assert not store.consume(
-        "basic:lifetime-baseline",
+        "photo-detection:lifetime-baseline",
         "customer",
         amount=1,
         limit=50,

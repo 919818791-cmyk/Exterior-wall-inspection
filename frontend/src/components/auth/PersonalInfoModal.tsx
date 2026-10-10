@@ -29,9 +29,9 @@ export function PersonalInfoModal({
     real_name: user.real_name ?? "",
     phone: user.phone ?? "",
     organization: user.organization ?? "",
-    detection_quota: "",
+    trial_detection_quota: "1000",
+    formal_detection_quota: "1000",
     role: user.role,
-    account_plan: user.account_plan,
     status: "active"
   }), [user]);
 

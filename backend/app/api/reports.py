@@ -62,7 +62,6 @@ from app.services.inference_scheduling import (
     InferenceUsageReservation,
     reserve_inference_usage,
 )
-from app.services.local_qwen_lifecycle import start_local_qwen
 from app.services.object_storage import get_object_bytes, presigned_get_url, put_object, remove_object, signed_object_url
 from app.services.photo_metadata import extract_photo_metadata
 from app.services.photo_upload_quota import (
@@ -159,7 +158,7 @@ def _reserve_trial_usage(
     api_request_count: int,
     *,
     db: Session | None = None,
-    generate_limit_detail: str = "免费版每 10 分钟最多可试用 3 次，请 10 分钟后再试。",
+    generate_limit_detail: str = "每 10 分钟最多发起 5 次检测，请稍后再试。",
 ) -> InferenceUsageReservation:
     return reserve_inference_usage(
         current_user.id,
@@ -950,7 +949,7 @@ def _quick_detection_photos_for_user(
         if len(rejected) > 3:
             rejected_names += f"等 {len(rejected)} 张"
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=(
                 f"{len(rejected)} 张照片未通过建筑照片预检，未执行检测：{rejected_names}。"
                 "请移除后再开始检测。"
@@ -991,39 +990,33 @@ def _validate_trial_photo_model_compatibility(
         )
 
 
+def _trial_strategy_plan(
+    images: list[TrialQwenImageInput],
+    db: Session,
+    models: list[str],
+):
+    from app.services.detection_strategies import resolve_plan
+    runtime = active_trial_inference_runtime(db)
+    visible_defect_types = [
+        TRIAL_MODEL_TO_DEFECT_TYPE[model]
+        for model in models
+        if model in {"裂缝", "脱落"}
+    ]
+    kinds = visible_defect_types + (["hollow"] if "空鼓" in models or any(image.thermal_imaging_available for image in images) else [])
+    return resolve_plan(db, "general", kinds, legacy_runtime=runtime)
+
+
 async def _trial_inference_requests(
     images: list[TrialQwenImageInput],
     db: Session,
     models: list[str],
 ) -> list[dict[str, Any]]:
     settings = get_settings()
-    runtime = active_trial_inference_runtime(db)
-    prompts = trial_prompts(db)
-    visible_defect_types = [
-        TRIAL_MODEL_TO_DEFECT_TYPE[model]
-        for model in models
-        if model in {"裂缝", "脱落"}
-    ]
-    if runtime.provider == "local_qwen":
-        local_status = start_local_qwen(settings)
-        if local_status.state != "running":
-            raise RuntimeError(local_status.message)
-    if not runtime.configured:
-        if runtime.provider == "local_qwen":
-            raise RuntimeError("LOCAL_QWEN_API_BASE_URL or LOCAL_QWEN_MODEL is not configured.")
-        variable = "ZHIPU_API_KEY" if runtime.provider == "zhipu" else "DASHSCOPE_API_KEY"
-        raise RuntimeError(f"{variable} is not configured.")
-    return await infer_trial_images(
+    from app.services.detection_strategies import execute_plan
+    plan = _trial_strategy_plan(images, db, models)
+    return await execute_plan(plan,
         images,
-        api_key=runtime.api_key,
-        base_url=runtime.base_url,
-        model=runtime.model,
-        provider=runtime.upstream_provider,
-        visible_prompt=prompts.visible_prompt_for_models(models),
-        thermal_prompt=prompts.thermal_prompt,
-        visible_defect_types=visible_defect_types,
-        timeout_seconds=runtime.timeout_seconds,
-        max_concurrency=runtime.max_concurrency,
+        infer=infer_trial_images,
         max_image_pixels=getattr(settings, "trial_max_image_pixels", DEFAULT_MAX_IMAGE_PIXELS),
         inference_max_image_pixels=getattr(
             settings,
@@ -1119,6 +1112,9 @@ def _trial_model_output_from_inference(
                 "bbox": detection.get("bbox") if isinstance(detection.get("bbox"), dict) else None,
                 "severity": detection.get("severity"),
                 "description": detection.get("description"),
+                "strategy_key": detection.get("strategy_key"),
+                "model_version": detection.get("model_version"),
+                "model_provider": detection.get("model_provider"),
                 "visible": confidence is not None and confidence > TRIAL_RESULT_CONFIDENCE_THRESHOLD,
             }
         )
@@ -1135,6 +1131,7 @@ def _trial_model_output_from_inference(
         "upstream_provider": inference.get("provider") or "qwen",
         "upstream_model": inference.get("model_version"),
         "model_version": TRIAL_MODEL_VERSION,
+        "strategy_models": inference.get("strategy_models") or [],
         "requested_models": requested_models or TRIAL_DEFAULT_MODELS,
         "executed_models": inference.get("executed_models") or [],
         "tile_width": inference_config.get("tile_width", TILE_WIDTH),
@@ -1259,6 +1256,8 @@ async def _trial_outputs_for_images(
                     inference=compatible_inference,
                 )
             )
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.exception("trial_inference_failed source=%s error_type=%s", source, type(exc).__name__)
         raise _trial_inference_unavailable(exc) from exc
@@ -1478,7 +1477,6 @@ def upload_trial_photo(
             current_user.id,
             source="trial",
             role=current_user.role,
-            account_plan=current_user.account_plan,
         )
         photo = QuickDetectionPhoto(
             id=photo_id,
@@ -1623,6 +1621,7 @@ async def generate_trial_result(
     if callable(rollback):
         rollback()
     images = await _trial_images_for_quick_photos(photo_sources)
+    _trial_strategy_plan(images, db, trial_request.models)
     estimated_api_requests = _trial_estimated_api_request_count(images)
     reservation = _reserve_trial_usage(
         current_user,
@@ -1650,7 +1649,6 @@ async def generate_trial_result(
             current_user.id,
             source="trial",
             role=current_user.role,
-            account_plan=current_user.account_plan,
             amount=len(photo_sources),
             db=db,
         )

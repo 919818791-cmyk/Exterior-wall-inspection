@@ -284,31 +284,7 @@ def test_qwen3_vl_flash_disables_thinking(monkeypatch) -> None:
     assert result["model_version"] == "qwen3-vl-flash"
 
 
-def test_zhipu_uses_provider_specific_multimodal_payload(monkeypatch) -> None:
-    RecordingAsyncClient.reset()
-    monkeypatch.setattr(qwen.httpx, "AsyncClient", RecordingAsyncClient)
-
-    result = _run_inference(
-        [qwen.TrialQwenImageInput(filename="facade.png", content=_image_bytes(640, 480))],
-        provider="zhipu",
-        base_url="https://open.bigmodel.cn/api/paas/v4",
-        model="glm-4.6v",
-    )[0]
-
-    endpoint, payload = RecordingAsyncClient.requests[0]
-    image_url = payload["messages"][0]["content"][0]["image_url"]["url"]
-    prompt = payload["messages"][0]["content"][1]["text"]
-    assert endpoint == "https://open.bigmodel.cn/api/paas/v4/chat/completions"
-    assert payload["model"] == "glm-4.6v"
-    assert payload["thinking"] == {"type": "disabled"}
-    assert "enable_thinking" not in payload
-    assert not image_url.startswith("data:")
-    assert "Qwen3-VL" not in prompt
-    assert result["provider"] == "zhipu"
-    assert result["model_version"] == "glm-4.6v"
-
-
-def test_zhipu_retries_transient_transport_disconnect(monkeypatch) -> None:
+def test_qwen_retries_transient_transport_disconnect(monkeypatch) -> None:
     class DisconnectOnceClient(RecordingAsyncClient):
         attempts = 0
 
@@ -326,12 +302,10 @@ def test_zhipu_retries_transient_transport_disconnect(monkeypatch) -> None:
 
     result = _run_inference(
         [qwen.TrialQwenImageInput(filename="facade.png", content=_image_bytes(64, 64))],
-        provider="zhipu",
-        model="glm-4.6v",
     )[0]
 
     assert DisconnectOnceClient.attempts == 2
-    assert result["provider"] == "zhipu"
+    assert result["provider"] == "qwen"
 
 
 def test_upstream_does_not_retry_permanent_client_error(monkeypatch) -> None:
@@ -355,8 +329,6 @@ def test_upstream_does_not_retry_permanent_client_error(monkeypatch) -> None:
     with pytest.raises(qwen.TrialQwenInferenceError, match="HTTP 400: invalid request"):
         _run_inference(
             [qwen.TrialQwenImageInput(filename="facade.png", content=_image_bytes(64, 64))],
-            provider="zhipu",
-            model="glm-4.6v",
         )
 
     assert BadRequestClient.attempts == 1

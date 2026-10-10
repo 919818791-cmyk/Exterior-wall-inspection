@@ -11,7 +11,6 @@ from app.db.session import get_db
 from app.enums.status import UserRole
 from app.models.tables import SystemSetting
 from app.schemas.system_settings import (
-    PricingQuotaSettingRead,
     TrialInferenceDisclosureRead,
     TrialInferenceProviderOption,
     TrialInferenceSettingRead,
@@ -21,18 +20,12 @@ from app.services.formal_detection_prompts import (
     FORMAL_PROMPT_SETTING_KEYS,
     formal_prompt_values,
 )
-from app.services.local_qwen_lifecycle import (
-    LocalQwenLifecycleError,
-    local_qwen_status,
-    reconcile_local_qwen,
-)
+from app.services.local_qwen_lifecycle import local_qwen_status
 from app.services.trial_inference_provider import (
-    BASIC_FORMAL_MONTHLY_PHOTO_UPLOAD_LIMIT_KEY,
+    FORMAL_PHOTO_DETECTION_LIMIT_KEY,
     PHOTO_GUARD_PROMPT_KEY,
-    PROFESSIONAL_MONTHLY_PHOTO_UPLOAD_LIMIT_KEY,
-    PROFESSIONAL_TRIAL_MONTHLY_PHOTO_UPLOAD_LIMIT_KEY,
     TRIAL_CRACK_PROMPT_KEY,
-    TRIAL_MONTHLY_PHOTO_UPLOAD_LIMIT_KEY,
+    TRIAL_PHOTO_DETECTION_LIMIT_KEY,
     TRIAL_GENERATE_LIMIT_PER_USER_KEY,
     TRIAL_GLOBAL_JOB_CONCURRENCY_KEY,
     TRIAL_INFERENCE_PROVIDER_KEY,
@@ -56,14 +49,6 @@ PROVIDER_DISCLOSURES = {
         "阿里云百炼（Model Studio）",
         "https://help.aliyun.com/zh/model-studio/privacy-notice",
     ),
-    "qwen3_vl_flash": (
-        "阿里云百炼（Model Studio）",
-        "https://help.aliyun.com/zh/model-studio/privacy-notice",
-    ),
-    "zhipu": (
-        "北京智谱华章科技股份有限公司",
-        "https://docs.bigmodel.cn/cn/terms/privacy-policy",
-    ),
     "local_qwen": ("平台控制的本地模型服务", None),
 }
 
@@ -73,9 +58,7 @@ def _setting_read(db: Session) -> TrialInferenceSettingRead:
     local_runtime = local_qwen_status(settings)
     runtimes = [
         trial_inference_runtime("qwen", settings, db),
-        trial_inference_runtime("qwen3_vl_flash", settings, db),
         trial_inference_runtime("local_qwen", settings, db),
-        trial_inference_runtime("zhipu", settings, db),
     ]
     prompts = trial_prompts(db)
     scheduling = trial_scheduling_settings(db, settings)
@@ -84,10 +67,8 @@ def _setting_read(db: Session) -> TrialInferenceSettingRead:
         provider=get_trial_inference_provider(db),
         global_job_concurrency=scheduling.global_job_concurrency,
         request_concurrency=scheduling.request_concurrency,
-        monthly_photo_upload_limit=scheduling.monthly_photo_upload_limit,
-        basic_formal_monthly_photo_upload_limit=scheduling.basic_formal_monthly_photo_upload_limit,
-        professional_monthly_photo_upload_limit=scheduling.professional_monthly_photo_upload_limit,
-        professional_trial_monthly_photo_upload_limit=scheduling.professional_trial_monthly_photo_upload_limit,
+        trial_photo_detection_limit=scheduling.trial_photo_detection_limit,
+        formal_photo_detection_limit=scheduling.formal_photo_detection_limit,
         generate_limit_per_user=scheduling.generate_limit_per_user,
         visible_prompt=prompts.visible_prompt,
         crack_prompt=prompts.crack_prompt,
@@ -109,6 +90,14 @@ def _setting_read(db: Session) -> TrialInferenceSettingRead:
                 ),
             )
             for runtime in runtimes
+        ] + [
+            TrialInferenceProviderOption(
+                provider="yolo",
+                label="YOLO模型",
+                model="",
+                configured=False,
+                runtime_message="YOLO模型待接入。",
+            )
         ],
         updated_at=provider_setting.updated_at if provider_setting is not None else None,
     )
@@ -122,31 +111,25 @@ def read_trial_inference_setting(
     return _setting_read(db)
 
 
-@router.get("/pricing-quotas", response_model=PricingQuotaSettingRead)
-def read_pricing_quotas(
-    db: Session = Depends(get_db),
-) -> PricingQuotaSettingRead:
-    scheduling = trial_scheduling_settings(db, get_settings())
-    return PricingQuotaSettingRead(
-        monthly_photo_upload_limit=scheduling.monthly_photo_upload_limit,
-        basic_formal_monthly_photo_upload_limit=scheduling.basic_formal_monthly_photo_upload_limit,
-        professional_monthly_photo_upload_limit=scheduling.professional_monthly_photo_upload_limit,
-        professional_trial_monthly_photo_upload_limit=scheduling.professional_trial_monthly_photo_upload_limit,
-    )
-
-
 @router.get("/trial-inference-disclosure", response_model=TrialInferenceDisclosureRead)
 def read_trial_inference_disclosure(
     _: AuthenticatedUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> TrialInferenceDisclosureRead:
-    provider = get_trial_inference_provider(db)
-    runtime = trial_inference_runtime(provider, db=db)
-    recipient, policy_url = PROVIDER_DISCLOSURES[provider]
+    from app.services.detection_strategies import read_strategies
+    from app.services.vision_models import model_config
+
+    rows = [item for item in read_strategies(db) if item.facade_type == "general" and item.routing_supported]
+    clouds = list(dict.fromkeys(item.model_id for item in rows if item.model_kind == "cloud_api"))
+    models = [model_config(db, identifier) for identifier in clouds]
+    provider = "qwen" if clouds else "local_qwen"
+    label = "、".join(model.name for model in models) if models else "平台本地检测模型"
+    recipient = label if models else "平台控制的本地模型服务"
+    policy_url = PROVIDER_DISCLOSURES["qwen"][1] if clouds == ["qwen"] and not models[0].api_base_url else None
     return TrialInferenceDisclosureRead(
         provider=provider,
-        label=runtime.label,
-        is_cloud=provider != "local_qwen",
+        label=label,
+        is_cloud=bool(clouds),
         recipient=recipient,
         privacy_policy_url=policy_url,
     )
@@ -161,10 +144,8 @@ def update_trial_inference_setting(
     numeric_settings = (
         ("global_job_concurrency", TRIAL_GLOBAL_JOB_CONCURRENCY_KEY),
         ("request_concurrency", TRIAL_REQUEST_CONCURRENCY_KEY),
-        ("monthly_photo_upload_limit", TRIAL_MONTHLY_PHOTO_UPLOAD_LIMIT_KEY),
-        ("basic_formal_monthly_photo_upload_limit", BASIC_FORMAL_MONTHLY_PHOTO_UPLOAD_LIMIT_KEY),
-        ("professional_monthly_photo_upload_limit", PROFESSIONAL_MONTHLY_PHOTO_UPLOAD_LIMIT_KEY),
-        ("professional_trial_monthly_photo_upload_limit", PROFESSIONAL_TRIAL_MONTHLY_PHOTO_UPLOAD_LIMIT_KEY),
+        ("trial_photo_detection_limit", TRIAL_PHOTO_DETECTION_LIMIT_KEY),
+        ("formal_photo_detection_limit", FORMAL_PHOTO_DETECTION_LIMIT_KEY),
         ("generate_limit_per_user", TRIAL_GENERATE_LIMIT_PER_USER_KEY),
     )
     for field_name, setting_key in numeric_settings:
@@ -197,7 +178,7 @@ def update_trial_inference_setting(
         flush()
     selected_provider = payload.provider or get_trial_inference_provider(db)
     runtime = trial_inference_runtime(selected_provider, db=db)
-    if not runtime.configured:
+    if payload.provider is not None and not runtime.configured:
         rollback = getattr(db, "rollback", None)
         if callable(rollback):
             rollback()
@@ -210,16 +191,6 @@ def update_trial_inference_setting(
             status_code=status.HTTP_409_CONFLICT,
             detail=detail,
         )
-    try:
-        reconcile_local_qwen(selected_provider, get_settings())
-    except LocalQwenLifecycleError as exc:
-        rollback = getattr(db, "rollback", None)
-        if callable(rollback):
-            rollback()
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=str(exc),
-        ) from exc
     provider_setting = set_trial_inference_provider(db, selected_provider, updated_by=current_user.id)
     provider_setting.updated_at = datetime.now(UTC)
     db.commit()

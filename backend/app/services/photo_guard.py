@@ -151,7 +151,7 @@ def require_building_photo(
     if not result.allowed:
         reason = result.reason or "无法确认属于建筑外墙"
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=(
                 f"照片“{filename}”未通过建筑图片校验：{reason}。"
                 "仅支持建筑全景、外立面或可确认的建筑局部照片。"

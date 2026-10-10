@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Modal, ModalBody, ModalContent, ModalFooter, ModalHeader } from "@heroui/react";
-import { BarChart3, Copy, RefreshCw, X } from "lucide-react";
+import { BarChart3, Copy, RefreshCw, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
@@ -8,21 +8,21 @@ import {
   accountsQueryOptions,
   accountUsageDetailQueryOptions,
   createAccount,
-  reviewProfessionalApplication,
+  deleteAccount,
   resetAccountPassword,
   resetAccountQuotas,
   updateAccount
 } from "@/api/accounts";
+import { ApiError } from "@/api/client";
 import { WorkbenchNameSearch } from "@/components/WorkbenchNameSearch";
 import { AccountEditorModal, type AccountFormState } from "@/components/auth/AccountEditorModal";
 import { ErrorNoticeModal } from "@/components/project/PhotoLimitModal";
+import { useAuthStore } from "@/stores/useAuthStore";
 import type { AccountUsagePeriod, AccountUsageTotals } from "@/types/accountUsage";
 import type {
   AccountCreatePayload,
-  AccountPlan,
   AccountUpdatePayload,
   AccountUser,
-  ProfessionalApplicationStatus,
   UserRole,
   UserStatus
 } from "@/types/auth";
@@ -38,20 +38,9 @@ const statusLabels: Record<UserStatus, string> = {
   disabled: "停用"
 };
 
-const planLabels: Record<AccountPlan, string> = {
-  basic: "基础版",
-  professional: "专业版"
-};
-
 const statusClass: Record<UserStatus, "ready" | "neutral"> = {
   active: "ready",
   disabled: "neutral"
-};
-
-const professionalApplicationLabels: Record<ProfessionalApplicationStatus, string> = {
-  pending: "待审核",
-  approved: "已通过",
-  rejected: "已拒绝"
 };
 
 const emptyAccountForm: AccountFormState = {
@@ -60,9 +49,9 @@ const emptyAccountForm: AccountFormState = {
   real_name: "",
   phone: "",
   organization: "",
-  detection_quota: "",
+  trial_detection_quota: "1000",
+  formal_detection_quota: "1000",
   role: "customer",
-  account_plan: "basic",
   status: "active"
 };
 
@@ -73,8 +62,11 @@ function hasRecordedUsage(usage: AccountUsageTotals) {
   return usage.task_count > 0 || usage.detected_photo_count > 0 || usage.api_request_count > 0 || usage.token_count > 0;
 }
 
-function getErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : "账号保存失败，请稍后重试。";
+function getErrorMessage(error: unknown, fallback = "账号保存失败，请稍后重试。") {
+  if (error instanceof ApiError && typeof error.payload === "object" && error.payload !== null && "detail" in error.payload) {
+    return String(error.payload.detail);
+  }
+  return error instanceof Error ? error.message : fallback;
 }
 
 function toNullable(value: string) {
@@ -95,9 +87,9 @@ function formFromAccount(account: AccountUser): AccountFormState {
     real_name: account.real_name ?? "",
     phone: account.phone ?? "",
     organization: account.organization ?? "",
-    detection_quota: account.detection_quota?.toString() ?? "",
+    trial_detection_quota: account.trial_detection_quota?.toString() ?? "1000",
+    formal_detection_quota: account.formal_detection_quota?.toString() ?? "1000",
     role: account.role,
-    account_plan: account.account_plan,
     status: account.status
   };
 }
@@ -107,9 +99,10 @@ export function AccountManagementPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const accountsQuery = useQuery(accountsQueryOptions);
+  const currentUserId = useAuthStore((state) => state.user?.id);
   const [editingAccount, setEditingAccount] = useState<AccountUser | null>(null);
-  const [reviewAccount, setReviewAccount] = useState<AccountUser | null>(null);
   const [usageAccount, setUsageAccount] = useState<AccountUser | null>(null);
+  const [deletingAccount, setDeletingAccount] = useState<AccountUser | null>(null);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [formError, setFormError] = useState("");
   const [formNotice, setFormNotice] = useState("");
@@ -153,22 +146,13 @@ export function AccountManagementPage() {
     }
   });
 
-  const reviewProfessionalMutation = useMutation({
-    mutationFn: ({
-      accountId,
-      decision,
-      durationMonths
-    }: {
-      accountId: string;
-      decision: "approved" | "rejected";
-      durationMonths: 6 | 12;
-    }) => reviewProfessionalApplication(accountId, {
-      decision,
-      duration_months: durationMonths
-    }),
-    onSuccess: async () => {
+  const deleteMutation = useMutation({
+    mutationFn: deleteAccount,
+    onSuccess: async (_, accountId) => {
+      queryClient.setQueryData(accountsQueryOptions.queryKey, (current) => current?.filter((account) => account.id !== accountId));
+      queryClient.removeQueries({ queryKey: ["account-usage", accountId] });
+      setDeletingAccount(null);
       await queryClient.invalidateQueries({ queryKey: ["accounts"] });
-      setReviewAccount(null);
     }
   });
 
@@ -216,17 +200,6 @@ export function AccountManagementPage() {
     setIsEditorOpen(true);
   }
 
-  function openProfessionalReview(account: AccountUser) {
-    reviewProfessionalMutation.reset();
-    setReviewAccount(account);
-  }
-
-  function closeProfessionalReview() {
-    if (reviewProfessionalMutation.isPending) return;
-    reviewProfessionalMutation.reset();
-    setReviewAccount(null);
-  }
-
   function closeEditor() {
     setIsEditorOpen(false);
     setEditingAccount(null);
@@ -243,7 +216,8 @@ export function AccountManagementPage() {
   function buildCreatePayload(form: AccountFormState): AccountCreatePayload | null {
     const username = form.username.trim();
     const password = form.password.trim();
-    const detectionQuota = toDetectionQuota(form.detection_quota);
+    const trialDetectionQuota = toDetectionQuota(form.trial_detection_quota);
+    const formalDetectionQuota = toDetectionQuota(form.formal_detection_quota);
     if (!username) {
       setFormError("请输入用户名。");
       return null;
@@ -252,8 +226,8 @@ export function AccountManagementPage() {
       setFormError("新建账号密码至少 8 位。");
       return null;
     }
-    if (detectionQuota === undefined) {
-      setFormError("检测额度需为 1 至 100000 的整数，或留空使用套餐默认额度。");
+    if (trialDetectionQuota === undefined || formalDetectionQuota === undefined) {
+      setFormError("基础版额度和专业版额度需为 1 至 100000 的整数，或留空使用默认额度 1000。");
       return null;
     }
     setFormError("");
@@ -263,22 +237,23 @@ export function AccountManagementPage() {
       real_name: toNullable(form.real_name),
       phone: toNullable(form.phone),
       organization: toNullable(form.organization),
-      detection_quota: detectionQuota,
+      trial_detection_quota: trialDetectionQuota,
+      formal_detection_quota: formalDetectionQuota,
       role: form.role,
-      account_plan: form.account_plan,
       status: form.status
     };
   }
 
   function buildUpdatePayload(form: AccountFormState): AccountUpdatePayload | null {
     const username = form.username.trim();
-    const detectionQuota = toDetectionQuota(form.detection_quota);
+    const trialDetectionQuota = toDetectionQuota(form.trial_detection_quota);
+    const formalDetectionQuota = toDetectionQuota(form.formal_detection_quota);
     if (!username) {
       setFormError("请输入用户名。");
       return null;
     }
-    if (detectionQuota === undefined) {
-      setFormError("检测额度需为 1 至 100000 的整数，或留空使用套餐默认额度。");
+    if (trialDetectionQuota === undefined || formalDetectionQuota === undefined) {
+      setFormError("基础版额度和专业版额度需为 1 至 100000 的整数，或留空使用默认额度 1000。");
       return null;
     }
     setFormError("");
@@ -287,9 +262,9 @@ export function AccountManagementPage() {
       real_name: toNullable(form.real_name),
       phone: toNullable(form.phone),
       organization: toNullable(form.organization),
-      detection_quota: detectionQuota,
+      trial_detection_quota: trialDetectionQuota,
+      formal_detection_quota: formalDetectionQuota,
       role: form.role,
-      account_plan: form.account_plan,
       status: form.status
     };
   }
@@ -358,9 +333,8 @@ export function AccountManagementPage() {
                   <tr>
                     <th>账号</th>
                     <th className="account-role-column">权限</th>
-                    <th className="account-secondary-column">套餐</th>
                     <th className="account-secondary-column">状态</th>
-                    <th className="account-secondary-column">专业版申请</th>
+                    <th className="account-actions-column">操作</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -372,6 +346,7 @@ export function AccountManagementPage() {
                       tabIndex={0}
                       onClick={() => openEditEditor(account)}
                       onKeyDown={(event) => {
+                        if (event.target !== event.currentTarget) return;
                         if (event.key !== "Enter" && event.key !== " ") return;
                         event.preventDefault();
                         openEditEditor(account);
@@ -382,22 +357,25 @@ export function AccountManagementPage() {
                         <small>{account.username}</small>
                       </td>
                       <td className="account-role-column" data-label="权限"><span className="account-role">{roleLabels[account.role]}</span></td>
-                      <td className="account-secondary-column" data-label="套餐">{account.role === "customer" ? planLabels[account.account_plan] : "—"}</td>
                       <td className="account-secondary-column" data-label="状态"><span className={`status-tag ${statusClass[account.status]}`}>{statusLabels[account.status]}</span></td>
-                      <td className="account-secondary-column" data-label="专业版申请">
-                        {account.role === "customer" && account.professional_application_status ? (
+                      <td className="account-actions-column" data-label="操作">
+                        <div className="table-actions">
                           <button
-                            className={`button ${account.professional_application_status === "pending" ? "primary-action-button" : "back-cancel-button"}`}
+                            aria-label={`查看账号 ${account.real_name || account.username} 的用量`}
+                            className="back-cancel-button"
+                            title="查看用量"
                             type="button"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              openProfessionalReview(account);
-                            }}
-                            onKeyDown={(event) => event.stopPropagation()}
-                          >
-                            {professionalApplicationLabels[account.professional_application_status]}
-                          </button>
-                        ) : "—"}
+                            onClick={(event) => { event.stopPropagation(); setUsageAccount(account); }}
+                          ><BarChart3 aria-hidden="true" /></button>
+                          <button
+                            aria-label={`删除账号 ${account.real_name || account.username}`}
+                            className="back-cancel-button"
+                            disabled={account.id === currentUserId}
+                            title={account.id === currentUserId ? "不能删除当前登录账号" : "删除账号"}
+                            type="button"
+                            onClick={(event) => { event.stopPropagation(); deleteMutation.reset(); setDeletingAccount(account); }}
+                          ><Trash2 aria-hidden="true" /></button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -425,27 +403,35 @@ export function AccountManagementPage() {
           mode={editorMode}
           notice={formNotice}
           onClose={closeEditor}
-          onOpenUsage={editingAccount ? () => setUsageAccount(editingAccount) : undefined}
           onResetPassword={resetPassword}
           onResetQuotas={resetQuotas}
           onSubmit={submitAccount}
         />
       ) : null}
-      <ProfessionalReviewModal
-        account={reviewAccount}
-        error={reviewProfessionalMutation.error ? getErrorMessage(reviewProfessionalMutation.error) : ""}
-        isPending={reviewProfessionalMutation.isPending}
-        onClose={closeProfessionalReview}
-        onSubmit={(decision, durationMonths) => {
-          if (!reviewAccount) return;
-          reviewProfessionalMutation.mutate({
-            accountId: reviewAccount.id,
-            decision,
-            durationMonths
-          });
-        }}
-      />
       {usageAccount ? <AccountUsageModal account={usageAccount} onClose={() => setUsageAccount(null)} /> : null}
+      <Modal
+        classNames={{ backdrop: "start-detection-modal-backdrop", base: "start-detection-modal-content", wrapper: "start-detection-modal-wrapper" }}
+        hideCloseButton
+        isOpen={deletingAccount !== null}
+        isDismissable={!deleteMutation.isPending}
+        isKeyboardDismissDisabled={deleteMutation.isPending}
+        placement="center"
+        onOpenChange={(isOpen) => { if (!isOpen && !deleteMutation.isPending) setDeletingAccount(null); }}
+      >
+        <ModalContent>
+          <ModalHeader className="start-detection-modal-header"><span className="start-detection-modal-title-copy">删除账号</span></ModalHeader>
+          <ModalBody className="start-detection-modal-body">
+            <p>确认删除账号“{deletingAccount?.real_name || deletingAccount?.username}”？删除后该账号将无法登录，已有项目和历史用量将保留。</p>
+            {deleteMutation.isError ? <p className="project-photo-error" role="alert">{getErrorMessage(deleteMutation.error, "账号删除失败，请稍后重试。")}</p> : null}
+          </ModalBody>
+          <ModalFooter className="start-detection-modal-footer">
+            <button className="back-cancel-button" disabled={deleteMutation.isPending} type="button" onClick={() => setDeletingAccount(null)}>取消</button>
+            <button className="button primary-action-button" disabled={deleteMutation.isPending} type="button" onClick={() => { if (deletingAccount && !deleteMutation.isPending) deleteMutation.mutate(deletingAccount.id); }}>
+              <Trash2 aria-hidden="true" />{deleteMutation.isPending ? "正在删除…" : "确认删除"}
+            </button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
       <ErrorNoticeModal
         actionIcon={<Copy aria-hidden="true" />}
         actionLabel={temporaryPasswordCopied ? "已复制" : "复制密码"}
@@ -461,111 +447,6 @@ export function AccountManagementPage() {
         }}
       />
     </div>
-  );
-}
-
-function ProfessionalReviewModal({
-  account,
-  error,
-  isPending,
-  onClose,
-  onSubmit
-}: {
-  account: AccountUser | null;
-  error: string;
-  isPending: boolean;
-  onClose: () => void;
-  onSubmit: (decision: "approved" | "rejected", durationMonths: 6 | 12) => void;
-}) {
-  const [durationMonths, setDurationMonths] = useState<6 | 12>(6);
-
-  useEffect(() => {
-    if (account) setDurationMonths(account.professional_application_duration_months ?? 6);
-  }, [account]);
-
-  return (
-    <Modal
-      classNames={{
-        backdrop: "start-detection-modal-backdrop",
-        base: "start-detection-modal-content",
-        wrapper: "start-detection-modal-wrapper"
-      }}
-      hideCloseButton
-      isDismissable={!isPending}
-      isKeyboardDismissDisabled={isPending}
-      isOpen={Boolean(account)}
-      placement="center"
-      size="sm"
-      onOpenChange={(isOpen) => {
-        if (!isOpen) onClose();
-      }}
-    >
-      <ModalContent>
-        {(closeModal) => (
-          <>
-            <button
-              aria-label="关闭专业版申请审核"
-              className="start-detection-modal-close back-cancel-button"
-              disabled={isPending}
-              type="button"
-              onClick={closeModal}
-            >
-              <X aria-hidden="true" />
-            </button>
-            <ModalHeader className="start-detection-modal-header">
-              <span className="start-detection-modal-title-copy">审核专业版申请</span>
-            </ModalHeader>
-            <ModalBody className="start-detection-modal-body">
-              <p className="text-base leading-6 text-slate-600">
-                正在审核账号“{account?.real_name || account?.username}”的专业版申请。
-              </p>
-              <fieldset className="start-detection-types">
-                <legend>专业版期限</legend>
-                <div className="grid grid-cols-2 gap-3">
-                  {([6, 12] as const).map((months) => (
-                    <label
-                      className={`start-detection-option ${durationMonths === months ? "is-selected" : ""}`}
-                      key={months}
-                    >
-                      <span className="start-detection-option-heading">
-                        <input
-                          checked={durationMonths === months}
-                          disabled={isPending}
-                          name="professional-plan-duration"
-                          type="radio"
-                          value={months}
-                          onChange={() => setDurationMonths(months)}
-                        />
-                        <strong>{months === 6 ? "半年" : "一年"}</strong>
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              </fieldset>
-              {error ? <p className="auth-status auth-status-error" role="alert">{error}</p> : null}
-            </ModalBody>
-            <ModalFooter className="start-detection-modal-footer">
-              <button
-                className="button back-cancel-button"
-                disabled={isPending}
-                type="button"
-                onClick={() => onSubmit("rejected", durationMonths)}
-              >
-                {isPending ? "正在处理…" : "拒绝"}
-              </button>
-              <button
-                className="button primary-action-button"
-                disabled={isPending}
-                type="button"
-                onClick={() => onSubmit("approved", durationMonths)}
-              >
-                {isPending ? "正在处理…" : "通过"}
-              </button>
-            </ModalFooter>
-          </>
-        )}
-      </ModalContent>
-    </Modal>
   );
 }
 

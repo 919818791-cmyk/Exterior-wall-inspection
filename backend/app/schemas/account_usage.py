@@ -47,7 +47,9 @@ class CurrentAccountUsageResponse(BaseModel):
     period_start: date
     period_end: date
     usage: AccountUsageTotals
-    trial_monthly_photo_upload_balance: AccountQuotaBalance
-    basic_formal_monthly_photo_upload_balance: AccountQuotaBalance
-    professional_formal_monthly_photo_upload_balance: AccountQuotaBalance
-    professional_trial_monthly_photo_upload_balance: AccountQuotaBalance
+    trial_photo_detection_balance: AccountQuotaBalance
+    formal_photo_detection_balance: AccountQuotaBalance
+
+
+class AccountQuotaAddRequest(BaseModel):
+    amount: Literal[200, 500, 1000]

@@ -1,5 +1,5 @@
 import { ChevronDown, Menu, UserRound, X } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -10,18 +10,19 @@ import { AppSidebar, AppSidebarUserMenuContent } from "@/components/AppSidebar";
 import { ChangePasswordModal } from "@/components/auth/ChangePasswordModal";
 import { getListPageHeader, ListPageHeader } from "@/components/ListPageHeader";
 import { PersonalInfoModal } from "@/components/auth/PersonalInfoModal";
+import { AddQuotaModal } from "@/components/auth/AddQuotaModal";
 import { useAuthStore } from "@/stores/useAuthStore";
 
 function pageClass(pathname: string) {
   if (pathname === "/") return "home-route";
-  if (pathname === "/pricing") return "pricing-route";
   if (pathname === "/trials/new") return "project-page new-project-page project-list-chrome trial-route";
   if (pathname === "/trials") return "project-page project-list-route report-list-route";
   if (pathname === "/detections") return "project-page project-list-route";
+  if (pathname === "/photos") return "project-page photo-management-route";
   if (/^\/review\/detections\/[^/]+\/model$/.test(pathname)) return "building-model-route";
   if (/^\/detections\/[^/]+\/model$/.test(pathname)) return "building-model-route";
   if (pathname.startsWith("/accounts")) return "project-page account-management-route";
-  if (pathname.startsWith("/system-settings")) return "project-page system-settings-route";
+  if (pathname === "/system-settings" || pathname === "/detection-prompts" || pathname === "/model-management") return "project-page management-editor-route";
   if (pathname === "/review") return "project-page review-workbench-route review-workbench-list-route";
   if (/^\/review\/detections\/[^/]+$/.test(pathname)) return "project-page review-workbench-route review-workbench-detail-route";
   if (pathname.startsWith("/review")) return "project-page review-workbench-route";
@@ -38,7 +39,11 @@ function pageClass(pathname: string) {
 function usesAppSidebar(pathname: string) {
   return pathname === "/detections"
     || pathname === "/trials"
+    || pathname === "/photos"
     || pathname === "/review"
+    || pathname === "/system-settings"
+    || pathname === "/detection-prompts"
+    || pathname === "/model-management"
     || pathname.startsWith("/accounts");
 }
 
@@ -62,8 +67,10 @@ export function AppLayout() {
   const clearSession = useAuthStore((state) => state.clearSession);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [personalInfoModalOpen, setPersonalInfoModalOpen] = useState(false);
+  const [addQuotaModalOpen, setAddQuotaModalOpen] = useState(false);
   const [changePasswordModalOpen, setChangePasswordModalOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [listPageHeaderAction, setListPageHeaderAction] = useState<ReactNode>(null);
   const [headerScrolled, setHeaderScrolled] = useState(false);
   const [homeNavigationVisible, setHomeNavigationVisible] = useState(true);
   const [projectDetailListChrome, setProjectDetailListChrome] = useState(false);
@@ -91,11 +98,12 @@ export function AppLayout() {
   const isReviewDetailRoute = /^\/review\/detections\/[^/]+$/.test(location.pathname);
   const isStandaloneManagementRoute = (
     location.pathname === "/system-settings"
+    || location.pathname === "/detection-prompts"
+    || location.pathname === "/model-management"
     || location.pathname.startsWith("/accounts")
     || location.pathname === "/review"
   );
   const isHomeRoute = location.pathname === "/";
-  const isPricingRoute = location.pathname === "/pricing";
   const isCreationRoute = location.pathname === "/detections/new" || location.pathname === "/trials/new";
   const currentPageClass = pageClass(location.pathname);
   const resolvedPageClass = `${currentPageClass}${projectDetailListChrome ? " project-list-chrome" : ""}`;
@@ -106,13 +114,13 @@ export function AppLayout() {
   const showsSiteHeader = !isBuildingModelRoute
     && !isReviewBuildingModelRoute
     && !isReviewDetailRoute
-    && !isPricingRoute
     && (!isStandaloneManagementRoute || Boolean(listPageHeader))
     && !isDetectionInnerRoute
     && !isTrialInnerRoute
     && !isLegacyReportDetailRoute;
   const canAccessAdmin = user?.role === "admin";
   const canAccessReview = user?.role === "reviewer" || user?.role === "admin";
+  const canUseQuota = user?.role === "customer" || user?.role === "admin";
 
   useLayoutEffect(() => {
     const previousScrollBehavior = document.documentElement.style.scrollBehavior;
@@ -148,6 +156,7 @@ export function AppLayout() {
       queryClient.clear();
       setAccountMenuOpen(false);
       setPersonalInfoModalOpen(false);
+      setAddQuotaModalOpen(false);
       setChangePasswordModalOpen(false);
       navigate(`/login?redirect=${encodeURIComponent(currentPath)}`, { replace: true });
     };
@@ -253,6 +262,7 @@ export function AppLayout() {
       queryClient.removeQueries({ queryKey: ["reports"] });
       queryClient.removeQueries({ queryKey: ["current-account-usage"] });
       setAccountMenuOpen(false);
+      setAddQuotaModalOpen(false);
       setMobileNavOpen(false);
       navigate("/", { replace: true });
     }
@@ -276,39 +286,28 @@ export function AppLayout() {
   }
 
   const displayName = user?.real_name?.trim() || user?.username || "";
-  const isProfessionalCustomer = user?.role === "customer" && user.account_plan === "professional";
   const formatSidebarBalance = (balance: { remaining: number; limit: number } | undefined) => (
     balance ? `${balance.remaining} / ${balance.limit} 张` : "--"
   );
-  const sidebarQuotaItems = user?.role !== "customer"
+  const sidebarQuotaItems = !canUseQuota
     ? []
-    : isProfessionalCustomer
-      ? [
-          {
-            label: "专业检测",
-            value: formatSidebarBalance(accountUsageQuery.data?.professional_formal_monthly_photo_upload_balance)
-          },
-          {
-            label: "快速体验",
-            value: formatSidebarBalance(accountUsageQuery.data?.professional_trial_monthly_photo_upload_balance)
-          }
-        ]
-      : [
-          {
-            label: "专业检测",
-            value: formatSidebarBalance(accountUsageQuery.data?.basic_formal_monthly_photo_upload_balance)
-          },
-          {
-            label: "快速体验",
-            value: formatSidebarBalance(accountUsageQuery.data?.trial_monthly_photo_upload_balance)
-          }
-        ];
+    : [
+      {
+        label: "专业检测",
+        value: formatSidebarBalance(accountUsageQuery.data?.formal_photo_detection_balance)
+      },
+      {
+        label: "快速体验",
+        value: formatSidebarBalance(accountUsageQuery.data?.trial_photo_detection_balance)
+      }
+    ];
   const adminLinks = [
-    ...(canAccessAdmin ? [{ label: "账号管理", to: "/accounts" }, { label: "推理设置", to: "/system-settings" }] : [])
+    ...(canAccessAdmin ? [{ label: "账号管理", to: "/accounts" }, { label: "推理设置", to: "/system-settings" }, { label: "检测策略", to: "/detection-prompts" }, { label: "模型管理", to: "/model-management" }] : [])
   ];
   const renderAccountDropdown = (id: string) => (
     <div id={id} className="account-dropdown" role="dialog" aria-label="本账号照片检测额度和账户操作">
       <AppSidebarUserMenuContent
+        onAddQuota={() => { setAccountMenuOpen(false); setAddQuotaModalOpen(true); }}
         onLogout={() => void handleLogout()}
         onPersonalInfo={() => {
           setAccountMenuOpen(false);
@@ -348,6 +347,7 @@ export function AppLayout() {
     >
       {hasAppSidebar ? (
         <AppSidebar
+          onAddQuota={() => { setAccountMenuOpen(false); setAddQuotaModalOpen(true); }}
           accountMenu={renderAccountDropdown("sidebar-account-dropdown")}
           accountMenuOpen={accountMenuOpen}
           accountMenuRef={sidebarAccountMenuRef}
@@ -382,7 +382,7 @@ export function AppLayout() {
           <span className="brand-name">外墙智能巡检平台</span>
         </NavLink>
 
-        {listPageHeader ? <ListPageHeader config={listPageHeader} /> : null}
+        {listPageHeader ? <ListPageHeader config={listPageHeader} action={location.pathname === "/system-settings" || location.pathname === "/detection-prompts" || location.pathname === "/model-management" ? listPageHeaderAction : undefined} /> : null}
 
         {!listPageHeader ? <button
           aria-controls="mobile-navigation-panel"
@@ -402,7 +402,7 @@ export function AppLayout() {
           <nav className="main-nav" aria-label="主导航">
           <NavLink className={({ isActive }) => (isActive ? "active" : "")} to="/detections" onClick={() => setMobileNavOpen(false)}>专业检测</NavLink>
           <NavLink className={({ isActive }) => (isActive ? "active" : "")} to="/trials" onClick={() => setMobileNavOpen(false)}>快速体验</NavLink>
-          <NavLink className={({ isActive }) => (isActive ? "active" : "")} to="/pricing" onClick={() => setMobileNavOpen(false)}>定价</NavLink>
+          {user ? <NavLink className={({ isActive }) => (isActive ? "active" : "")} to="/photos" onClick={() => setMobileNavOpen(false)}>照片管理</NavLink> : null}
           {canAccessReview ? (
             <NavLink className={({ isActive }) => (isActive ? "active" : "")} to="/review" onClick={() => setMobileNavOpen(false)}>工作台</NavLink>
           ) : null}
@@ -423,8 +423,9 @@ export function AppLayout() {
       </header>
 
       <main className="app-main">
-        <Outlet context={{ requestAuthentication, requestRegistration, setProjectDetailListChrome }} />
+        <Outlet context={{ requestAuthentication, requestRegistration, setProjectDetailListChrome, setListPageHeaderAction }} />
       </main>
+      {canUseQuota && addQuotaModalOpen ? <AddQuotaModal onClose={() => setAddQuotaModalOpen(false)} /> : null}
       {user ? (
         <PersonalInfoModal
           isOpen={personalInfoModalOpen}

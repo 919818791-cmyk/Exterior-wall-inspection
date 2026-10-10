@@ -10,15 +10,13 @@ from app.core.config import Settings, get_settings
 from app.models.tables import SystemSetting
 
 
-TrialInferenceProvider = Literal["qwen", "qwen3_vl_flash", "zhipu", "local_qwen"]
-UpstreamInferenceProvider = Literal["qwen", "zhipu"]
+TrialInferenceProvider = Literal["qwen", "local_qwen"]
+UpstreamInferenceProvider = Literal["qwen"]
 TRIAL_INFERENCE_PROVIDER_KEY = "trial_inference_provider"
 TRIAL_GLOBAL_JOB_CONCURRENCY_KEY = "trial_global_job_concurrency"
 TRIAL_REQUEST_CONCURRENCY_KEY = "trial_request_concurrency"
-TRIAL_MONTHLY_PHOTO_UPLOAD_LIMIT_KEY = "trial_monthly_photo_upload_limit"
-BASIC_FORMAL_MONTHLY_PHOTO_UPLOAD_LIMIT_KEY = "basic_formal_monthly_photo_upload_limit"
-PROFESSIONAL_MONTHLY_PHOTO_UPLOAD_LIMIT_KEY = "professional_monthly_photo_upload_limit"
-PROFESSIONAL_TRIAL_MONTHLY_PHOTO_UPLOAD_LIMIT_KEY = "professional_trial_monthly_photo_upload_limit"
+TRIAL_PHOTO_DETECTION_LIMIT_KEY = "trial_photo_detection_limit"
+FORMAL_PHOTO_DETECTION_LIMIT_KEY = "formal_photo_detection_limit"
 TRIAL_GENERATE_LIMIT_PER_USER_KEY = "trial_generate_limit_per_user"
 TRIAL_VISIBLE_PROMPT_KEY = "trial_visible_prompt"
 TRIAL_CRACK_PROMPT_KEY = "trial_crack_prompt"
@@ -52,10 +50,8 @@ class TrialInferenceRuntime:
 class TrialSchedulingSettings:
     global_job_concurrency: int
     request_concurrency: int
-    monthly_photo_upload_limit: int
-    basic_formal_monthly_photo_upload_limit: int
-    professional_monthly_photo_upload_limit: int
-    professional_trial_monthly_photo_upload_limit: int
+    trial_photo_detection_limit: int
+    formal_photo_detection_limit: int
     generate_limit_per_user: int
     generate_window_seconds: int
     request_timeout_seconds: int
@@ -150,31 +146,17 @@ def trial_scheduling_settings(
             minimum=1,
             maximum=10,
         ),
-        monthly_photo_upload_limit=_bounded_int_setting(
+        trial_photo_detection_limit=_bounded_int_setting(
             db,
-            TRIAL_MONTHLY_PHOTO_UPLOAD_LIMIT_KEY,
-            getattr(settings, "trial_monthly_photo_upload_limit", 50),
+            TRIAL_PHOTO_DETECTION_LIMIT_KEY,
+            getattr(settings, "trial_photo_detection_limit", 1000),
             minimum=1,
             maximum=100_000,
         ),
-        basic_formal_monthly_photo_upload_limit=_bounded_int_setting(
+        formal_photo_detection_limit=_bounded_int_setting(
             db,
-            BASIC_FORMAL_MONTHLY_PHOTO_UPLOAD_LIMIT_KEY,
-            getattr(settings, "basic_formal_monthly_photo_upload_limit", 50),
-            minimum=1,
-            maximum=100_000,
-        ),
-        professional_monthly_photo_upload_limit=_bounded_int_setting(
-            db,
-            PROFESSIONAL_MONTHLY_PHOTO_UPLOAD_LIMIT_KEY,
-            getattr(settings, "professional_monthly_photo_upload_limit", 1000),
-            minimum=1,
-            maximum=100_000,
-        ),
-        professional_trial_monthly_photo_upload_limit=_bounded_int_setting(
-            db,
-            PROFESSIONAL_TRIAL_MONTHLY_PHOTO_UPLOAD_LIMIT_KEY,
-            getattr(settings, "professional_trial_monthly_photo_upload_limit", 500),
+            FORMAL_PHOTO_DETECTION_LIMIT_KEY,
+            getattr(settings, "formal_photo_detection_limit", 1000),
             minimum=1,
             maximum=100_000,
         ),
@@ -205,11 +187,8 @@ def trial_scheduling_settings(
 
 def get_trial_inference_provider(db: Session) -> TrialInferenceProvider:
     value = setting_value(db, TRIAL_INFERENCE_PROVIDER_KEY)
-    # Preserve an existing administrator selection when upgrading from the
-    # Qwen-VL-Max option that Qwen3-VL-Flash replaces.
-    if value == "qwen_vl_max":
-        return "qwen3_vl_flash"
-    if value not in ("qwen", "qwen3_vl_flash", "zhipu", "local_qwen"):
+    # Retired or unknown saved selections resolve to the supported default.
+    if value not in ("qwen", "local_qwen"):
         return DEFAULT_TRIAL_INFERENCE_PROVIDER
     return cast(TrialInferenceProvider, value)
 
@@ -245,6 +224,8 @@ def trial_inference_runtime(
     settings: Settings | None = None,
     db: Session | None = None,
 ) -> TrialInferenceRuntime:
+    if provider not in ("qwen", "local_qwen"):
+        raise ValueError("Unsupported trial inference provider.")
     settings = settings or get_settings()
     if provider == "local_qwen":
         label = "本地 Qwen3-VL-32B"
@@ -255,22 +236,12 @@ def trial_inference_runtime(
         env_key = settings.local_qwen_api_key.strip() or "local"
         env_base_url = settings.local_qwen_api_base_url
         env_model = settings.local_qwen_model
-    elif provider == "zhipu":
-        label = "智谱GLM-4.6V"
-        upstream_provider: UpstreamInferenceProvider = "zhipu"
-        env_key = settings.zhipu_api_key
-        env_base_url = settings.zhipu_api_base_url
-        env_model = settings.zhipu_model
     else:
         upstream_provider = "qwen"
-        label = "通义千问 Qwen3-VL-Flash" if provider == "qwen3_vl_flash" else "通义千问 Qwen3-VL-Plus"
+        label = "通义千问 Qwen3-VL-Plus"
         env_key = settings.dashscope_api_key
         env_base_url = settings.qwen_api_base_url
-        env_model = (
-            getattr(settings, "qwen3_vl_flash_model", "qwen3-vl-flash")
-            if provider == "qwen3_vl_flash"
-            else settings.qwen_model
-        )
+        env_model = settings.qwen_model
     scheduling = trial_scheduling_settings(db, settings)
     timeout_seconds = scheduling.request_timeout_seconds
     max_concurrency = scheduling.request_concurrency

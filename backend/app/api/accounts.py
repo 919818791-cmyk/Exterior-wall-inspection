@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import secrets
-from calendar import monthrange
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Literal
 from uuid import UUID
@@ -15,9 +14,10 @@ from app.api.dependencies import AuthenticatedUser, get_current_user, require_ro
 from app.core.config import get_settings
 from app.core.security import hash_password
 from app.db.session import get_db
-from app.enums.status import AccountPlan, ProfessionalApplicationStatus, UserRole, UserStatus
+from app.enums.status import UserRole, UserStatus
 from app.models.tables import UsageEvent, UserAccount
 from app.schemas.account_usage import (
+    AccountQuotaAddRequest,
     AccountUsageDetailResponse,
     AccountUsagePeriodMetrics,
     AccountQuotaBalance,
@@ -31,8 +31,6 @@ from app.schemas.auth import (
     AccountQuotaResetResponse,
     AccountRead,
     AccountUpdateRequest,
-    ProfessionalApplicationResponse,
-    ProfessionalApplicationReviewRequest,
 )
 from app.services.photo_upload_quota import reset_account_quota_counters
 from app.services.trial_inference_provider import trial_scheduling_settings
@@ -74,13 +72,6 @@ def _utc_boundary(value: date) -> datetime:
 
 def _aware_utc(value: datetime) -> datetime:
     return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
-
-
-def _add_months(value: datetime, months: int) -> datetime:
-    month_index = value.year * 12 + value.month - 1 + months
-    year, month_zero_based = divmod(month_index, 12)
-    month = month_zero_based + 1
-    return value.replace(year=year, month=month, day=min(value.day, monthrange(year, month)[1]))
 
 
 def _bucket_index(timestamp: datetime, boundaries: list[tuple[datetime, datetime]]) -> int | None:
@@ -166,15 +157,7 @@ def _ensure_admin_account_remains_available(
 
 
 def _to_account_read(account: UserAccount) -> AccountRead:
-    result = AccountRead.model_validate(account)
-    expires_at = result.professional_plan_expires_at
-    if (
-        result.account_plan == AccountPlan.PROFESSIONAL
-        and expires_at is not None
-        and _aware_utc(expires_at) <= datetime.now(UTC)
-    ):
-        return result.model_copy(update={"account_plan": AccountPlan.BASIC})
-    return result
+    return AccountRead.model_validate(account)
 
 
 USAGE_SUM_FIELDS = (
@@ -321,10 +304,8 @@ def get_current_account_usage(
     month_start_utc = _utc_boundary(month_start)
     tomorrow_utc = _utc_boundary(today + timedelta(days=1))
     metrics = _empty_usage_metrics()
-    basic_trial_photo_upload_count = 0
-    basic_formal_photo_upload_count = 0
-    professional_formal_monthly_photo_upload_count = 0
-    professional_trial_monthly_photo_upload_count = 0
+    trial_photo_detection_count = 0
+    formal_photo_detection_count = 0
     account = db.get(UserAccount, current_user.id)
     quota_reset_at = getattr(account, "quota_reset_at", None)
     aware_quota_reset_at = _aware_utc(quota_reset_at) if quota_reset_at is not None else None
@@ -356,80 +337,59 @@ def get_current_account_usage(
         if row.event_type == "photo_detection" and is_after_quota_reset:
             count = max(0, int(row.photo_count or 0))
             if row.source_type == "trial":
-                basic_trial_photo_upload_count += count
-                if is_current_month:
-                    professional_trial_monthly_photo_upload_count += count
+                trial_photo_detection_count += count
             elif row.source_type == "formal":
-                basic_formal_photo_upload_count += count
-                if is_current_month:
-                    professional_formal_monthly_photo_upload_count += count
+                formal_photo_detection_count += count
 
     scheduling = trial_scheduling_settings(db, get_settings())
-    account_detection_quota = getattr(account, "detection_quota", None)
-
-    def effective_limit(default_limit: int) -> int:
-        return int(account_detection_quota) if account_detection_quota is not None else default_limit
+    def effective_limit(source: str, default_limit: int) -> int:
+        quota = getattr(account, f"{source}_detection_quota", None)
+        return int(quota) if quota is not None else default_limit
 
     return CurrentAccountUsageResponse(
         account_id=current_user.id,
         period_start=month_start,
         period_end=today,
         usage=AccountUsageTotals(**metrics),
-        trial_monthly_photo_upload_balance=_quota_balance(
-            effective_limit(scheduling.monthly_photo_upload_limit),
-            basic_trial_photo_upload_count,
+        trial_photo_detection_balance=_quota_balance(
+            effective_limit("trial", scheduling.trial_photo_detection_limit),
+            trial_photo_detection_count,
         ),
-        basic_formal_monthly_photo_upload_balance=_quota_balance(
-            effective_limit(scheduling.basic_formal_monthly_photo_upload_limit),
-            basic_formal_photo_upload_count,
-        ),
-        professional_formal_monthly_photo_upload_balance=_quota_balance(
-            effective_limit(scheduling.professional_monthly_photo_upload_limit),
-            professional_formal_monthly_photo_upload_count,
-        ),
-        professional_trial_monthly_photo_upload_balance=_quota_balance(
-            effective_limit(scheduling.professional_trial_monthly_photo_upload_limit),
-            professional_trial_monthly_photo_upload_count,
+        formal_photo_detection_balance=_quota_balance(
+            effective_limit("formal", scheduling.formal_photo_detection_limit),
+            formal_photo_detection_count,
         ),
     )
 
 
-@router.post("/me/professional-application", response_model=ProfessionalApplicationResponse)
-def submit_professional_application(
-    current_user: AuthenticatedUser = Depends(get_current_user),
+@router.post("/me/add-quota", response_model=CurrentAccountUsageResponse)
+def add_current_account_quota(
+    payload: AccountQuotaAddRequest,
+    current_user: AuthenticatedUser = Depends(require_roles(UserRole.CUSTOMER, UserRole.ADMIN)),
     db: Session = Depends(get_db),
-) -> ProfessionalApplicationResponse:
-    if current_user.role != UserRole.CUSTOMER.value:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="只有客户账号可以申请专业版。")
-
-    account = db.get(UserAccount, current_user.id)
-    if account is None or account.deleted_at is not None:
+) -> CurrentAccountUsageResponse:
+    account = db.scalar(
+        select(UserAccount)
+        .where(UserAccount.id == current_user.id, UserAccount.deleted_at.is_(None))
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if account is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="账号不存在。")
-
-    now = datetime.now(UTC)
-    expires_at = account.professional_plan_expires_at
-    has_active_professional_plan = (
-        account.account_plan == AccountPlan.PROFESSIONAL.value
-        and (expires_at is None or _aware_utc(expires_at) > now)
-    )
-    if has_active_professional_plan:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="当前账号已经是专业版套餐。")
-
-    if account.professional_application_status != ProfessionalApplicationStatus.PENDING.value:
-        account.professional_application_status = ProfessionalApplicationStatus.PENDING.value
-        account.professional_application_requested_at = now
-        account.professional_application_reviewed_at = None
-        account.professional_application_duration_months = None
-        account.account_plan = AccountPlan.BASIC.value
-        account.professional_plan_expires_at = None
-        db.commit()
-        db.refresh(account)
-
-    requested_at = account.professional_application_requested_at or now
-    return ProfessionalApplicationResponse(
-        status=ProfessionalApplicationStatus.PENDING,
-        requested_at=requested_at,
-    )
+    scheduling = trial_scheduling_settings(db, get_settings())
+    new_limits = {}
+    for source, label in (("trial", "快速体验"), ("formal", "专业检测")):
+        current_limit = getattr(account, f"{source}_detection_quota")
+        if current_limit is None:
+            current_limit = getattr(scheduling, f"{source}_photo_detection_limit")
+        new_limit = current_limit + payload.amount
+        if new_limit > 100000:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"{label}总额度不能超过 100000 张。")
+        new_limits[source] = new_limit
+    for source, new_limit in new_limits.items():
+        setattr(account, f"{source}_detection_quota", new_limit)
+    db.commit()
+    return get_current_account_usage(current_user, db)
 
 
 @router.get("/{account_id}/usage", response_model=AccountUsageDetailResponse)
@@ -507,9 +467,9 @@ def create_account(
         real_name=_clean_optional_text(payload.real_name),
         phone=phone,
         role=_enum_value(payload.role),
-        account_plan=_enum_value(payload.account_plan),
         organization=_clean_optional_text(payload.organization),
-        detection_quota=payload.detection_quota,
+        trial_detection_quota=payload.trial_detection_quota,
+        formal_detection_quota=payload.formal_detection_quota,
         status=_enum_value(payload.status),
     )
     db.add(account)
@@ -549,13 +509,11 @@ def update_account(
     for field in ("real_name", "organization"):
         if field in data:
             setattr(account, field, _clean_optional_text(data[field]))
-    if "detection_quota" in data:
-        account.detection_quota = data["detection_quota"]
+    for field in ("trial_detection_quota", "formal_detection_quota"):
+        if field in data:
+            setattr(account, field, data[field])
     if data.get("role") is not None:
         account.role = next_role
-    if data.get("account_plan") is not None:
-        account.account_plan = _enum_value(data["account_plan"])
-        account.professional_plan_expires_at = None
     if data.get("status") is not None:
         account.status = next_status
 
@@ -564,36 +522,27 @@ def update_account(
     return _to_account_read(account)
 
 
-@router.post(
-    "/{account_id}/professional-application/review",
-    response_model=AccountRead,
-)
-def review_professional_application(
+@router.delete("/{account_id}")
+def delete_account(
     account_id: UUID,
-    payload: ProfessionalApplicationReviewRequest,
-    _: AuthenticatedUser = Depends(require_roles(UserRole.ADMIN)),
+    current_user: AuthenticatedUser = Depends(require_roles(UserRole.ADMIN)),
     db: Session = Depends(get_db),
-) -> AccountRead:
+) -> dict[str, bool]:
     account = _account_or_404(db, account_id)
-    if account.role != UserRole.CUSTOMER.value:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="只有客户账号可以申请专业版。")
-    if account.professional_application_status is None:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="该账号尚未提交专业版申请。")
-
-    now = datetime.now(UTC)
-    account.professional_application_status = payload.decision
-    account.professional_application_reviewed_at = now
-    account.professional_application_duration_months = payload.duration_months
-    if payload.decision == ProfessionalApplicationStatus.APPROVED.value:
-        account.account_plan = AccountPlan.PROFESSIONAL.value
-        account.professional_plan_expires_at = _add_months(now, payload.duration_months)
-    else:
-        account.account_plan = AccountPlan.BASIC.value
-        account.professional_plan_expires_at = None
-
+    if account.id == current_user.id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="不能删除当前登录账号。")
+    _ensure_admin_account_remains_available(db, account, current_user, account.role, UserStatus.DISABLED.value)
+    # Soft deletion preserves project ownership and historical usage references.
+    account.username = f"deleted-{account.id.hex}"
+    account.password_hash = hash_password(secrets.token_urlsafe(TEMPORARY_PASSWORD_BYTES))
+    account.real_name = None
+    account.phone = None
+    account.organization = None
+    account.last_login_at = None
+    account.status = UserStatus.DISABLED.value
+    account.deleted_at = datetime.now(UTC)
     db.commit()
-    db.refresh(account)
-    return _to_account_read(account)
+    return {"ok": True}
 
 
 @router.post("/{account_id}/reset-password", response_model=AccountPasswordResetResponse)

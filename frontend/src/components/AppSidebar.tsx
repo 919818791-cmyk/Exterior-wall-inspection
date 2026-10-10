@@ -1,13 +1,16 @@
 import {
-  BriefcaseBusiness,
+  LayoutDashboard,
+  Boxes,
+  FileText,
   Gauge,
+  Images,
   LogOut,
   PanelLeftClose,
   PanelLeftOpen,
+  Plus,
   ScanSearch,
   Settings,
   Sparkles,
-  Tags,
   Users,
   UserRound
 } from "lucide-react";
@@ -29,12 +32,14 @@ interface AppSidebarProps {
   onLogin: () => void;
   onLogout: () => void;
   onPersonalInfo: () => void;
+  onAddQuota: () => void;
   quotaItems: ReadonlyArray<{ label: string; value: string }>;
   quotaLabel: string;
   user: AuthUser | null;
 }
 
 interface AppSidebarUserMenuContentProps {
+  onAddQuota: () => void;
   onLogout: () => void;
   onPersonalInfo: () => void;
   quotaItems: ReadonlyArray<{ label: string; value: string }>;
@@ -42,6 +47,7 @@ interface AppSidebarUserMenuContentProps {
 }
 
 export function AppSidebarUserMenuContent({
+  onAddQuota,
   onLogout,
   onPersonalInfo,
   quotaItems,
@@ -61,6 +67,10 @@ export function AppSidebarUserMenuContent({
               <strong>{item.value}</strong>
             </div>
           ))}
+          <button className="app-sidebar-user-row app-sidebar-user-action" type="button" onClick={onAddQuota}>
+            <Plus aria-hidden="true" />
+            <span>添加额度</span>
+          </button>
         </>
       ) : null}
       <button className="app-sidebar-user-row app-sidebar-user-action" type="button" onClick={onPersonalInfo}>
@@ -88,6 +98,7 @@ export function AppSidebar({
   onLogin,
   onLogout,
   onPersonalInfo,
+  onAddQuota,
   quotaItems,
   quotaLabel,
   user
@@ -123,13 +134,13 @@ export function AppSidebar({
           <Sparkles aria-hidden="true" />
           <span className="app-sidebar-label">快速体验</span>
         </NavLink>
-        <NavLink aria-label="定价" className={({ isActive }) => `app-sidebar-menu-item${isActive ? " is-active" : ""}`} title="定价" to="/pricing">
-          <Tags aria-hidden="true" />
-          <span className="app-sidebar-label">定价</span>
-        </NavLink>
+        {user ? <NavLink aria-label="照片管理" className={({ isActive }) => `app-sidebar-menu-item${isActive ? " is-active" : ""}`} title="照片管理" to="/photos">
+          <Images aria-hidden="true" />
+          <span className="app-sidebar-label">照片管理</span>
+        </NavLink> : null}
         {canAccessReview ? (
           <NavLink aria-label="工作台" className={({ isActive }) => `app-sidebar-menu-item${isActive ? " is-active" : ""}`} title="工作台" to="/review">
-            <BriefcaseBusiness aria-hidden="true" />
+            <LayoutDashboard aria-hidden="true" />
             <span className="app-sidebar-label">工作台</span>
           </NavLink>
         ) : null}
@@ -142,6 +153,14 @@ export function AppSidebar({
             <NavLink aria-label="推理设置" className={({ isActive }) => `app-sidebar-menu-item${isActive ? " is-active" : ""}`} title="推理设置" to="/system-settings">
               <Settings aria-hidden="true" />
               <span className="app-sidebar-label">推理设置</span>
+            </NavLink>
+            <NavLink aria-label="检测策略" className={({ isActive }) => `app-sidebar-menu-item${isActive ? " is-active" : ""}`} title="检测策略" to="/detection-prompts">
+              <FileText aria-hidden="true" />
+              <span className="app-sidebar-label">检测策略</span>
+            </NavLink>
+            <NavLink aria-label="模型管理" className={({ isActive }) => `app-sidebar-menu-item${isActive ? " is-active" : ""}`} title="模型管理" to="/model-management">
+              <Boxes aria-hidden="true" />
+              <span className="app-sidebar-label">模型管理</span>
             </NavLink>
           </>
         ) : null}
@@ -169,6 +188,7 @@ export function AppSidebar({
           </>
         ) : (
           <AppSidebarUserMenuContent
+            onAddQuota={onAddQuota}
             onLogout={onLogout}
             onPersonalInfo={onPersonalInfo}
             quotaItems={quotaItems}

@@ -190,7 +190,6 @@ export function ProjectDetailPage() {
         }}
       />
       <StartDetectionModal
-        canGenerateBuildingModel={Boolean(user && (user.role !== "customer" || user.account_plan === "professional"))}
         facadeType={project.facade_type}
         isProfessional
         isOpen={detectionModalOpen}

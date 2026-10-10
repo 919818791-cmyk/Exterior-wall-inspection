@@ -34,7 +34,6 @@ function detectionTypesForFacade(facadeType?: FacadeType): DetectionModelType[] 
 
 export function StartDetectionModal({
   allowedModelTypes,
-  canGenerateBuildingModel = true,
   facadeType,
   isProfessional = false,
   isOpen,
@@ -47,7 +46,6 @@ export function StartDetectionModal({
   onSubmit
 }: {
   allowedModelTypes?: DetectionModelType[];
-  canGenerateBuildingModel?: boolean;
   facadeType?: FacadeType;
   isProfessional?: boolean;
   isOpen: boolean;
@@ -89,10 +87,6 @@ export function StartDetectionModal({
     setModelTypes((current) => current.filter((model) => resolvedModelTypes.includes(model)));
   }, [allowedModelKey]);
 
-  useEffect(() => {
-    if (!canGenerateBuildingModel) setGenerateBuildingModel(false);
-  }, [canGenerateBuildingModel]);
-
   const toggleModel = (model: DetectionModelType) => {
     setModelTypes((current) => current.includes(model)
       ? current.filter((value) => value !== model)
@@ -122,7 +116,7 @@ export function StartDetectionModal({
     }
     onOpenChange(false);
     onSubmit({
-      generate_building_model: isProfessional && canGenerateBuildingModel && generateBuildingModel,
+      generate_building_model: isProfessional && generateBuildingModel,
       model_types: modelTypes
     });
   };
@@ -206,15 +200,13 @@ export function StartDetectionModal({
                 <fieldset className="start-detection-addons">
                   <legend>附加能力</legend>
                   <label
-                    aria-disabled={!canGenerateBuildingModel}
                     className="start-detection-addon-option"
-                    title={canGenerateBuildingModel ? undefined : "使用此功能需提升到专业版"}
                   >
                     <strong className="start-detection-addon-copy">生成三维模型</strong>
                     <input
                       checked={generateBuildingModel}
                       className="sr-only"
-                      disabled={isPending || !canGenerateBuildingModel}
+                      disabled={isPending}
                       type="checkbox"
                       onChange={(event) => setGenerateBuildingModel(event.target.checked)}
                     />
@@ -223,9 +215,7 @@ export function StartDetectionModal({
                     </span>
                   </label>
                   <p className={`start-detection-addon-hint${generateBuildingModel ? " is-enabled" : ""}`}>
-                    {!canGenerateBuildingModel
-                      ? "使用此功能需提升到专业版"
-                      : generateBuildingModel
+                    {generateBuildingModel
                       ? "为了获得最佳结果，请确保您采集的照片具有良好的GPS、重叠、光照和距离"
                       : "基于无人机照片生成建筑三维模型"}
                   </p>

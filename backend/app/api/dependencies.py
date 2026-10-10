@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from typing import Callable
 from uuid import UUID
 
@@ -13,7 +12,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.security import decode_access_token, hash_password
 from app.db.session import get_db
-from app.enums.status import AccountPlan, UserRole, UserStatus
+from app.enums.status import UserRole, UserStatus
 from app.models.tables import Project, UserAccount
 from app.services.usage_control import SecurityStoreUnavailable, get_usage_store
 
@@ -58,26 +57,9 @@ class AuthenticatedUser:
     role: str
     organization: str | None
     phone: str | None = None
-    account_plan: str = AccountPlan.BASIC.value
-    professional_application_status: str | None = None
-    professional_plan_expires_at: datetime | None = None
 
     @classmethod
     def from_model(cls, user: UserAccount) -> "AuthenticatedUser":
-        plan_expires_at = getattr(user, "professional_plan_expires_at", None)
-        comparable_expiry = (
-            plan_expires_at.replace(tzinfo=UTC)
-            if plan_expires_at is not None and plan_expires_at.tzinfo is None
-            else plan_expires_at
-        )
-        stored_plan = getattr(user, "account_plan", None) or AccountPlan.BASIC.value
-        effective_plan = (
-            AccountPlan.BASIC.value
-            if stored_plan == AccountPlan.PROFESSIONAL.value
-            and comparable_expiry is not None
-            and comparable_expiry <= datetime.now(UTC)
-            else stored_plan
-        )
         return cls(
             id=user.id,
             username=user.username,
@@ -85,9 +67,6 @@ class AuthenticatedUser:
             role=user.role,
             organization=user.organization,
             phone=user.phone,
-            account_plan=effective_plan,
-            professional_application_status=getattr(user, "professional_application_status", None),
-            professional_plan_expires_at=plan_expires_at,
         )
 
 
@@ -113,7 +92,6 @@ def ensure_demo_users(db: Session) -> None:
                 password_hash=hash_password(account["password"]),
                 real_name=account["real_name"],
                 role=account["role"],
-                account_plan=AccountPlan.BASIC.value,
                 organization=account["organization"],
                 status=UserStatus.ACTIVE.value,
             )

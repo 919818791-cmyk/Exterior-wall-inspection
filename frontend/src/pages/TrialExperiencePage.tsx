@@ -33,7 +33,7 @@ import {
   useRef,
   useState
 } from "react";
-import { Link, useBeforeUnload, useBlocker, useNavigate } from "react-router-dom";
+import { useBeforeUnload, useBlocker, useNavigate } from "react-router-dom";
 
 import { ApiError } from "@/api/client";
 import { currentAccountUsageQueryOptions } from "@/api/accounts";
@@ -139,11 +139,9 @@ export function TrialExperiencePage() {
   const user = useAuthStore((state) => state.user);
   const accountUsageQuery = useQuery({
     ...currentAccountUsageQueryOptions,
-    enabled: user?.role === "customer"
+    enabled: user?.role === "customer" || user?.role === "admin"
   });
-  const trialQuotaRemaining = user?.account_plan === "professional"
-    ? accountUsageQuery.data?.professional_trial_monthly_photo_upload_balance.remaining
-    : accountUsageQuery.data?.trial_monthly_photo_upload_balance.remaining;
+  const trialQuotaRemaining = accountUsageQuery.data?.trial_photo_detection_balance.remaining;
   const trialPhotoUploadHint = trialQuotaRemaining === undefined
     ? TRIAL_PHOTO_UPLOAD_BASE_HINT
     : `照片数量最多 ${trialQuotaRemaining} 张，${TRIAL_PHOTO_UPLOAD_BASE_HINT}`;
@@ -421,9 +419,7 @@ export function TrialExperiencePage() {
       return;
     }
 
-    const quotaBalance = user?.account_plan === "professional"
-      ? accountUsageQuery.data?.professional_trial_monthly_photo_upload_balance
-      : accountUsageQuery.data?.trial_monthly_photo_upload_balance;
+    const quotaBalance = accountUsageQuery.data?.trial_photo_detection_balance;
     const pendingUploadCount = selectedPhotos.filter((photo) => (
       !photo.isArchived && photo.uploadStatus !== "failed"
     )).length;
@@ -1209,10 +1205,6 @@ export function TrialExperiencePage() {
                   <CircleCheckBig />
                 </span>
                 <h2>已完成</h2>
-                <p className="trial-detection-completed-description">
-                  快速体验适用于外墙照片的快速缺陷识别；如需更多类型的检测、项目管理及正式检测报告，可使用{" "}
-                  <Link to="/detections/new">专业检测</Link>
-                </p>
               </ModalHeader>
               <ModalFooter className="trial-detection-modal-footer">
                 <button
@@ -1277,7 +1269,7 @@ export function TrialExperiencePage() {
           </ModalHeader>
           <ModalBody className="trial-version-modal-body">
             <p>
-              当前功能适合快速体验检测流程。若需要准确率更高的检测结果与更全面的检测信息，请使用专业版检测。
+              当前功能适合快速体验检测流程。若需要准确率更高的检测结果与更全面的检测信息，请使用专业检测。
             </p>
           </ModalBody>
           <ModalFooter className="trial-version-modal-footer">
@@ -1294,7 +1286,7 @@ export function TrialExperiencePage() {
               type="button"
               onClick={openProfessionalDetection}
             >
-              前往专业版检测
+              前往专业检测
             </button>
             <button
               className="button primary-action-button"

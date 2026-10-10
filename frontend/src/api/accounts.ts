@@ -6,9 +6,7 @@ import type {
   AccountCreatePayload,
   AccountPasswordResetResponse,
   AccountUpdatePayload,
-  AccountUser,
-  ProfessionalApplicationResponse,
-  ProfessionalApplicationReviewPayload
+  AccountUser
 } from "@/types/auth";
 
 export const accountsQueryOptions = queryOptions({
@@ -49,21 +47,21 @@ export function resetAccountPassword(accountId: string) {
   });
 }
 
-export function submitProfessionalApplication() {
-  return apiRequest<ProfessionalApplicationResponse>("/accounts/me/professional-application", {
-    method: "POST"
-  });
-}
-
-export function reviewProfessionalApplication(accountId: string, payload: ProfessionalApplicationReviewPayload) {
-  return apiRequest<AccountUser>(`/accounts/${accountId}/professional-application/review`, {
-    method: "POST",
-    body: JSON.stringify(payload)
+export function deleteAccount(accountId: string) {
+  return apiRequest<{ ok: boolean }>(`/accounts/${accountId}`, {
+    method: "DELETE"
   });
 }
 
 export function resetAccountQuotas(accountId: string) {
   return apiRequest<{ ok: boolean; reset_at: string }>(`/accounts/${accountId}/reset-quotas`, {
     method: "POST"
+  });
+}
+
+export function addCurrentAccountQuota(amount: 200 | 500 | 1000) {
+  return apiRequest<CurrentAccountUsageResponse>("/accounts/me/add-quota", {
+    method: "POST",
+    body: JSON.stringify({ amount })
   });
 }

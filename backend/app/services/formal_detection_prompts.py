@@ -46,6 +46,7 @@ FORMAL_PROMPT_FILES = {
     "plaster_thermal_prompt": "抹灰空鼓.txt",
     "panel_damage_prompt": "饰面板—面板破损.txt",
     "panel_spalling_prompt": "饰面板—脱落.txt",
+    "panel_damage_spalling_prompt": "饰面板—面板破损+脱落.txt",
     "curtain_wall_damage_prompt": "幕墙—面板破损.txt",
 }
 FORMAL_PROMPT_SETTING_KEYS = {
@@ -106,13 +107,14 @@ def formal_detection_prompts(
     if unsupported_models:
         unsupported = ", ".join(sorted(unsupported_models))
         raise ValueError(f"{facade_name}外墙不支持以下检测类型：{unsupported}")
+    panel_combination = facade_type == "panel" and selected_models == {"damage", "spalling"}
     dedicated_visible_keys = (
         {
             defect_type: f"{facade_type}_{defect_type}_prompt"
             for defect_type in ("damage", "spalling")
             if defect_type in selected_models
         }
-        if facade_type in {"panel", "curtain_wall"}
+        if facade_type in {"panel", "curtain_wall"} and not panel_combination
         else {}
     )
     visible_variant = (
@@ -127,7 +129,9 @@ def formal_detection_prompts(
         else None
     )
     visible_key = (
-        f"{facade_type}_{visible_variant}"
+        "panel_damage_spalling_prompt"
+        if panel_combination
+        else f"{facade_type}_{visible_variant}"
         if visible_variant is not None
         else None
     )

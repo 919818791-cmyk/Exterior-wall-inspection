@@ -68,16 +68,12 @@ def test_coating_facade_rejects_spalling_prompt_selection() -> None:
         formal_detection_prompts("coating", ["spalling"])
 
 
-def test_panel_facade_keeps_each_document_prompt_separate() -> None:
+def test_panel_facade_uses_an_independent_combination_prompt() -> None:
     selection = formal_detection_prompts("panel", ["damage", "spalling"])
 
-    assert selection.visible_prompt is None
-    assert selection.visible_prompts["damage"] == (
-        formal_detection_prompts("panel", ["damage"]).visible_prompts["damage"]
-    )
-    assert selection.visible_prompts["spalling"] == (
-        formal_detection_prompts("panel", ["spalling"]).visible_prompts["spalling"]
-    )
+    assert selection.visible_prompts == {}
+    assert selection.visible_file == "docs/提示词/饰面板—面板破损+脱落.txt"
+    assert "damage" in selection.visible_prompt and "spalling" in selection.visible_prompt
 
 
 def test_formal_inference_prefers_snapshot_prompts() -> None:

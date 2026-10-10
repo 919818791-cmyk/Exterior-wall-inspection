@@ -23,7 +23,6 @@ from app.api.projects import _get_project_or_404
 from app.core.config import get_settings
 from app.db.session import get_db
 from app.enums.status import (
-    AccountPlan,
     AiResultStatus,
     DetectionTaskStatus,
     InspectionReportStatus,
@@ -59,11 +58,11 @@ from app.services.formal_detection_prompts import (
     FACADE_TYPE_NAMES,
     formal_detection_prompts,
 )
+from app.services.detection_strategies import execute_plan, resolve_plan, restore_plan
 from app.services.inference_scheduling import (
     InferenceUsageReservation,
     reserve_inference_usage,
 )
-from app.services.local_qwen_lifecycle import start_local_qwen
 from app.services.object_storage import get_object_bytes, presigned_get_url
 from app.services.photo_metadata import extract_photo_metadata
 from app.services.photo_upload_quota import (
@@ -519,6 +518,7 @@ def _formal_raw_model_output(
         "image_height": image.get("height"),
         "upstream_provider": inference.get("provider"),
         "upstream_model": inference.get("model_version"),
+        "strategy_models": inference.get("strategy_models") or [],
         "model_version": inference.get("model_version"),
         "requested_models": [
             DEFECT_TYPE_NAMES.get(str(value), str(value))
@@ -588,16 +588,6 @@ async def start_detection(
 ) -> DetectionTaskRead:
     project = _get_project_or_404(db, project_id)
     ensure_project_write_access(project, current_user)
-    if (
-        payload is not None
-        and payload.generate_building_model
-        and current_user.role == UserRole.CUSTOMER.value
-        and current_user.account_plan != AccountPlan.PROFESSIONAL.value
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="使用此功能需提升到专业版",
-        )
     if project.status != ProjectStatus.DRAFT.value:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -706,6 +696,8 @@ async def start_detection(
     )
 
     runtime = active_trial_inference_runtime(db)
+    strategy_plan = resolve_plan(db, facade_type, selected_model_types, legacy_runtime=runtime)
+    runtime = strategy_plan[0].runtime
     scheduling = trial_scheduling_settings(db)
     prompts = trial_prompts(db)
     visible_model_labels = [
@@ -742,14 +734,6 @@ async def start_detection(
             status_code=status.HTTP_409_CONFLICT,
             detail=detail,
         )
-    if runtime.provider == "local_qwen":
-        local_status = start_local_qwen(get_settings())
-        if local_status.state != "running":
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=local_status.message,
-            )
-
     now = datetime.now(UTC)
     _remove_rejected_project_photos(db, rejected_photos, deleted_at=now)
     inference_snapshot = {
@@ -762,13 +746,12 @@ async def start_detection(
         "provider_label": runtime.label,
         "upstream_provider": runtime.upstream_provider,
         "model": runtime.model,
+        "strategies": [item.snapshot for item in strategy_plan],
         "scheduling": {
             "global_job_concurrency": scheduling.global_job_concurrency,
             "request_concurrency": runtime.max_concurrency,
-            "monthly_photo_upload_limit": scheduling.monthly_photo_upload_limit,
-            "basic_formal_monthly_photo_upload_limit": scheduling.basic_formal_monthly_photo_upload_limit,
-            "professional_monthly_photo_upload_limit": scheduling.professional_monthly_photo_upload_limit,
-            "professional_trial_monthly_photo_upload_limit": scheduling.professional_trial_monthly_photo_upload_limit,
+            "trial_photo_detection_limit": scheduling.trial_photo_detection_limit,
+            "formal_photo_detection_limit": scheduling.formal_photo_detection_limit,
             "generate_limit_per_user": scheduling.generate_limit_per_user,
             "request_timeout_seconds": runtime.timeout_seconds,
         },
@@ -880,7 +863,6 @@ async def start_detection(
         current_user.id,
         source="formal",
         role=current_user.role,
-        account_plan=current_user.account_plan,
         amount=len(qualified_photos),
         db=db,
     )
@@ -1080,7 +1062,15 @@ async def _run_formal_project_inference(
                 ),
             )
 
-        if not inference_pairs:
+        strategy_snapshots = inference_snapshot.get("strategies")
+        if strategy_snapshots:
+            inferences = await execute_plan(restore_plan(strategy_snapshots, db), [image for _, image in inference_pairs],
+                infer=infer_trial_images,
+                max_image_pixels=getattr(settings, "trial_max_image_pixels", DEFAULT_MAX_IMAGE_PIXELS),
+                inference_max_image_pixels=getattr(settings, "trial_inference_max_image_pixels", DEFAULT_INFERENCE_MAX_IMAGE_PIXELS),
+                max_tiles_per_image=getattr(settings, "trial_max_tiles_per_image", DEFAULT_MAX_TILES_PER_IMAGE),
+                max_tiles_per_request=getattr(settings, "trial_max_tiles_per_request", DEFAULT_MAX_TILES_PER_REQUEST))
+        elif not inference_pairs:
             inferences = []
         elif dedicated_visible_prompts:
             inference_passes = [
@@ -1179,11 +1169,12 @@ async def _run_formal_project_inference(
                     polygon_json=None,
                     mask_object_key=None,
                     severity=detection.get("severity"),
-                    model_version=runtime.model,
+                    model_version=detection.get("model_version") or runtime.model,
                     raw_result_json={
                         "photo_id": str(photo.id),
-                        "provider": runtime.provider,
-                        "model": runtime.model,
+                        "provider": detection.get("model_provider") or runtime.provider,
+                        "model": detection.get("model_version") or runtime.model,
+                        "strategy_key": detection.get("strategy_key"),
                         "detection": {
                             **detection,
                             "id": detection.get("id")
@@ -1346,7 +1337,7 @@ def schedule_queued_formal_detections() -> None:
                     )
                 ],
                 selected_model_types=list(detection_config.model_types),
-                runtime=active_trial_inference_runtime(db),
+                runtime=(restore_plan(snapshot["strategies"], db)[0].runtime if snapshot.get("strategies") else active_trial_inference_runtime(db)),
                 prompts=trial_prompts(db),
                 inference_snapshot=snapshot,
             )

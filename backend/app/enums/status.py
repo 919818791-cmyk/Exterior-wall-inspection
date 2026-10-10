@@ -7,17 +7,6 @@ class UserRole(StrEnum):
     ADMIN = "admin"
 
 
-class AccountPlan(StrEnum):
-    BASIC = "basic"
-    PROFESSIONAL = "professional"
-
-
-class ProfessionalApplicationStatus(StrEnum):
-    PENDING = "pending"
-    APPROVED = "approved"
-    REJECTED = "rejected"
-
-
 class UserStatus(StrEnum):
     ACTIVE = "active"
     DISABLED = "disabled"

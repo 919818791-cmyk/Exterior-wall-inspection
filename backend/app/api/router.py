@@ -6,14 +6,18 @@ from app.api import (
     building_models,
     detection_config,
     detection_tasks,
+    detection_strategies,
     health,
     object_storage,
+    photo_library,
     photos,
     projects,
     reports,
     review,
     system_settings,
     weather,
+    yolo_models,
+    vision_models,
 )
 
 api_router = APIRouter()
@@ -24,9 +28,13 @@ api_router.include_router(accounts.router)
 api_router.include_router(projects.router)
 api_router.include_router(building_models.router)
 api_router.include_router(photos.router)
+api_router.include_router(photo_library.router)
 api_router.include_router(detection_config.router)
 api_router.include_router(detection_tasks.router)
 api_router.include_router(review.router)
 api_router.include_router(reports.router)
 api_router.include_router(system_settings.router)
+api_router.include_router(yolo_models.router)
+api_router.include_router(vision_models.router)
+api_router.include_router(detection_strategies.router)
 api_router.include_router(weather.router)

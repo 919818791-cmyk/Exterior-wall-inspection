@@ -142,11 +142,9 @@ export function NewProjectPage() {
   const user = useAuthStore((state) => state.user);
   const accountUsageQuery = useQuery({
     ...currentAccountUsageQueryOptions,
-    enabled: user?.role === "customer"
+    enabled: user?.role === "customer" || user?.role === "admin"
   });
-  const formalQuotaRemaining = user?.account_plan === "professional"
-    ? accountUsageQuery.data?.professional_formal_monthly_photo_upload_balance.remaining
-    : accountUsageQuery.data?.basic_formal_monthly_photo_upload_balance.remaining;
+  const formalQuotaRemaining = accountUsageQuery.data?.formal_photo_detection_balance.remaining;
   const professionalProjectPhotoUploadHint = formalQuotaRemaining === undefined
     ? PROFESSIONAL_PROJECT_PHOTO_UPLOAD_BASE_HINT
     : `照片数量最多 ${formalQuotaRemaining} 张，${PROFESSIONAL_PROJECT_PHOTO_UPLOAD_BASE_HINT}`;
@@ -354,9 +352,7 @@ export function NewProjectPage() {
       return;
     }
 
-    const quotaBalance = user?.account_plan === "professional"
-      ? accountUsageQuery.data?.professional_formal_monthly_photo_upload_balance
-      : accountUsageQuery.data?.basic_formal_monthly_photo_upload_balance;
+    const quotaBalance = accountUsageQuery.data?.formal_photo_detection_balance;
     const pendingUploadCount = formRef.current.photos.filter((photo) => photo.status !== "failed").length;
     const availableUploadCount = quotaBalance
       ? Math.max(0, quotaBalance.remaining - pendingUploadCount)
@@ -1003,7 +999,7 @@ export function NewProjectPage() {
         }}
       />
       <StartDetectionModal
-        canGenerateBuildingModel={Boolean(user && (user.role !== "customer" || user.account_plan === "professional"))}
+
         facadeType={form.facadeType || undefined}
         isProfessional
         isOpen={detectionModalOpen}

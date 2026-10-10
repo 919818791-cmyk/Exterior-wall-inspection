@@ -19,6 +19,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
@@ -26,7 +27,6 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
 from app.enums.status import (
-    AccountPlan,
     AiResultStatus,
     DefectType,
     DetectionTaskStatus,
@@ -36,7 +36,6 @@ from app.enums.status import (
     PhotoPrecheckStatus,
     PhotoStatus,
     PhotoType,
-    ProfessionalApplicationStatus,
     ProjectStatus,
     RecommendationOrientation,
     ReportPushMethod,
@@ -63,21 +62,14 @@ class UserAccount(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     __tablename__ = "user_account"
     __table_args__ = (
         enum_check("role", UserRole, "role"),
-        enum_check("account_plan", AccountPlan, "account_plan"),
-        enum_check(
-            "professional_application_status",
-            ProfessionalApplicationStatus,
-            "professional_application_status",
-        ),
         enum_check("status", UserStatus, "status"),
         CheckConstraint(
-            "professional_application_duration_months IS NULL OR "
-            "professional_application_duration_months IN (6, 12)",
-            name="professional_application_duration_months",
+            "trial_detection_quota IS NULL OR trial_detection_quota BETWEEN 1 AND 100000",
+            name="trial_detection_quota",
         ),
         CheckConstraint(
-            "detection_quota IS NULL OR detection_quota BETWEEN 1 AND 100000",
-            name="detection_quota",
+            "formal_detection_quota IS NULL OR formal_detection_quota BETWEEN 1 AND 100000",
+            name="formal_detection_quota",
         ),
         Index("uq_user_account_phone", "phone", unique=True),
         Index("idx_user_account_role", "role"),
@@ -89,14 +81,9 @@ class UserAccount(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     real_name: Mapped[str | None] = mapped_column(String(64))
     phone: Mapped[str | None] = mapped_column(String(32))
     role: Mapped[str] = status_column(UserRole.CUSTOMER)
-    account_plan: Mapped[str] = status_column(AccountPlan.BASIC)
-    professional_application_status: Mapped[str | None] = mapped_column(String(32))
-    professional_application_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    professional_application_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    professional_application_duration_months: Mapped[int | None] = mapped_column(SmallInteger)
-    professional_plan_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     organization: Mapped[str | None] = mapped_column(String(128))
-    detection_quota: Mapped[int | None] = mapped_column(Integer)
+    trial_detection_quota: Mapped[int | None] = mapped_column(Integer, default=1000, server_default="1000")
+    formal_detection_quota: Mapped[int | None] = mapped_column(Integer, default=1000, server_default="1000")
     status: Mapped[str] = status_column(UserStatus.ACTIVE)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     quota_reset_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -110,6 +97,58 @@ class SystemSetting(TimestampMixin, Base):
     updated_by: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("user_account.id", ondelete="SET NULL"),
+    )
+
+
+class YoloModel(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
+    __tablename__ = "yolo_model"
+
+    name: Mapped[str | None] = mapped_column(String(128))
+    description: Mapped[str | None] = mapped_column(Text)
+
+
+class YoloModelDetectionType(Base):
+    __tablename__ = "yolo_model_detection_type"
+    __table_args__ = (enum_check("detection_type", DefectType, "detection_type"),)
+
+    model_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("yolo_model.id", ondelete="CASCADE"), primary_key=True,
+    )
+    detection_type: Mapped[str] = mapped_column(String(32), primary_key=True)
+
+
+class YoloModelFacadeType(Base):
+    __tablename__ = "yolo_model_facade_type"
+    __table_args__ = (CheckConstraint("facade_type IN ('tile', 'coating', 'plaster', 'panel', 'curtain_wall')", name="facade_type"),)
+
+    model_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("yolo_model.id", ondelete="CASCADE"), primary_key=True,
+    )
+    facade_type: Mapped[str] = mapped_column(String(32), primary_key=True)
+
+
+class YoloModelVersion(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "yolo_model_version"
+    __table_args__ = (
+        UniqueConstraint("model_id", "version", name="uq_yolo_model_version_label"),
+        CheckConstraint("file_size > 0", name="file_size"),
+    )
+
+    model_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("yolo_model.id", ondelete="RESTRICT"), nullable=False,
+    )
+    version: Mapped[str] = mapped_column(String(64), nullable=False)
+    architecture: Mapped[str] = mapped_column(String(64), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    file_size: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    storage_bucket: Mapped[str] = mapped_column(String(128), nullable=False)
+    storage_object_key: Mapped[str] = mapped_column(String(512), nullable=False)
+    # Legacy selection metadata only; version runtime state comes from the runtime service.
+    is_active: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_by: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("user_account.id", ondelete="SET NULL"),
     )
 
 
@@ -693,6 +732,23 @@ class QuickDetectionPhoto(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     generated_result_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("trial_detection_result.id", ondelete="SET NULL"),
+    )
+
+
+class PhotoLibraryClassification(TimestampMixin, Base):
+    """Photo-level labels shared by professional, quick, and archived photos.
+
+    Archived photo IDs live inside JSON snapshots, so photo_id cannot reference
+    a single source table. API mutations validate source existence and ownership.
+    """
+
+    __tablename__ = "photo_library_classification"
+    __table_args__ = (enum_check("facade_type", FacadeType, "facade_type"),)
+
+    photo_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True)
+    facade_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    updated_by: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("user_account.id", ondelete="SET NULL"),
     )
 
 

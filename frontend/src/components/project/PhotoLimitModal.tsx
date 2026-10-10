@@ -10,6 +10,7 @@ import type { ReactNode } from "react";
 
 export function ErrorNoticeModal({
   actionIcon,
+  actionDisabled = false,
   actionLabel,
   closeLabel = "关闭错误提示",
   message,
@@ -19,6 +20,7 @@ export function ErrorNoticeModal({
   title = "错误提示"
 }: {
   actionIcon?: ReactNode;
+  actionDisabled?: boolean;
   actionLabel?: string;
   closeLabel?: string;
   message: string;
@@ -59,7 +61,7 @@ export function ErrorNoticeModal({
             </ModalBody>
             <ModalFooter className="start-detection-modal-footer">
               {actionLabel && onAction ? (
-                <button className="button primary-action-button" type="button" onClick={onAction}>
+                <button className="button primary-action-button" disabled={actionDisabled} type="button" onClick={onAction}>
                   {actionIcon}{actionLabel}
                 </button>
               ) : null}

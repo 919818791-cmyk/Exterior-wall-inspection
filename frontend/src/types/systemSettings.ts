@@ -1,8 +1,8 @@
-export type TrialInferenceProvider = "qwen" | "qwen3_vl_flash" | "zhipu" | "local_qwen";
+export type TrialInferenceProvider = "qwen" | "local_qwen";
 export type LocalQwenRuntimeStatus = "running" | "starting" | "stopped" | "disabled" | "error";
 
 export interface TrialInferenceProviderOption {
-  provider: TrialInferenceProvider;
+  provider: TrialInferenceProvider | "yolo";
   label: string;
   model: string;
   configured: boolean;
@@ -25,6 +25,7 @@ export interface FormalDetectionPromptSettings {
   plaster_thermal_prompt: string;
   panel_damage_prompt: string;
   panel_spalling_prompt: string;
+  panel_damage_spalling_prompt: string;
   curtain_wall_damage_prompt: string;
 }
 
@@ -32,10 +33,8 @@ export interface TrialInferenceSetting {
   provider: TrialInferenceProvider;
   global_job_concurrency: number;
   request_concurrency: number;
-  monthly_photo_upload_limit: number;
-  basic_formal_monthly_photo_upload_limit: number;
-  professional_monthly_photo_upload_limit: number;
-  professional_trial_monthly_photo_upload_limit: number;
+  trial_photo_detection_limit: number;
+  formal_photo_detection_limit: number;
   generate_limit_per_user: number;
   visible_prompt: string;
   crack_prompt: string;
@@ -55,21 +54,20 @@ export interface TrialInferenceDisclosure {
   privacy_policy_url: string | null;
 }
 
-export interface PricingQuotaSetting {
-  monthly_photo_upload_limit: number;
-  basic_formal_monthly_photo_upload_limit: number;
-  professional_monthly_photo_upload_limit: number;
-  professional_trial_monthly_photo_upload_limit: number;
-}
+export type DetectionPromptSettings = Pick<TrialInferenceSetting,
+  | "visible_prompt"
+  | "crack_prompt"
+  | "spalling_prompt"
+  | "thermal_prompt"
+  | "photo_guard_prompt"
+> & FormalDetectionPromptSettings;
 
-export interface TrialInferenceSettingUpdate {
+interface TrialInferenceSettingUpdateFields {
   provider: TrialInferenceProvider;
   global_job_concurrency: number;
   request_concurrency: number;
-  monthly_photo_upload_limit: number;
-  basic_formal_monthly_photo_upload_limit: number;
-  professional_monthly_photo_upload_limit: number;
-  professional_trial_monthly_photo_upload_limit: number;
+  trial_photo_detection_limit: number;
+  formal_photo_detection_limit: number;
   generate_limit_per_user: number;
   visible_prompt: string;
   crack_prompt: string;
@@ -78,3 +76,5 @@ export interface TrialInferenceSettingUpdate {
   photo_guard_prompt: string;
   formal_prompts: FormalDetectionPromptSettings;
 }
+
+export type TrialInferenceSettingUpdate = Partial<TrialInferenceSettingUpdateFields>;
