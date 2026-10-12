@@ -1,4 +1,6 @@
-# 外墙巡检智能平台
+# 外墙智能巡检平台
+
+> **当前方案决策（2026-10-12）**：检测模型按“墙面类型 + 检测项”在“检测策略”中独立绑定，可选云端 API、本地视觉大模型或 YOLO；组合项单独配置。云端、OpenAI 兼容视觉服务及 YOLO 版本推理调用已接入。专业检测按建筑生成独立结果并进入审核工作台。
 
 本仓库当前已推进到第 8 阶段：登录、角色权限与菜单边界。静态原型已整理至 `原型/`，新开发工程位于：
 
@@ -20,7 +22,11 @@
 Copy-Item .env.example .env
 ```
 
-前端 Vite 已配置 `envDir: ".."`，会读取根目录 `.env` 中的 `VITE_API_BASE_URL`。
+前端 Vite 已配置 `envDir: ".."`，会读取根目录 `.env` 中的 `VITE_API_BASE_URL`。开发环境默认使用同源 `/api`，由 Vite 转发到配置项 `BACKEND_DEV_SERVER_URL`（示例值见 `.env.example`，开发及预览启动时必须配置），避免浏览器从局域网地址访问时把后端误解析为客户端自己的 `127.0.0.1`。
+
+首页和法律文件的公开联系电话统一读取 `VITE_CONTACT_BUSINESS_MOBILE`、`VITE_CONTACT_TECHNICAL_MOBILE`、`VITE_CONTACT_LANDLINE`；留空时显示“暂未配置”，法律文件不生成空的拨号链接。这些是公开展示配置，会进入前端产物，请只填写获准公开的联系号码；修改后需要重新构建前端。
+
+高德地图脚本地址由 `VITE_AMAP_SDK_URL` 配置（使用 HTTPS），开发代理的上游由服务端 `AMAP_WEB_API_URL`、`AMAP_REST_API_URL` 配置；启用安全码代理时必须同时配置这两个地址。`VITE_AMAP_SERVICE_HOST` 可使用同源 `/_AMapService`。云端模型地址必须显式配置 `QWEN_API_BASE_URL`，不再使用代码内置地址；隐私披露链接由 `QWEN_PRIVACY_POLICY_URL` 配置，留空时不展示链接。CORS、MinIO 公开下载地址和 Worker 后端地址也仅从配置读取，示例见 `.env.example`。
 
 ## 2. 启动基础服务
 
@@ -30,60 +36,102 @@ docker compose up -d postgres minio redis
 
 默认端口：
 
-- PostgreSQL：`localhost:5433`
-- MinIO API：`http://localhost:9002`
-- MinIO Console：`http://localhost:9003`
-- Redis：`localhost:6379`
+- PostgreSQL：`127.0.0.1:5433`
+- MinIO API：`http://127.0.0.1:9002`
+- MinIO Console：`http://127.0.0.1:9003`
+- Redis：`127.0.0.1:6379`
+
+浏览器中的照片、缩略图和模型文件通过带签名的 `/api/object-storage/...` 地址由后端流式返回，不会跳转到 `localhost:9002`。局域网访问只需开放系统入口，无需开放 MinIO 端口；`MINIO_PUBLIC_URL` 仍用于算法工作节点的直接下载地址，外部工作节点需要将其配置为该节点可访问的存储地址。
 
 MinIO 默认账号密码来自 `.env.example`：
 
 - Access Key：`building_exterior_minio`
 - Secret Key：`building_exterior_minio_secret`
 
-## 简易 AI 体验模型状态
+## AI 推理模型状态
 
-当前先跑通 `/trial` 简易检测体验，不依赖项目管理、审核工作台或正式检测任务流。
+`/trials/new` 免费试用页面和专业检测共用同一套视觉推理服务；专业检测会按所选建筑分别归档任务和报告。后端仍通过 `/api/trial/*` 和 `/api/projects/*` 提供稳定的数据接口。
 
-已接入两个 YOLO 权重：
+简易体验使用后端视觉检测服务，不加载本地 `.pt` 模型。快速体验与专业检测分别默认提供每账号 1000 张的一次性总检测额度，管理员可以为账号分别设置快速体验（基础版额度）和专业检测（专业版额度），额度按实际进入检测任务的照片数扣除，上传、预检淘汰或删除照片均不扣额度；但账号当前未送检照片数不能超过对应检测额度余额，删除未送检照片后会立即释放上传空间。额度不自动重置，且不限制单个专业检测项目的照片数。专业检测支持生成三维模型。不限制模型 API 请求数，也不限制检测结果归档份数。每 10 分钟最多发起 5 次检测。专业检测和快速体验的单张照片上传上限均为 20MB；快速体验支持 JPG、MPO 或 PNG 图片，不设置单次任务固定照片张数上限，普通客户账号的本次检测照片数不能超过快速体验剩余额度，可继续上传数量为快速体验剩余额度减去账号已有未送检照片数；不设置每日上传总 MB 限额。6400 万像素解码安全上限内使用原始分辨率，按 `1280 x 960` 像素切片，相邻 TILE 保持 25% 重叠；单任务内部可配置 1–10 个并发视觉模型请求。系统不再以 1200 万像素作为缩小阈值。
 
-| 模型 | 系统类型 | 中文 |
-| --- | --- | --- |
-| `models/wall_crack_yolo11x.pt` | `crack` | 裂缝 |
-| `models/missing.pt` | `missing` | 面砖剥落 |
-
-模型服务由 `algorithm-model` 容器提供，宿主机访问地址为：
-
-```bash
-curl http://localhost:9004/ready
-```
-
-期望返回 `ready: true`，并且 `crack`、`missing` 的 `weights_exists` 为 `true`。当前机器没有可用 NVIDIA Docker runtime 时，可用 CPU 方式启动模型容器：
-
-```bash
-sudo docker rm -f building-exterior-algorithm-model 2>/dev/null || true
-sudo docker run -d \
-  --name building-exterior-algorithm-model \
-  --restart unless-stopped \
-  -p 9004:9002 \
-  -e MODEL_DEVICE=cpu \
-  -e MODEL_VERSION=trial-crack-missing-v1 \
-  -e CRACK_MODEL_WEIGHTS_PATH=/models/wall_crack_yolo11x.pt \
-  -e MISSING_MODEL_WEIGHTS_PATH=/models/missing.pt \
-  -v /opt/Exterior-wall-inspection/models:/models:ro \
-  building-exterior-algorithm-model:cuda
-```
-
-后端通过 `.env` 中的以下配置调用模型服务：
+后端通过根目录 `.env.local`（优先）或 `.env` 中的以下配置调用 API：
 
 ```env
-TRIAL_ALGORITHM_INFERENCE_URL=http://localhost:9004
+DASHSCOPE_API_KEY=替换为实际百炼API-Key
+QWEN_API_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+QWEN_MODEL=qwen3-vl-plus
+QWEN3_VL_FLASH_MODEL=qwen3-vl-flash
+LOCAL_QWEN_API_BASE_URL=http://127.0.0.1:9005/v1
+LOCAL_QWEN_MODEL=qwen3-vl-32b
+# 本地服务未启用鉴权时保持为空
+LOCAL_QWEN_API_KEY=
+LOCAL_QWEN_CONTROL_ENABLED=true
+LOCAL_QWEN_VLLM_EXECUTABLE=/home/szcay/.venvs/vllm/bin/vllm
+LOCAL_QWEN_MODEL_PATH=/opt/models/Qwen3-VL-32B-Instruct-FP8
+LOCAL_QWEN_CUDA_VISIBLE_DEVICES=0,1
+LOCAL_QWEN_CUDA_HOME=
+LOCAL_QWEN_USE_DEEP_GEMM=false
+LOCAL_QWEN_USE_FLASHINFER_SAMPLER=false
+LOCAL_QWEN_TENSOR_PARALLEL_SIZE=2
+LOCAL_QWEN_MAX_CONCURRENCY=1
+LOCAL_QWEN_GPU_MEMORY_UTILIZATION=0.75
+LOCAL_QWEN_MAX_MODEL_LEN=16384
+QWEN_REQUEST_TIMEOUT_SECONDS=120
+QWEN_MAX_CONCURRENCY=5
 ```
 
-模型服务未配置或不可用时，`/api/trial/generate` 会直接报错；简易体验入口不再降级为模拟结果。
+上传入口按照“检测策略 → 通用设置 → 照片相关性判断”指定的视觉模型执行图片预检。该项与其他策略使用相同的模型来源和指定模型控件，可以绑定云端 API 或本地视觉模型；模型管理会显示预置的照片预检模型及其实际服务名称。首次使用时沿用服务器已有 `PHOTO_GUARD_*` 配置：云端部署默认使用百炼 `qwen3-vl-flash` 并复用 `DASHSCOPE_API_KEY`、`QWEN_API_BASE_URL`、`QWEN3_VL_FLASH_MODEL`；本地部署（`PHOTO_GUARD_PROVIDER=openai_compatible`）显示并使用 `PHOTO_GUARD_API_BASE_URL`、`PHOTO_GUARD_MODEL` 和可选的 `PHOTO_GUARD_API_KEY`。保存显式绑定后，新上传照片的预检及健康检查使用该绑定，不再读取旧服务作为备用。
 
-项目检测任务流仍保留 `algorithm-worker` 适配层，但当前验收优先级是简易体验入口。
+预检只判断照片是否属于建筑全景、外立面或建筑局部，不执行缺陷检测。上传时先把原图写入 MinIO 并提交照片记录，再读取原图、生成最长边 1280、最多 150 万像素、质量 82 的 JPEG 推理副本；原图不会降质或被模型覆盖。预检提示词和返回格式仍要求 `{"category":"BUILDING"}` 或 `{"category":"OTHER"}`，不使用缺陷检测的 bbox 数组格式。
+
+预检状态分为 `pending`、`running`、`passed`、`rejected` 和 `error`。不合格、模型超时或服务失败都不会自动删除原图，用户仍可预览或主动删除；如需再次判断，需删除后重新上传照片。开始缺陷检测时，待处理、处理中或失败状态会阻止任务提交，明确不合格照片会被排除，只有 `passed` 照片进入检测任务。默认浏览器上传并发为 6，云端预检并发为 5。
+
+```env
+PHOTO_GUARD_ENABLED=true
+PHOTO_GUARD_PROVIDER=dashscope
+# 以下三项留空时复用 DASHSCOPE_API_KEY、QWEN_API_BASE_URL 和 QWEN3_VL_FLASH_MODEL
+PHOTO_GUARD_API_BASE_URL=
+PHOTO_GUARD_MODEL=
+PHOTO_GUARD_API_KEY=
+PHOTO_GUARD_REQUEST_CONCURRENCY=5
+PHOTO_GUARD_MAX_INFERENCE_PIXELS=1500000
+PHOTO_GUARD_MAX_EDGE=1280
+PHOTO_GUARD_JPEG_QUALITY=82
+PHOTO_GUARD_FAIL_OPEN=false
+```
+
+API Key 只保存在服务端环境变量中，不使用 `VITE_` 前缀，不写入前端或版本库。“模型管理”可新增、编辑云端 API 和本地视觉模型，在各自 Tab 填写显示名称以及 API Key 的环境变量名称；服务地址和服务中的模型名称不在界面编辑，新增模型沿用服务器的 `QWEN_API_BASE_URL` / `QWEN_MODEL` 或 `LOCAL_QWEN_API_BASE_URL` / `LOCAL_QWEN_MODEL`，编辑已有模型保留原配置。预置模型的空字段沿用上述服务器配置。云端服务须兼容视觉 `chat/completions` 接口及当前提示词约定的 JSON 返回格式。本地模型并发额外受 `LOCAL_QWEN_MAX_CONCURRENCY` 限制。
+
+“检测策略”（原“检测提示词”，地址仍为 `/detection-prompts`）为每种墙面的单项及组合项指定具体模型。组合项不复用单项绑定；YOLO 必须指定具体权重版本，各项均可选择任意已有 YOLO 模型，适用墙面和检测项完全由策略绑定决定。“推理设置”仅维护并发、频率和检测额度，不再选择模型。配置缺失或尚未接入的运行服务会阻止检测，不能自动切换到其他模型。正式任务保存模型、服务地址、提示词及并发快照，排队任务沿用创建时的配置。
+
+本地模型启停统一从“模型管理”操作。Linux GPU 服务器启用 `LOCAL_QWEN_CONTROL_ENABLED=true` 并配置 vLLM 后可手动启动或停止；保存策略、保存推理设置及后端启动均不会触发启停。Windows 显示不可启停的原因，允许先保存配置。预置本地模型使用 `.runtime/local-qwen.log`，新增模型使用独立的 `.runtime/vision-<模型 ID>/local-qwen.log`，多个模型需配置不同服务端口。服务器待完成内容见 [检测策略与模型服务器接入说明](docs/检测策略与模型服务器接入说明.md)。
+
+YOLO 模型管理维护名称、说明及独立权重版本，不再设置“适用墙面”和“支持的检测类型”。详情（`?model=<模型 UUID>`）提供 `.pt` 权重上传、版本编辑、版本独立启停和删除；元数据保存在数据库，文件保存在 MinIO，默认上传上限为 1 GB（`YOLO_MODEL_MAX_UPLOAD_BYTES`）。同一模型版本号唯一，各版本独立启停，允许多个版本同时运行；运行中或被检测策略引用的版本不能删除。执行 `alembic upgrade head` 更新数据库：0061 保留原有权重和版本，0062 把原全局模型选择迁移到独立策略；历史适用范围记录保留但不再用于模型筛选或绑定校验。0063 移除版本互斥约束，并将旧的跟随绑定固定到原选定版本。YOLO 启停入口位于各版本行，运行环境未启用时按钮禁用并说明原因；绑定 YOLO 的策略读取指定版本的实际状态，就绪后调用该版本推理服务。
+
+通过 Nginx 部署时，模型上传接口也需要允许 1 GiB 文件及 multipart 表单开销，否则约 130 MB 的 PT 文件可能在到达后端前就被拒绝（413）。在项目根目录执行 `sudo python3 deploy/configure-nginx-model-upload.py`，会备份现有站点配置，仅为 `/api/yolo-models/<模型 ID>/versions` 权重上传接口调整上传限制及响应等待时间，并为 Nginx worker 用户创建独立的上传临时目录 `/var/lib/nginx/yolo-model-upload-body`，避免默认临时目录不可写导致 500。模型列表继续使用原 API 代理，避免以斜杠结尾的代理前缀触发重定向循环。脚本检查配置后重载 Nginx；检查或重载失败会恢复原配置。非默认站点路径使用 `--site`，自定义后端上传上限时传入相同的 `--max-upload-bytes`。该步骤只需在首次部署或修改上传上限后执行。
+
+若保存检测策略等 JSON 请求返回 Nginx 500，日志显示 `/var/cache/nginx/client_temp` 无权写入，执行 `sudo python3 deploy/configure-nginx-temp-paths.py`。脚本备份 Nginx 主配置，将 HTTP 层请求及上游响应等五类临时目录设置为 `/var/lib/nginx` 下的 worker 用户私有目录，保留模型上传等已有专用目录，检查并重载配置；失败恢复原配置。
+
+建筑 GLB 模型上传的后端上限也是 1 GiB；建筑图片一次可上传多个槽位，不能只沿用站点的 105 MiB 限制。执行 `sudo python3 deploy/configure-nginx-app.py`，仅为 `/api/projects/<项目 ID>/building-model` 和 `building-model-images` 配置 1 GiB 请求容量及 1 MiB 表单余量。批量图片的 1 GiB 是整次请求的上限，GLB 的 1 GiB 是单文件上限；普通照片继续由后端限制为单张 20 MiB。脚本明确 API 的 HTTP 1.1、900 秒响应等待时间及 300 秒上传停顿等待时间，保留现有请求头、地图代理和其他接口限制；修改前备份，检查或重载失败时恢复原配置。当前试用检测及结果归档使用照片 ID 和 JSON，不开放这些接口的大文件 multipart 上传。
+
+更换 Nginx 安装源或版本后，运行 `sudo python3 deploy/check-nginx.py`。它除检查配置语法外，还以实际 worker 用户检查全部显式临时目录和站点静态文件权限；缺少显式临时目录配置也会失败，避免依赖新安装包的默认路径。`start.sh` 已在重启后端前执行此检查。部署回归验证：`python3 -m unittest discover -s deploy/tests -v`。
+
+Linux 上设置 `YOLO_RUNTIME_ENABLED=true` 可启用上传权重的实际启停，后端运行账号需有 Docker 权限，`YOLO_RUNTIME_IMAGE` 指向已安装 PyTorch、CUDA、Ultralytics 的算法镜像（默认 `building-exterior-algorithm-model:cuda`），`YOLO_RUNTIME_DEVICE` 默认 `cuda:0`。每个版本运行于独立容器，仅发布本机回环端口；启动时从 MinIO 缓存权重并校验大小和 SHA256，模型加载及预热完成后才显示“运行中”。GPU 不可用会明确失败，不切换 CPU。容器采用 `unless-stopped` 重启策略，停止某个版本不影响其他版本。缓存位于 `.runtime/yolo/<版本 ID>/`，日志使用 `docker logs building-exterior-yolo-<无连字符版本 ID>`。运行服务提供 `/health` 与上传图片的 `/predict`，返回原始类别、置信度和像素 bbox。快速体验与专业检测均按策略调用固定版本，并复用图片切片、原图坐标恢复和跨切片去重；任务快照保留模型 ID、版本 ID 和 SHA256，执行时重新解析本机端口并校验响应身份。
+
+`npm run build` 完成后会把 `frontend/dist` 中目录权限设为 755、静态文件权限设为 644，使独立的 Nginx worker 用户可以读取构建结果，避免 shell 的 `umask 0007` 导致首页或登录页返回 403。权限处理仅限公开构建产物。
 
 ## 3. 启动后端
+
+Windows 本地开发可直接双击项目根目录的 `start.bat`，它会分别打开前端和后端窗口；停止时双击 `stop.bat`。这两个脚本只管理前后端，不会启动或停止 Docker 服务。首次运行时会自动补齐缺失的 Python 或前端依赖。
+
+当前 Linux 生产环境使用项目根目录的脚本：
+
+```bash
+./start.sh
+./stop.sh
+```
+
+`start.sh` 会启动 PostgreSQL、MinIO 和 Redis，同步依赖，执行数据库迁移，构建前端，并通过 systemd 启动后端和重载 Nginx。`stop.sh` 会停止本项目后端及上述三个基础容器，但不会停止可能由同机其他站点共用的 Nginx。
 
 ```powershell
 Set-Location backend
@@ -93,13 +141,15 @@ python -m pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
+后端启动时会创建并检查应用专用上传临时目录 `.runtime/upload-temp`（仅运行账号可访问），大于 1 MiB 的 multipart 文件在此暂存，完成后自动关闭并删除临时文件。可用服务端 `UPLOAD_TEMP_DIR` 指定其他可写目录；目录不可用时启动会明确失败。该设置避免长期运行的 Python 进程缓存系统 `/tmp` 后，因系统临时目录权限变化导致快速体验、专业检测等上传统一报 `400 There was an error parsing the body`。单张照片的 20 MiB 上限仍由原接口校验。
+
 健康检查：
 
 ```powershell
 Invoke-RestMethod http://127.0.0.1:8000/api/health
 ```
 
-API 文档：
+开发环境 API 文档（生产环境默认关闭）：
 
 - `http://127.0.0.1:8000/api/docs`
 - `http://127.0.0.1:8000/api/redoc`
@@ -135,13 +185,45 @@ npm run dev
 
 - `http://localhost:5175`
 
-首次访问业务页面会跳转到登录页。开发环境默认启用以下测试账号；生产环境请修改 `AUTH_SECRET_KEY` 并设置 `AUTH_SEED_DEMO_USERS=false`：
+首页、专业检测列表和快速体验记录页无需登录即可访问；进入新增专业检测或快速体验页时会跳转到登录页。开发环境默认启用以下测试账号；生产环境请修改 `AUTH_SECRET_KEY` 并设置 `AUTH_SEED_DEMO_USERS=false`：
+
+未登录时，专业检测和快速体验列表都会展示只读的“示例项目”；登录后会在示例之后显示当前账号可访问的数据。该示例对所有账号开放查看和结果导出，但不能重命名、追加检测或删除。
 
 | 角色 | 用户名 | 密码 | 可用范围 |
 | --- | --- | --- | --- |
-| 客户用户 | `customer` | `Customer123!` | 项目、AI 检测体验、已推送报告 |
-| 内部审核人员 | `reviewer` | `Reviewer123!` | 审核工作台、报告预览和推送 |
+| 客户用户 | `customer` | `Customer123!` | 本人项目、快速体验和审核完成报告 |
+| 内部审核人员 | `reviewer` | `Reviewer123!` | 全部专业检测只读、审核工作台和正式报告下载；快速体验记录仅本人及示例项目 |
 | 管理员 | `admin` | `Admin123!` | 全部功能 |
+
+演示账号不再内置手机号。需要绑定时，通过 `AUTH_DEMO_CUSTOMER_PHONE`、`AUTH_DEMO_REVIEWER_PHONE`、`AUTH_DEMO_ADMIN_PHONE` 配置，留空的新账号仍可用用户名和密码登录。初始化只为尚未绑定手机号的演示账号补充配置值，不覆盖数据库中已有的手机号。
+
+### 注册与登录短信验证码
+
+注册账号与手机号登录已接入阿里云号码认证服务（Dypnsapi）：注册前端先调用
+`POST /api/auth/registration/sms-code` 发送验证码，随后把验证码随
+`POST /api/auth/trial-application` 一并提交；只有阿里云
+`CheckSmsVerifyCode` 返回 `PASS` 才会创建账号。手机号登录先调用
+`POST /api/auth/login/sms-code`，再把手机号与验证码提交到
+`POST /api/auth/login`。注册与登录的同手机号发送间隔均为 30 分钟；手机号/IP
+小时限额和核验错误次数均由后端及 Redis 统一控制，AccessKey 不会进入前端包。
+
+在根目录 `.env.local`（本地）或 `.env`（生产）配置：
+
+```dotenv
+SMS_VERIFICATION_ENABLED=true
+ALIYUN_DYPNS_ACCESS_KEY_ID=RAM用户AccessKeyId
+ALIYUN_DYPNS_ACCESS_KEY_SECRET=RAM用户AccessKeySecret
+ALIYUN_DYPNS_REGION_ID=ap-southeast-1
+ALIYUN_DYPNS_ENDPOINT=dypnsapi.aliyuncs.com
+SMS_VERIFICATION_SIGN_NAME=号码认证控制台当前可用的系统赠送签名
+SMS_VERIFICATION_TEMPLATE_CODE=100001
+SMS_VERIFICATION_AUTH_SEND_INTERVAL_SECONDS=1800
+```
+
+RAM 用户仅需授予 `dypns:SendSmsVerifyCode` 和
+`dypns:CheckSmsVerifyCode`。请从号码认证控制台填写当前可用的系统签名，
+不要长期写死 OpenAPI 测试页中的历史签名。未启用或配置不完整时，注册与登录
+短信接口会返回 `503`，不会绕过手机验证直接创建账号或登录。
 
 如果 `5175` 已被占用，可以临时改用其他端口：
 
@@ -158,32 +240,38 @@ npm run dev -- --host 127.0.0.1 --port 5174
 - 后端 FastAPI 应用入口、CORS、统一异常响应
 - `/api/health` 健康检查接口
 - SQLAlchemy 数据库连接配置和 Alembic 骨架
-- 第 2 阶段 15 张业务表 SQLAlchemy Model
+- 业务表 SQLAlchemy Model
 - 集中状态枚举、UTC 时间字段、软删除字段约定
 - 对应 Pydantic Create/Read Schema
 - Alembic 初始迁移文件
 - 数据库连接检查脚本 `python -m app.db.check_connection`
 - PostgreSQL、MinIO、Redis Docker Compose 基础服务
 - 算法 Worker 后端地址、Worker Token、MinIO 访问地址和正式模型内部地址等环境变量预留
-- 项目、建筑、立面 CRUD 闭环
-- 照片上传批次、MinIO 图片上传、照片列表与删除
-- 检测模型多选和高精度检测配置
-- `POST /api/projects/{project_id}/start-detection` 启动 AI 检测任务
-- Worker API：`GET /api/algorithm/tasks/next`、心跳、结果回传、失败回传
-- 检测任务成功后自动写入 `ai_detection_result` 并将项目流转到 `pending_review`
+- 项目 CRUD 闭环
+- 项目照片统一上传、MinIO 图片存储、照片列表与删除
+- 启动检测时多选裂缝、脱落、空鼓（默认全选）
+- 专业检测提交后立即启动推理并显示“检测中”，任务启动期间短暂显示“正在排队”
+- `POST /api/projects/{project_id}/start-detection` 为项目启动唯一的 AI 检测任务；无热成像照片时不触发空鼓分析
+- 正式照片复用 TRIAL 的 `1280 x 960`、25% 重叠切片、跨 TILE 融合和 NMS 坐标回写流程
+- 专业项目逐张读取原图并完成该照片的所有检测策略，再读取下一张；切片通过有界队列按配置的请求并发数处理。专业项目不受 `TRIAL_MAX_TILES_PER_REQUEST` 的切片总数限制，该设置只用于快速体验单批校验；单张像素和切片安全上限仍生效。切片预估按实际 EXIF 方向计算：8000×6000 原图为 64 片，4000×3000 为 16 片，不会为了减少请求自动降低专业检测分辨率。
+- 正式项目与简易检测共用推理模型、检测提示词和全局/单任务并发；实际送检照片额度分别计算
+- 每个正式项目只生成一个检测任务、一条审核工作台记录和一份正式报告
+- 检测任务成功后自动写入 `ai_detection_result`、创建项目草稿报告并将项目流转到 `pending_review`
 - 检测任务异常仅记录在任务层，项目恢复为 `draft` 可重新发起检测
 - 独立模拟 Worker，可本地运行或作为 Docker Compose profile 运行
-- 审核工作台、AI 缺陷框复核、人工新增/修改/删除审核结果
-- 审核完成后生成固化报告数据并将项目流转到 `reviewed`
+- 审核工作台内置标注编辑器，支持缺陷框新增、移动、缩放、改类和删除
+- 完成项目审核并固化唯一报告后，项目流转到 `reviewed`
+- 检测工作台详情只通过 `/api/projects/{project_id}/reviewed-result` 读取已固化结果；`pending_review` 阶段不返回 AI 原始框
 - `/api/reports` 检测结果列表、详情、正式报告推送和 DOCX 下载接口
-- 检测结果列表页、结果详情页、AI 检测体验归档、推送后普通用户查看最终结果
+- 检测结果列表页、结果详情页、AI 检测体验归档、审核后项目详情查看结果，以及推送后的正式报告交付
 - 报告文件字段统一为 `docx_bucket`、`docx_object_key`
 - `backend/templates/reports/正式报告示例.docx` 作为正式报告 DOCX 模板
 - AI 检测体验归档保存上传照片和简易识别结果，不生成 DOCX 文件
-- `POST /api/auth/login`、`GET /api/auth/me`、`POST /api/auth/logout` 基础登录会话
-- Bearer 登录态刷新恢复、未登录业务路由跳转登录页
-- 客户用户仅看到自己的项目、已推送正式结果和自己的体验归档，且无法访问审核接口或审核菜单
-- 内部审核人员和管理员可访问审核工作台；报告推送仅限内部审核人员和管理员
+- `POST /api/auth/login/sms-code`、`POST /api/auth/login`、`GET /api/auth/me`、`POST /api/auth/logout` 基础登录会话
+- Bearer 登录态刷新恢复；专业检测和免费试用列表页公开访问，新增页及其他业务路由跳转登录页
+- 客户用户仅看到自己的项目、项目审核完成后固化的检测结果、已推送正式报告和自己的体验归档，且无法访问审核接口或审核菜单
+- 内部审核人员和管理员可访问审核工作台；审核员对其他账号的项目源数据只读，不能修改、上传、启动检测或删除
+- 管理员重置账号密码时生成随机临时密码，不再使用固定默认密码
 
 ## 7. 模拟 Worker 联调
 
@@ -212,18 +300,18 @@ docker compose --profile worker run --rm algorithm-worker
 python .\algorithm-worker\mock_worker.py --skip-download
 ```
 
-正式环境中，系统前端、后端和算法模型部署在同一台服务器。Worker 跟随算法模型部署，建议拆分为：
+以下 Worker 说明仅用于历史适配层和 API 契约联调：
 
 - `algorithm-worker`：持有后端访问 Token，主动拉取任务、下载图片、调用模型、回传结果。
 - `algorithm-model`：只提供 Docker 内部网络推理接口，不直接访问数据库，不持有 Worker Token，默认不映射公网端口。
 
-Web 后端不主动调用算法模型，Worker 不进入 Web 后端进程或 Web 后端容器。
+当前正式项目链路由 Web 后端主动调用“推理设置”选中的视觉模型，不依赖 Worker 领取任务。
 
 ## 8. 权限边界与会话说明
 
-- 客户用户的 `pending_review`、`reviewed` 项目状态仅展示为“结果处理中”或“报告生成中”，不展示审核工作台与人工审核过程。
+- 客户用户的 `pending_review` 项目只显示“审核中”，不展示 AI 原始框或审核过程；项目进入 `reviewed` 后，检测工作台详情才展示固化的审核结果。
 - 审核 API 在服务端校验 `reviewer` / `admin` 角色；仅隐藏菜单不能绕过接口权限。
-- 项目、照片、检测配置和最终报告接口要求登录。客户用户只能读取和操作自己创建的项目及其最终报告。
+- 项目、照片、检测配置和结果接口要求登录。客户用户只能读取和操作自己创建的项目，并只能读取其审核后固化结果与最终报告。
 - 登录令牌存储在浏览器本地存储中；刷新页面后会调用 `/api/auth/me` 恢复会话。退出登录会撤销当前令牌。
 
 ## 9. 自测命令

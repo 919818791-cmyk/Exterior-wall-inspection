@@ -11,7 +11,12 @@ import ultralytics
 def main() -> int:
     model_paths = {
         "crack": Path(os.getenv("CRACK_MODEL_WEIGHTS_PATH", "/models/wall_crack_yolo11x.pt")),
-        "missing": Path(os.getenv("MISSING_MODEL_WEIGHTS_PATH", "/models/missing.pt")),
+        "spalling": Path(
+            os.getenv(
+                "SPALLING_MODEL_WEIGHTS_PATH",
+                os.getenv("MISSING_MODEL_WEIGHTS_PATH", "/models/missing.pt"),
+            )
+        ),
     }
     cuda_available = torch.cuda.is_available()
     payload = {

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import sys
 from pathlib import Path
 
@@ -10,6 +11,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.core.config import get_settings
 from app.services.qweather import QWeatherAPIError, QWeatherClient, QWeatherConfigError
+
+logger = logging.getLogger(__name__)
 
 
 def main() -> int:
@@ -25,7 +28,8 @@ def main() -> int:
     try:
         weather = QWeatherClient(settings=settings).get_weather_now(location=location, lang=args.lang)
     except (QWeatherConfigError, QWeatherAPIError) as exc:
-        print(f"QWeather connectivity test failed: {exc}", file=sys.stderr)
+        logger.warning("qweather_connectivity_failed error_type=%s", type(exc).__name__)
+        print("QWeather connectivity test failed", file=sys.stderr)
         return 1
 
     print(json.dumps(weather.to_connectivity_summary(location), ensure_ascii=False, indent=2))
