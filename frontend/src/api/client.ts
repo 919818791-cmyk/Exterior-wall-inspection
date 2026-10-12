@@ -157,6 +157,9 @@ function errorMessageFromPayload(payload: unknown, status: number) {
     if ("message" in payload) return String((payload as { message: unknown }).message);
     if ("detail" in payload) return readableDetail((payload as { detail: unknown }).detail);
   }
+  if (status === 413) {
+    return "上传失败：文件超过服务器允许的大小，请联系管理员调整上传限制后重试。";
+  }
   return `API request failed with status ${status}`;
 }
 

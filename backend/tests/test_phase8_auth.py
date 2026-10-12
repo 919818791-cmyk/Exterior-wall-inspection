@@ -23,6 +23,8 @@ from app.enums.status import UserRole, UserStatus
 from app.main import app
 from app.services.sms_verification import SmsSendResult, get_sms_verification_service
 
+from sample_data import synthetic_phone
+
 
 class StubSmsVerificationService:
     def __init__(self) -> None:
@@ -111,7 +113,7 @@ def test_trial_application_creates_active_customer_account() -> None:
             json={
                 "username": "trial_user",
                 "password": "Trial123!",
-                "phone": "13800000000",
+                "phone": synthetic_phone(1),
                 "verification_code": "1234",
             },
         )
@@ -123,7 +125,7 @@ def test_trial_application_creates_active_customer_account() -> None:
     assert fake_db.committed
     assert fake_db.created_account.username == "trial_user"
     assert fake_db.created_account.real_name is None
-    assert fake_db.created_account.phone == "13800000000"
+    assert fake_db.created_account.phone == synthetic_phone(1)
     assert fake_db.created_account.organization is None
     assert fake_db.created_account.role == UserRole.CUSTOMER.value
     assert fake_db.created_account.status == UserStatus.ACTIVE.value
@@ -178,7 +180,7 @@ def test_trial_application_treats_blank_optional_profile_fields_as_missing() -> 
                 "username": "blank_name_user",
                 "password": "Trial123!",
                 "real_name": "   ",
-                "phone": "13900000000",
+                "phone": synthetic_phone(6),
                 "verification_code": "1234",
                 "organization": "   ",
             },
@@ -204,7 +206,7 @@ def test_trial_application_rejects_duplicate_username_case_insensitively() -> No
             json={
                 "username": "TRIAL_USER",
                 "password": "Trial123!",
-                "phone": "13700000000",
+                "phone": synthetic_phone(0),
                 "verification_code": "1234",
             },
         )
@@ -271,14 +273,14 @@ def test_registration_sms_code_is_sent_to_available_phone(
     try:
         response = TestClient(app).post(
             "/api/auth/registration/sms-code",
-            json={"phone": "13800000000"},
+            json={"phone": synthetic_phone(1)},
         )
     finally:
         app.dependency_overrides.clear()
 
     assert response.status_code == 200
     assert response.json() == {"ok": True, "retry_after_seconds": 1800}
-    assert stub_sms_verification_service.sent_phones == ["13800000000"]
+    assert stub_sms_verification_service.sent_phones == [synthetic_phone(1)]
 
 
 def test_registration_sms_code_has_a_thirty_minute_phone_cooldown(
@@ -294,11 +296,11 @@ def test_registration_sms_code_has_a_thirty_minute_phone_cooldown(
         client = TestClient(app)
         first_response = client.post(
             "/api/auth/registration/sms-code",
-            json={"phone": "13800000000"},
+            json={"phone": synthetic_phone(1)},
         )
         second_response = client.post(
             "/api/auth/registration/sms-code",
-            json={"phone": "13800000000"},
+            json={"phone": synthetic_phone(1)},
         )
     finally:
         app.dependency_overrides.clear()
@@ -306,7 +308,7 @@ def test_registration_sms_code_has_a_thirty_minute_phone_cooldown(
     assert first_response.status_code == 200
     assert second_response.status_code == 429
     assert int(second_response.headers["Retry-After"]) >= 1799
-    assert stub_sms_verification_service.sent_phones == ["13800000000"]
+    assert stub_sms_verification_service.sent_phones == [synthetic_phone(1)]
 
 
 def test_login_sms_code_is_sent_to_active_account(
@@ -314,7 +316,7 @@ def test_login_sms_code_is_sent_to_active_account(
 ) -> None:
     class FakeUser:
         username = "sms_login_user"
-        phone = "13800000000"
+        phone = synthetic_phone(1)
         status = UserStatus.ACTIVE.value
 
     class FakeDb:
@@ -333,11 +335,11 @@ def test_login_sms_code_is_sent_to_active_account(
         client = TestClient(app)
         response = client.post(
             "/api/auth/login/sms-code",
-            json={"phone": "13800000000"},
+            json={"phone": synthetic_phone(1)},
         )
         repeated_response = client.post(
             "/api/auth/login/sms-code",
-            json={"phone": "13800000000"},
+            json={"phone": synthetic_phone(1)},
         )
     finally:
         app.dependency_overrides.clear()
@@ -346,7 +348,7 @@ def test_login_sms_code_is_sent_to_active_account(
     assert response.json() == {"ok": True, "retry_after_seconds": 1800}
     assert repeated_response.status_code == 429
     assert int(repeated_response.headers["Retry-After"]) >= 1799
-    assert stub_sms_verification_service.sent_phones == ["13800000000"]
+    assert stub_sms_verification_service.sent_phones == [synthetic_phone(1)]
 
 
 def test_phone_verification_code_can_log_in(
@@ -356,7 +358,7 @@ def test_phone_verification_code_can_log_in(
         id = UUID("00000000-0000-0000-0000-000000000010")
         username = "sms_login_user"
         real_name = "验证码登录用户"
-        phone = "13800000000"
+        phone = synthetic_phone(1)
         role = UserRole.CUSTOMER.value
         organization = None
         status = UserStatus.ACTIVE.value
@@ -386,14 +388,14 @@ def test_phone_verification_code_can_log_in(
     try:
         response = TestClient(app).post(
             "/api/auth/login",
-            json={"phone": "13800000000", "verification_code": "1234"},
+            json={"phone": synthetic_phone(1), "verification_code": "1234"},
         )
     finally:
         app.dependency_overrides.clear()
 
     assert response.status_code == 200
-    assert response.json()["user"]["phone"] == "13800000000"
-    assert stub_sms_verification_service.verification_attempts == [("13800000000", "1234")]
+    assert response.json()["user"]["phone"] == synthetic_phone(1)
+    assert stub_sms_verification_service.verification_attempts == [(synthetic_phone(1), "1234")]
     assert fake_db.committed
     assert fake_db.user.last_login_at is not None
 
@@ -405,7 +407,7 @@ def test_password_reset_verification_can_set_a_new_password(
         id = UUID("00000000-0000-0000-0000-000000000010")
         username = "reset_user"
         real_name = "找回密码用户"
-        phone = "13800000000"
+        phone = synthetic_phone(1)
         role = UserRole.CUSTOMER.value
         organization = None
         status = UserStatus.ACTIVE.value
@@ -436,11 +438,11 @@ def test_password_reset_verification_can_set_a_new_password(
         client = TestClient(app)
         send_response = client.post(
             "/api/auth/password-reset/sms-code",
-            json={"phone": "13800000000"},
+            json={"phone": synthetic_phone(1)},
         )
         verify_response = client.post(
             "/api/auth/password-reset/verify",
-            json={"phone": "13800000000", "verification_code": "1234"},
+            json={"phone": synthetic_phone(1), "verification_code": "1234"},
         )
         reset_token = verify_response.json()["reset_token"]
         reset_response = client.post(
@@ -455,9 +457,9 @@ def test_password_reset_verification_can_set_a_new_password(
         app.dependency_overrides.clear()
 
     assert send_response.status_code == 200
-    assert stub_sms_verification_service.sent_phones == ["13800000000"]
+    assert stub_sms_verification_service.sent_phones == [synthetic_phone(1)]
     assert verify_response.status_code == 200
-    assert stub_sms_verification_service.verification_attempts == [("13800000000", "1234")]
+    assert stub_sms_verification_service.verification_attempts == [(synthetic_phone(1), "1234")]
     assert reset_response.status_code == 200
     assert reset_response.json() == {"ok": True}
     assert reused_token_response.status_code == 400
@@ -489,7 +491,7 @@ def test_trial_application_rejects_invalid_sms_code(
             json={
                 "username": "invalid_code_user",
                 "password": "Trial123!",
-                "phone": "13800000000",
+                "phone": synthetic_phone(1),
                 "verification_code": "9999",
             },
         )
@@ -499,7 +501,7 @@ def test_trial_application_rejects_invalid_sms_code(
     assert response.status_code == 400
     assert response.json()["message"] == "验证码错误或已过期。"
     assert fake_db.add_count == 0
-    assert stub_sms_verification_service.verification_attempts == [("13800000000", "9999")]
+    assert stub_sms_verification_service.verification_attempts == [(synthetic_phone(1), "9999")]
 
 
 def test_disabled_account_login_reports_not_opened() -> None:
@@ -509,7 +511,7 @@ def test_disabled_account_login_reports_not_opened() -> None:
         real_name = "试用客户"
         role = UserRole.CUSTOMER.value
         organization = "示例单位"
-        phone = "13800000000"
+        phone = synthetic_phone(1)
         status = UserStatus.DISABLED.value
         password_hash = hash_password("Trial123!")
         last_login_at = None
@@ -536,7 +538,7 @@ def test_disabled_account_login_reports_not_opened() -> None:
     try:
         response = TestClient(app).post(
             "/api/auth/login",
-            json={"identity": "13800000000", "password": "Trial123!"},
+            json={"identity": synthetic_phone(1), "password": "Trial123!"},
         )
     finally:
         app.dependency_overrides.clear()
@@ -563,7 +565,7 @@ def test_unified_login_falls_back_from_phone_to_username() -> None:
         real_name = "试用客户"
         role = UserRole.CUSTOMER.value
         organization = "示例单位"
-        phone = "13800000000"
+        phone = synthetic_phone(1)
         status = UserStatus.DISABLED.value
         password_hash = hash_password("Trial123!")
         last_login_at = None
@@ -786,7 +788,7 @@ def test_current_user_response_includes_phone() -> None:
         real_name="演示客户",
         role=UserRole.CUSTOMER.value,
         organization="示例委托单位",
-        phone="13800000001",
+        phone=synthetic_phone(2),
     )
     app.dependency_overrides[get_current_user] = lambda: customer
 
@@ -796,7 +798,7 @@ def test_current_user_response_includes_phone() -> None:
         app.dependency_overrides.clear()
 
     assert response.status_code == 200
-    assert response.json()["phone"] == "13800000001"
+    assert response.json()["phone"] == synthetic_phone(2)
 
 
 def test_current_user_can_update_name_and_organization() -> None:
@@ -804,7 +806,7 @@ def test_current_user_can_update_name_and_organization() -> None:
         id = UUID("00000000-0000-0000-0000-000000000001")
         username = "customer"
         real_name = "原姓名"
-        phone = "13800000001"
+        phone = synthetic_phone(2)
         role = UserRole.CUSTOMER.value
         organization = "原单位"
         deleted_at = None
@@ -847,7 +849,7 @@ def test_current_user_can_update_phone() -> None:
         id = UUID("00000000-0000-0000-0000-000000000001")
         username = "customer"
         real_name = "演示客户"
-        phone = "13800000001"
+        phone = synthetic_phone(2)
         role = UserRole.CUSTOMER.value
         organization = "示例委托单位"
         deleted_at = None
@@ -877,13 +879,13 @@ def test_current_user_can_update_phone() -> None:
     try:
         response = TestClient(app).patch(
             "/api/auth/me",
-            json={"phone": "13900000001"},
+            json={"phone": synthetic_phone(7)},
         )
     finally:
         app.dependency_overrides.clear()
 
     assert response.status_code == 200
-    assert response.json()["phone"] == "13900000001"
+    assert response.json()["phone"] == synthetic_phone(7)
     assert fake_db.committed
 
 
@@ -892,7 +894,7 @@ def test_account_deletion_anonymizes_account() -> None:
         id = UUID("00000000-0000-0000-0000-000000000001")
         username = "customer"
         real_name = "演示客户"
-        phone = "13800000001"
+        phone = synthetic_phone(2)
         role = UserRole.CUSTOMER.value
         organization = "示例委托单位"
         status = UserStatus.ACTIVE.value

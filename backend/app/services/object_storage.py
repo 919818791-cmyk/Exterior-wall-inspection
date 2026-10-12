@@ -80,9 +80,13 @@ def get_object_bytes(bucket: str, object_key: str) -> bytes:
         response.release_conn()
 
 
-def open_object(bucket: str, object_key: str):
+def open_object(bucket: str, object_key: str, *, byte_range: str | None = None):
     """Open a streaming response; callers must close it and release the connection."""
-    return _client().get_object(bucket, object_key)
+    return _client().get_object(
+        bucket,
+        object_key,
+        request_headers={"Range": byte_range} if byte_range else None,
+    )
 
 
 def presigned_get_url(bucket: str, object_key: str | None, expires_minutes: int = 60) -> str | None:
@@ -105,7 +109,7 @@ def signed_object_url(
     if not bucket or not object_key:
         return None
     # Quantize expirations so repeated list requests reuse the same signed URL
-    # and the browser can cache the lightweight redirect and thumbnail.
+    # and the browser can cache the streamed object and thumbnail.
     ttl_seconds = max(60, expires_minutes * 60)
     now = int(time.time())
     expires_at = ((now + ttl_seconds + ttl_seconds - 1) // ttl_seconds) * ttl_seconds

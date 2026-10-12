@@ -7,12 +7,13 @@ from uuid import UUID
 
 from fastapi import HTTPException
 
-from app.models.tables import SystemSetting, YoloModel, YoloModelVersion
+from app.models.tables import YoloModel, YoloModelVersion
 from app.schemas.detection_strategies import DetectionStrategyEdit, DetectionStrategyRead
 from app.schemas.vision_models import VisionModelEdit
 from app.services.formal_detection_prompts import FACADE_TYPE_NAMES, FORMAL_PROMPT_SETTING_KEYS, formal_prompt_values
 from app.services.trial_inference_provider import set_setting_value, setting_value, trial_prompts
 from app.services.vision_models import STRATEGY_PREFIX, model_config, model_runtime
+from app.services import yolo_inference
 
 DEFECT_LABELS = {"crack": "裂缝", "spalling": "脱落", "peeling": "起皮", "damage": "面板破损", "hollow": "空鼓（热成像）"}
 DEFINITIONS: dict[str, tuple[str, str, list[str]]] = {
@@ -136,15 +137,22 @@ def resolve_plan(db, facade: str, kinds: list[str], *, legacy_runtime=None) -> l
             raise HTTPException(409, f"{item.facade_label} · {item.label}尚未配置模型。")
         if item.model_kind == "yolo":
             validate_strategy(db, item)
-            raise HTTPException(409, f"{item.facade_label} · {item.label}已绑定 YOLO，但 YOLO 运行服务尚未接入，请在模型服务器完成接入后检测。")
-        config = model_config(db, item.model_id)
-        runtime = legacy_runtime if binding(db, key) is None and legacy_runtime is not None else model_runtime(config, db, identifier=item.model_id)
+            model = db.get(YoloModel, UUID(item.model_id))
+            version = db.get(YoloModelVersion, item.version_id)
+            runtime = yolo_inference.model_runtime(model, version, db)
+            api_key_env = ""
+        else:
+            config = model_config(db, item.model_id)
+            runtime = legacy_runtime if binding(db, key) is None and legacy_runtime is not None else model_runtime(config, db, identifier=item.model_id)
+            api_key_env = config.api_key_env
         if not runtime.configured:
-            raise HTTPException(409, f"{config.name}尚未配置服务地址、模型名称或 API Key。")
+            raise HTTPException(409, f"{runtime.label}尚未配置服务地址、模型名称或 API Key。")
         snapshot = {"key": key, "defect_types": item.defect_types, "model_kind": item.model_kind, "model_id": item.model_id,
             "model_name": runtime.model, "model_label": runtime.label, "api_base_url": runtime.base_url,
-            "api_key_env": config.api_key_env, "prompt": item.prompt,
+            "api_key_env": api_key_env, "prompt": item.prompt,
             "request_concurrency": runtime.max_concurrency, "timeout_seconds": runtime.timeout_seconds}
+        if item.model_kind == "yolo":
+            snapshot.update(version_id=str(version.id), sha256=version.sha256)
         plan.append(StrategyExecution(key, item.defect_types, runtime, item.prompt, snapshot))
     return plan
 
@@ -153,9 +161,12 @@ def restore_plan(snapshots: list[dict[str, Any]], db=None) -> list[StrategyExecu
     from dataclasses import replace
     plan = []
     for snapshot in snapshots:
-        config = VisionModelEdit(name=snapshot["model_label"], kind=snapshot["model_kind"], model_name=snapshot["model_name"],
-            api_base_url=snapshot["api_base_url"], api_key_env=snapshot["api_key_env"])
-        runtime = replace(model_runtime(config, db), max_concurrency=snapshot["request_concurrency"], timeout_seconds=snapshot["timeout_seconds"])
+        if snapshot["model_kind"] == "yolo":
+            runtime = yolo_inference.restore_runtime(snapshot)
+        else:
+            config = VisionModelEdit(name=snapshot["model_label"], kind=snapshot["model_kind"], model_name=snapshot["model_name"],
+                api_base_url=snapshot["api_base_url"], api_key_env=snapshot["api_key_env"])
+            runtime = replace(model_runtime(config, db), max_concurrency=snapshot["request_concurrency"], timeout_seconds=snapshot["timeout_seconds"])
         plan.append(StrategyExecution(snapshot["key"], snapshot["defect_types"], runtime, snapshot["prompt"], snapshot))
     return plan
 
@@ -186,14 +197,20 @@ async def execute_plan(plan, images, *, infer, **limits):
         runtime = execution.runtime
         if not runtime.configured:
             raise RuntimeError(f"{runtime.label} 未配置 API Key 或服务地址。")
-        values = await infer([images[i] for i in indices], api_key=runtime.api_key, base_url=runtime.base_url, model=runtime.model,
-            provider=runtime.upstream_provider, visible_prompt=execution.prompt, thermal_prompt=execution.prompt,
-            visible_defect_types=[] if thermal else execution.defect_types, timeout_seconds=runtime.timeout_seconds,
-            max_concurrency=runtime.max_concurrency, **limits)
+        if runtime.provider == "yolo":
+            values = await yolo_inference.infer_yolo_images([images[i] for i in indices], runtime=runtime,
+                defect_types=execution.defect_types, **limits)
+        else:
+            values = await infer([images[i] for i in indices], api_key=runtime.api_key, base_url=runtime.base_url, model=runtime.model,
+                provider=runtime.upstream_provider, visible_prompt=execution.prompt, thermal_prompt=execution.prompt,
+                visible_defect_types=[] if thermal else execution.defect_types, timeout_seconds=runtime.timeout_seconds,
+                max_concurrency=runtime.max_concurrency, **limits)
         for i, result in zip(indices, values, strict=True):
             result = dict(result)
             result["strategy_models"] = [{key: value for key, value in execution.snapshot.items() if key not in {"prompt", "api_base_url", "api_key_env"}}]
-            result["detections"] = [{**detection, "strategy_key": execution.key, "model_version": runtime.model, "model_provider": runtime.provider} for detection in result.get("detections") or []]
+            result["detections"] = [{**detection, "strategy_key": execution.key, "model_version": runtime.model, "model_provider": runtime.provider}
+                for detection in result.get("detections") or []
+                if isinstance(detection, dict) and detection.get("type") in execution.defect_types]
             per_image[i].append(result)
     if any(not values for values in per_image):
         raise RuntimeError("照片类型与已配置检测策略不匹配。")

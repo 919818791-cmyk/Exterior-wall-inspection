@@ -44,14 +44,6 @@ from app.services.trial_inference_provider import (
 
 router = APIRouter(prefix="/system-settings", tags=["system-settings"])
 
-PROVIDER_DISCLOSURES = {
-    "qwen": (
-        "阿里云百炼（Model Studio）",
-        "https://help.aliyun.com/zh/model-studio/privacy-notice",
-    ),
-    "local_qwen": ("平台控制的本地模型服务", None),
-}
-
 
 def _setting_read(db: Session) -> TrialInferenceSettingRead:
     settings = get_settings()
@@ -125,7 +117,11 @@ def read_trial_inference_disclosure(
     provider = "qwen" if clouds else "local_qwen"
     label = "、".join(model.name for model in models) if models else "平台本地检测模型"
     recipient = label if models else "平台控制的本地模型服务"
-    policy_url = PROVIDER_DISCLOSURES["qwen"][1] if clouds == ["qwen"] and not models[0].api_base_url else None
+    policy_url = (
+        get_settings().qwen_privacy_policy_url or None
+        if clouds == ["qwen"] and not models[0].api_base_url
+        else None
+    )
     return TrialInferenceDisclosureRead(
         provider=provider,
         label=label,

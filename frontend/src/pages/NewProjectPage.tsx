@@ -41,6 +41,7 @@ import type {
 import { createAsyncLimiter } from "@/utils/asyncLimiter";
 import { getDroneTypeLabel } from "@/utils/droneTypes";
 import { createClientId } from "@/utils/id";
+import { getProfessionalFailureMessage } from "@/utils/projectDisplay";
 import {
   MAX_PHOTO_UPLOAD_SIZE_BYTES,
   PROFESSIONAL_PHOTO_UPLOAD_HINT,
@@ -477,6 +478,7 @@ export function NewProjectPage() {
     && project.current_report_id
   );
   const isDetectionLocked = Boolean(project && project.status !== "draft" && !hasResult);
+  const failureMessage = project ? getProfessionalFailureMessage(project) : null;
   const canOpenSummary = counts.passed > 0
     && counts.uploading === 0
     && counts.failed === 0
@@ -603,6 +605,7 @@ export function NewProjectPage() {
       const refreshedProject = await queryClient.fetchQuery(projectQueryOptions(projectId));
       setCurrentProject(refreshedProject);
       setStep(3);
+      if (!id) navigate(`/detections/${projectId}`, { replace: true });
     },
     onError: (error) => setPageError(getErrorMessage(error))
   });
@@ -720,6 +723,8 @@ export function NewProjectPage() {
         <header className="professional-create-wizard-header">
           <h1>{project?.name || form.name.trim() || "新增检测项目"}</h1>
         </header>
+
+        {failureMessage ? <p className="project-photo-error" role="alert">{failureMessage}</p> : null}
 
         <ol className="professional-create-steps" aria-label="项目设置步骤">
           {WIZARD_STEPS.map((item) => {
@@ -983,7 +988,7 @@ export function NewProjectPage() {
               type="button"
               onClick={() => setDetectionModalOpen(true)}
             >
-              {isDetectionLocked ? "检测中" : "开始检测"}
+              {isDetectionLocked ? "检测中" : project?.current_task_status === "failed" ? "重新检测" : "开始检测"}
             </button>
           ) : null}
         </footer>

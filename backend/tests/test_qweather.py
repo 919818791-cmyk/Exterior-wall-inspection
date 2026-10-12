@@ -15,6 +15,8 @@ from app.services.qweather import (
     generate_qweather_jwt,
 )
 
+from sample_data import fixture_url
+
 
 def test_generate_qweather_jwt_uses_expected_header_and_payload(tmp_path) -> None:
     private_key_path = tmp_path / "ed25519-private.pem"
@@ -130,7 +132,7 @@ def test_qweather_client_requests_now_endpoint_with_bearer_token(tmp_path) -> No
     weather = client.get_weather_now()
 
     assert weather.now.text == "多云"
-    assert seen["url"] == "https://example.qweatherapi.com/v7/weather/now?location=116.41%2C39.92&lang=zh"
+    assert seen["url"] == fixture_url('example.qweatherapi.com', '/v7/weather/now', query='location=116.41%2C39.92&lang=zh')
     assert seen["authorization"].startswith("Bearer ")
 
 
@@ -190,7 +192,7 @@ def test_qweather_client_requests_daily_endpoint_with_bearer_token(tmp_path) -> 
     weather = client.get_weather_daily(location="114.10,22.57", days="7d")
 
     assert weather.daily[0].text_day == "多云"
-    assert seen["url"] == "https://example.qweatherapi.com/v7/weather/7d?location=114.10%2C22.57&lang=zh"
+    assert seen["url"] == fixture_url('example.qweatherapi.com', '/v7/weather/7d', query='location=114.10%2C22.57&lang=zh')
     assert seen["authorization"].startswith("Bearer ")
 
 
@@ -222,7 +224,7 @@ def test_qweather_client_requests_hourly_endpoint_with_bearer_token(tmp_path) ->
     weather = client.get_weather_hourly(location="114.10,22.57", hours="168h")
 
     assert weather.hourly[0].text == "多云"
-    assert seen["url"] == "https://example.qweatherapi.com/v7/weather/168h?location=114.10%2C22.57&lang=zh"
+    assert seen["url"] == fixture_url('example.qweatherapi.com', '/v7/weather/168h', query='location=114.10%2C22.57&lang=zh')
     assert seen["authorization"].startswith("Bearer ")
 
 
@@ -235,7 +237,7 @@ def _weather_now_payload() -> dict:
     return {
         "code": "200",
         "updateTime": "2020-06-30T22:00+08:00",
-        "fxLink": "https://www.qweather.com/weather/beijing-101010100.html",
+        "fxLink": fixture_url('www.qweather.com', '/weather/beijing-101010100.html'),
         "now": {
             "obsTime": "2020-06-30T21:40+08:00",
             "temp": "24",
@@ -254,7 +256,7 @@ def _weather_now_payload() -> dict:
             "dew": "21",
         },
         "refer": {
-            "sources": ["https://developer.qweather.com/attribution.html"],
+            "sources": [fixture_url('developer.qweather.com', '/attribution.html')],
             "license": ["QWeather Developers License"],
         },
     }
@@ -264,7 +266,7 @@ def _weather_daily_payload() -> dict:
     return {
         "code": "200",
         "updateTime": "2026-07-06T16:00+08:00",
-        "fxLink": "https://www.qweather.com/weather/shenzhen-101280601.html",
+        "fxLink": fixture_url('www.qweather.com', '/weather/shenzhen-101280601.html'),
         "daily": [
             {
                 "fxDate": "2026-07-07",
@@ -297,7 +299,7 @@ def _weather_daily_payload() -> dict:
             }
         ],
         "refer": {
-            "sources": ["https://developer.qweather.com/attribution.html"],
+            "sources": [fixture_url('developer.qweather.com', '/attribution.html')],
             "license": ["QWeather Developers License"],
         },
     }
@@ -307,7 +309,7 @@ def _weather_hourly_payload() -> dict:
     return {
         "code": "200",
         "updateTime": "2026-07-06T16:00+08:00",
-        "fxLink": "https://www.qweather.com/weather/shenzhen-101280601.html",
+        "fxLink": fixture_url('www.qweather.com', '/weather/shenzhen-101280601.html'),
         "hourly": [
             {
                 "fxTime": "2026-07-07T09:00+08:00",
@@ -328,7 +330,7 @@ def _weather_hourly_payload() -> dict:
             }
         ],
         "refer": {
-            "sources": ["https://developer.qweather.com/attribution.html"],
+            "sources": [fixture_url('developer.qweather.com', '/attribution.html')],
             "license": ["QWeather Developers License"],
         },
     }

@@ -9,13 +9,15 @@ from PIL import Image
 from app.core.config import Settings
 from app.services import photo_guard
 
+from sample_data import fixture_url
+
 
 def _settings(**overrides: Any) -> Settings:
     values = {
         "_env_file": None,
         "app_env": "test",
         "photo_guard_enabled": True,
-        "photo_guard_api_base_url": "http://127.0.0.1:19006/v1",
+        "photo_guard_api_base_url": fixture_url('127.0.0.1:19006', '/v1', scheme='http'),
         "photo_guard_model": "guard-test",
         "photo_guard_max_source_pixels": 64_000_000,
         "photo_guard_max_inference_pixels": 1_500_000,
@@ -126,7 +128,7 @@ def test_guard_uses_dashscope_json_request(monkeypatch) -> None:
     assert base64.b64decode(image_url.split(",", 1)[1]).startswith(b"\xff\xd8\xff")
     assert payload["messages"][0]["content"][1]["text"].startswith("自定义建筑照片")
     assert "JSON" in payload["messages"][0]["content"][1]["text"]
-    assert captured["endpoint"] == "http://127.0.0.1:19006/v1/chat/completions"
+    assert captured["endpoint"] == fixture_url('127.0.0.1:19006', '/v1/chat/completions', scheme='http')
 
 
 def test_guard_reuses_dashscope_configuration(monkeypatch) -> None:
@@ -134,7 +136,7 @@ def test_guard_reuses_dashscope_configuration(monkeypatch) -> None:
         photo_guard_api_base_url="",
         photo_guard_model="",
         photo_guard_api_key="",
-        qwen_api_base_url="https://dashscope.example/compatible-mode/v1",
+        qwen_api_base_url=fixture_url('dashscope.example', '/compatible-mode/v1'),
         qwen3_vl_flash_model="qwen3-vl-flash",
         dashscope_api_key="secret",
     )
@@ -150,7 +152,7 @@ def test_guard_reuses_dashscope_configuration(monkeypatch) -> None:
             return None
 
         def post(self, endpoint: str, *, json: dict[str, Any]):
-            assert endpoint == "https://dashscope.example/compatible-mode/v1/chat/completions"
+            assert endpoint == fixture_url('dashscope.example', '/compatible-mode/v1/chat/completions')
             assert json["model"] == "qwen3-vl-flash"
             return type(
                 "Response",

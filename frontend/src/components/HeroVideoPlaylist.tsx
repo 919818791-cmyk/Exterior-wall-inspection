@@ -1,13 +1,13 @@
 import { useRef, useState } from "react";
 
-const defaultHeroVideos = ["/videos/N1.mp4", "/videos/N2.mp4", "/videos/N3.mp4"];
+const videos = ["/videos/N1.mp4", "/videos/N2.mp4"];
 
 type NetworkInformation = {
   effectiveType?: string;
   saveData?: boolean;
 };
 
-export function HeroVideoPlaylist({ videos = defaultHeroVideos }: { videos?: readonly string[] }) {
+export function HeroVideoPlaylist() {
   const videoRefs = useRef<Array<HTMLVideoElement | null>>([]);
   const [activeVideoIndex, setActiveVideoIndex] = useState(0);
 

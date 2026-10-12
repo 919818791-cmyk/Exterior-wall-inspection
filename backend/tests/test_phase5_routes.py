@@ -24,6 +24,8 @@ from app.schemas.phase5 import (
     DetectionStartRequest,
 )
 
+from sample_data import fixture_url
+
 
 def test_phase5_routes_are_registered() -> None:
     paths = {route.path for route in app.routes}
@@ -335,6 +337,15 @@ def test_formal_detection_routes_models_by_photo_type() -> None:
     ]
 
 
+def test_formal_crack_only_selection_filters_other_raw_results() -> None:
+    inference = {
+        "detections": [{"type": "crack"}, {"type": "spalling"}, {"type": "damage"}],
+    }
+    result = _formal_compatible_inference(SimpleNamespace(photo_type="visible"), inference, ["crack"])
+    assert result["requested_models"] == ["crack"]
+    assert result["detections"] == [{"type": "crack"}]
+
+
 @pytest.mark.parametrize(
     ("photo_type", "models", "expected_message"),
     [
@@ -371,7 +382,7 @@ def test_algorithm_task_photo_exposes_photo_type_to_worker() -> None:
         {
             "photo_id": str(uuid4()),
             "original_filename": "thermal.jpg",
-            "download_url": "https://objects.test/thermal.jpg",
+            "download_url": fixture_url('objects.test', '/thermal.jpg'),
             "storage_bucket": "test",
             "storage_object_key": "photos/thermal.jpg",
             "photo_type": "thermal",

@@ -309,7 +309,7 @@ async def infer_trial_images(
     max_image_pixels: int = DEFAULT_MAX_IMAGE_PIXELS,
     inference_max_image_pixels: int = DEFAULT_INFERENCE_MAX_IMAGE_PIXELS,
     max_tiles_per_image: int = DEFAULT_MAX_TILES_PER_IMAGE,
-    max_tiles_per_request: int = DEFAULT_MAX_TILES_PER_REQUEST,
+    max_tiles_per_request: int | None = DEFAULT_MAX_TILES_PER_REQUEST,
 ) -> list[dict[str, Any]]:
     """Run tiled vision inference and return one legacy-compatible result per image."""
     normalized_api_key = api_key.strip()
@@ -408,7 +408,7 @@ def estimate_trial_api_request_count(
     max_image_pixels: int = DEFAULT_MAX_IMAGE_PIXELS,
     inference_max_image_pixels: int = DEFAULT_INFERENCE_MAX_IMAGE_PIXELS,
     max_tiles_per_image: int = DEFAULT_MAX_TILES_PER_IMAGE,
-    max_tiles_per_request: int = DEFAULT_MAX_TILES_PER_REQUEST,
+    max_tiles_per_request: int | None = DEFAULT_MAX_TILES_PER_REQUEST,
 ) -> int:
     """Return the exact preflight tile budget used for Qwen API requests."""
     return _validate_image_batch(
@@ -565,7 +565,7 @@ def _inference_result(
     state: _ImageState,
     *,
     model: str,
-    provider: Literal["qwen"],
+    provider: Literal["qwen", "yolo"],
     concurrency: int,
     visible_requested_models: frozenset[str] = VISIBLE_LIGHT_DEFECT_TYPES,
 ) -> dict[str, Any]:
@@ -669,13 +669,13 @@ def _validate_image_batch(
     max_image_pixels: int,
     inference_max_image_pixels: int,
     max_tiles_per_image: int,
-    max_tiles_per_request: int,
+    max_tiles_per_request: int | None,
 ) -> int:
     if (
         max_image_pixels <= 0
         or inference_max_image_pixels <= 0
         or max_tiles_per_image <= 0
-        or max_tiles_per_request <= 0
+        or (max_tiles_per_request is not None and max_tiles_per_request <= 0)
     ):
         raise ValueError("Trial image limits must be positive integers.")
 
@@ -684,6 +684,9 @@ def _validate_image_batch(
         if not isinstance(image_input.content, bytes) or not image_input.content:
             raise TrialQwenInferenceError(f"Image is empty: {image_input.filename}")
         try:
+            # PNG EXIF lookup may load pixels; verify on a fresh image first.
+            with Image.open(BytesIO(image_input.content)) as source:
+                source.verify()
             with Image.open(BytesIO(image_input.content)) as source:
                 if source.format not in SUPPORTED_IMAGE_FORMATS:
                     raise TrialQwenInferenceError(
@@ -699,27 +702,24 @@ def _validate_image_batch(
                     raise TrialQwenInferenceError(
                         f"Image exceeds {max_image_pixels} pixels: {image_input.filename}"
                     )
+                # Match ImageOps.exif_transpose in _open_image. Taking the
+                # larger of both orientations overcounts landscape photos.
+                orientation = source.getexif().get(274, 1)
+                if orientation in {5, 6, 7, 8}:
+                    width, height = height, width
                 processing_width, processing_height = _scaled_dimensions(
                     width,
                     height,
                     inference_max_image_pixels,
                 )
-                rotated_width, rotated_height = _scaled_dimensions(
-                    height,
-                    width,
-                    inference_max_image_pixels,
-                )
-                normal_tiles = _tile_count(processing_width, processing_height)
-                rotated_tiles = _tile_count(rotated_width, rotated_height)
-                tile_count = max(normal_tiles, rotated_tiles)
+                tile_count = _tile_count(processing_width, processing_height)
                 if tile_count > max_tiles_per_image:
                     raise TrialQwenInferenceError(
                         f"Image creates too many tiles: {image_input.filename}"
                     )
                 total_tiles += tile_count
-                if total_tiles > max_tiles_per_request:
+                if max_tiles_per_request is not None and total_tiles > max_tiles_per_request:
                     raise TrialQwenInferenceError("Trial request creates too many image tiles.")
-                source.verify()
         except TrialQwenInferenceError:
             raise
         except Exception as exc:

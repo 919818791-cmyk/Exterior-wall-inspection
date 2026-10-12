@@ -16,6 +16,7 @@ from app.api.dependencies import (
     get_optional_current_user,
 )
 from app.api.projects import _ensure_project_editable, _get_project_or_404
+from app.core.config import get_settings
 from app.db.session import get_db
 from app.enums.status import PhotoPrecheckStatus, PhotoStatus, PhotoType
 from app.models.tables import Photo, UploadBatch
@@ -24,7 +25,7 @@ from app.schemas.phase4 import (
     UploadBatchCreateRequest,
     UploadBatchRead,
 )
-from app.services.object_storage import presigned_get_url, put_object, remove_object
+from app.services.object_storage import put_object, remove_object, signed_object_url
 from app.services.photo_metadata import (
     FormalPhotoMetadata,
     extract_formal_photo_metadata,
@@ -58,8 +59,9 @@ def _non_drone_photo_reason(metadata: FormalPhotoMetadata) -> str:
 
 
 def _photo_to_read(photo: Photo) -> PhotoRead:
-    preview_url = presigned_get_url(photo.storage_bucket, photo.storage_object_key)
-    thumbnail_url = presigned_get_url(photo.storage_bucket, photo.thumbnail_object_key) or preview_url
+    api_base_url = get_settings().api_prefix
+    preview_url = signed_object_url(api_base_url, photo.storage_bucket, photo.storage_object_key)
+    thumbnail_url = signed_object_url(api_base_url, photo.storage_bucket, photo.thumbnail_object_key) or preview_url
     return PhotoRead(
         id=photo.id,
         project_id=photo.project_id,

@@ -12,6 +12,8 @@ from app.db.session import get_db
 from app.main import app
 from app.models.tables import UserAccount
 
+from sample_data import synthetic_phone
+
 
 @pytest.fixture
 def account_client():
@@ -19,7 +21,7 @@ def account_client():
     UserAccount.__table__.create(engine)
     with Session(engine) as db:
         admin = UserAccount(username="delete-admin", password_hash=hash_password("Admin123!"), role="admin", status="active")
-        target = UserAccount(username="delete-customer", password_hash=hash_password("Customer123!"), role="customer", status="active", phone="13800000999", real_name="客户", organization="单位")
+        target = UserAccount(username="delete-customer", password_hash=hash_password("Customer123!"), role="customer", status="active", phone=synthetic_phone(5), real_name="客户", organization="单位")
         db.add_all([admin, target])
         db.commit()
         app.dependency_overrides[get_db] = lambda: db

@@ -4,6 +4,8 @@ from uuid import uuid4
 from app.services import photo_precheck
 from app.services.photo_guard import PhotoGuardResult, PhotoGuardUnavailable
 
+from sample_data import fixture_url
+
 
 class FakeDb:
     def __init__(self) -> None:
@@ -39,7 +41,7 @@ def _settings() -> SimpleNamespace:
         photo_guard_enabled=True,
         photo_guard_model="guard-test",
         photo_guard_provider="dashscope",
-        photo_guard_api_base_url="https://guard.test/v1",
+        photo_guard_api_base_url=fixture_url('guard.test', '/v1'),
         photo_guard_api_key="test-key",
     )
 

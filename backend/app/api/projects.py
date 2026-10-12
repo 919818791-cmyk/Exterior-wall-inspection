@@ -206,9 +206,12 @@ def _project_list_item(
 def _project_detail(db: Session, project: Project) -> ProjectDetailRead:
     current_task = db.get(DetectionTask, project.current_task_id) if project.current_task_id else None
     return ProjectDetailRead(
-        **_project_list_item(db, project).model_dump(),
-        current_task_id=project.current_task_id,
-        current_task_status=current_task.status if current_task else None,
+        **{
+            **_project_list_item(db, project).model_dump(),
+            "current_task_id": project.current_task_id,
+            "current_task_status": current_task.status if current_task else None,
+            "current_task_failed_reason": current_task.failed_reason if current_task else None,
+        },
     )
 
 
@@ -308,6 +311,10 @@ def list_projects(
         ).all()
     )
     current_task_ids = [project.current_task_id for project in projects if project.current_task_id]
+    current_tasks = {
+        task.id: task
+        for task in db.scalars(select(DetectionTask).where(DetectionTask.id.in_(current_task_ids)))
+    } if current_task_ids else {}
     detection_config_by_project = {
         project_id: {
             "model_types": list(model_types or []),
@@ -352,6 +359,7 @@ def list_projects(
 
     items: list[ProjectListItem] = []
     for project in projects:
+        current_task = current_tasks.get(project.current_task_id)
         first_photo = first_photos.get(project.id)
         first_photo_url = None
         # Prefer the lightweight thumbnail. Falling back to the original keeps
@@ -378,7 +386,11 @@ def list_projects(
                     bool(getattr(project, "is_example", False))
                     or project.id in building_model_project_ids
                 ),
-            ).model_copy(update={"first_photo_url": first_photo_url})
+            ).model_copy(update={
+                "first_photo_url": first_photo_url,
+                "current_task_status": current_task.status if current_task else None,
+                "current_task_failed_reason": current_task.failed_reason if current_task else None,
+            })
         )
     return items
 

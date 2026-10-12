@@ -22,7 +22,7 @@ DEMO_USERS = (
     {
         "id": UUID("00000000-0000-0000-0000-000000000001"),
         "username": "customer",
-        "phone": "13800000001",
+        "phone_setting": "auth_demo_customer_phone",
         "password": "Customer123!",
         "real_name": "演示客户",
         "role": UserRole.CUSTOMER.value,
@@ -31,7 +31,7 @@ DEMO_USERS = (
     {
         "id": UUID("00000000-0000-0000-0000-000000000002"),
         "username": "reviewer",
-        "phone": "13800000002",
+        "phone_setting": "auth_demo_reviewer_phone",
         "password": "Reviewer123!",
         "real_name": "演示审核员",
         "role": UserRole.REVIEWER.value,
@@ -40,7 +40,7 @@ DEMO_USERS = (
     {
         "id": UUID("00000000-0000-0000-0000-000000000003"),
         "username": "admin",
-        "phone": "13800000003",
+        "phone_setting": "auth_demo_admin_phone",
         "password": "Admin123!",
         "real_name": "平台管理员",
         "role": UserRole.ADMIN.value,
@@ -79,16 +79,18 @@ class AuthenticatedSession:
 
 def ensure_demo_users(db: Session) -> None:
     """Seed the documented development accounts only when explicitly enabled."""
-    if not get_settings().auth_seed_demo_users:
+    settings = get_settings()
+    if not settings.auth_seed_demo_users:
         return
 
     for account in DEMO_USERS:
+        phone = getattr(settings, account["phone_setting"])
         user = db.get(UserAccount, account["id"])
         if user is None:
             user = UserAccount(
                 id=account["id"],
                 username=account["username"],
-                phone=account["phone"],
+                phone=phone,
                 password_hash=hash_password(account["password"]),
                 real_name=account["real_name"],
                 role=account["role"],
@@ -98,8 +100,8 @@ def ensure_demo_users(db: Session) -> None:
             db.add(user)
             continue
 
-        if user.phone is None:
-            user.phone = account["phone"]
+        if user.phone is None and phone is not None:
+            user.phone = phone
 
         # These identifiers belonged to pre-auth development placeholders. Upgrade them
         # to the documented demo identities while preserving existing project ownership.

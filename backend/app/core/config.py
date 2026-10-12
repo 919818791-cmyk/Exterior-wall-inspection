@@ -1,5 +1,7 @@
+import re
 from functools import lru_cache
 from typing import Annotated, Any, Literal
+from urllib.parse import urlsplit
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -20,19 +22,13 @@ class Settings(BaseSettings):
     )
 
     app_name: str = "Building Exterior Inspection Platform"
-    app_env: str = "development"
+    app_env: Literal["development", "test", "staging", "production"] = "development"
     debug: bool = True
     api_prefix: str = "/api"
+    upload_temp_dir: str = ""
     api_docs_enabled: bool | None = None
     backend_cors_origins: Annotated[list[str], NoDecode] = Field(
-        default_factory=lambda: [
-            "http://localhost:5173",
-            "http://127.0.0.1:5173",
-            "http://localhost:5174",
-            "http://127.0.0.1:5174",
-            "http://localhost:5175",
-            "http://127.0.0.1:5175",
-        ]
+        default_factory=list
     )
 
     database_url: str = (
@@ -41,11 +37,15 @@ class Settings(BaseSettings):
     )
 
     minio_endpoint: str = "127.0.0.1:9002"
-    minio_public_url: str = "http://127.0.0.1:9002"
+    minio_public_url: str = ""
     minio_access_key: str = "building_exterior_minio"
     minio_secret_key: str = "building_exterior_minio_secret"
     minio_bucket: str = "building-exterior"
     yolo_model_max_upload_bytes: int = Field(default=1024 * 1024 * 1024, ge=1)
+    yolo_runtime_enabled: bool = False
+    yolo_runtime_image: str = "building-exterior-algorithm-model:cuda"
+    yolo_runtime_device: str = "cuda:0"
+    yolo_runtime_startup_timeout_seconds: int = Field(default=180, ge=10)
 
     redis_url: str = "redis://127.0.0.1:6379/0"
     rq_default_queue: str = "algorithm"
@@ -79,10 +79,11 @@ class Settings(BaseSettings):
 
     trial_photo_detection_limit: int = Field(default=1000, ge=1)
     formal_photo_detection_limit: int = Field(default=1000, ge=1)
-    trial_max_image_pixels: int = Field(default=64_000_000, ge=1_000_000)
-    trial_inference_max_image_pixels: int = Field(default=64_000_000, ge=1_000_000)
-    trial_max_tiles_per_image: int = Field(default=100, ge=1)
-    trial_max_tiles_per_request: int = Field(default=1000, ge=1)
+    # Preserve the deployed budgets; environment values may lower, but not bypass them.
+    trial_max_image_pixels: int = Field(default=64_000_000, ge=1_000_000, le=64_000_000)
+    trial_inference_max_image_pixels: int = Field(default=64_000_000, ge=1_000_000, le=64_000_000)
+    trial_max_tiles_per_image: int = Field(default=100, ge=1, le=100)
+    trial_max_tiles_per_request: int = Field(default=1000, ge=1, le=1000)
     trial_generate_limit_per_user: int = Field(default=5, ge=1)
     trial_generate_window_seconds: int = Field(default=600, ge=60)
     trial_global_job_concurrency: int = Field(default=4, ge=1, le=10)
@@ -95,6 +96,7 @@ class Settings(BaseSettings):
     photo_guard_api_base_url: str = ""
     photo_guard_model: str = ""
     photo_guard_api_key: str = ""
+    photo_guard_systemd_user_service: Literal["", "building-photo-guard.service"] = ""
     photo_guard_request_timeout_seconds: float = Field(
         default=60,
         ge=5,
@@ -121,11 +123,12 @@ class Settings(BaseSettings):
     weather_cache_ttl_now_seconds: int = Field(default=300, ge=30)
     weather_cache_ttl_forecast_seconds: int = Field(default=900, ge=30)
 
-    worker_backend_base_url: str = "http://localhost:8000"
+    worker_backend_base_url: str = ""
     worker_token: str = "change-this-worker-token"
     worker_lease_seconds: int = 600
     dashscope_api_key: str = ""
-    qwen_api_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    qwen_api_base_url: str = ""
+    qwen_privacy_policy_url: str = ""
     qwen_model: str = "qwen3-vl-plus"
     qwen3_vl_flash_model: str = "qwen3-vl-flash"
     local_qwen_api_key: str = ""
@@ -154,6 +157,9 @@ class Settings(BaseSettings):
     auth_secret_key: str = "change-this-auth-secret-key-before-production"
     auth_access_token_expire_minutes: int = 480
     auth_seed_demo_users: bool = True
+    auth_demo_customer_phone: str | None = None
+    auth_demo_reviewer_phone: str | None = None
+    auth_demo_admin_phone: str | None = None
 
     qweather_api_host: str = ""
     qweather_api_key: str = ""
@@ -197,6 +203,42 @@ class Settings(BaseSettings):
     def parse_cors_origins(cls, value: Any) -> list[str] | Any:
         if isinstance(value, str):
             return [origin.strip() for origin in value.split(",") if origin.strip()]
+        return value
+
+    @field_validator("app_env", mode="before")
+    @classmethod
+    def normalize_app_env(cls, value: Any) -> Any:
+        return value.strip().lower() if isinstance(value, str) else value
+
+    @field_validator(
+        "auth_demo_customer_phone", "auth_demo_reviewer_phone", "auth_demo_admin_phone",
+        mode="before",
+    )
+    @classmethod
+    def validate_demo_phone(cls, value: Any) -> str | None:
+        if value is None or not str(value).strip():
+            return None
+        phone = str(value).strip()
+        if not re.fullmatch(r"1[3-9]\d{9}", phone):
+            raise ValueError("Demo phone must be a valid mainland China mobile number")
+        return phone
+
+    @field_validator(
+        "qwen_api_base_url", "qwen_privacy_policy_url", "minio_public_url", "worker_backend_base_url",
+    )
+    @classmethod
+    def validate_configured_http_url(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            return value
+        parsed = urlsplit(value)
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+        ):
+            raise ValueError("Configured URL must use HTTP(S) with a host and no embedded credentials")
         return value
 
     @model_validator(mode="after")
@@ -256,11 +298,11 @@ class Settings(BaseSettings):
             self.local_qwen_api_base_url.strip() and self.local_qwen_model.strip()
         )
         if (
-            not self.dashscope_api_key.strip()
+            not (self.dashscope_api_key.strip() and self.qwen_api_base_url.strip())
             and not local_qwen_configured
         ):
             problems.append(
-                "DASHSCOPE_API_KEY or a local Qwen endpoint is required"
+                "DASHSCOPE_API_KEY and QWEN_API_BASE_URL, or a local Qwen endpoint, are required"
             )
         if problems:
             raise ValueError("Unsafe production configuration: " + "; ".join(problems))

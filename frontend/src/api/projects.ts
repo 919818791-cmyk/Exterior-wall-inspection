@@ -45,7 +45,10 @@ export function projectQueryOptions(projectId: string) {
     queryKey: ["projects", projectId],
     queryFn: () => apiRequest<ProjectDetail>(`/projects/${projectId}`),
     enabled: Boolean(projectId),
-    refetchInterval: 30_000
+    refetchInterval: (query) => (
+      query.state.data?.status === "queued" || query.state.data?.status === "detecting"
+        ? 5_000 : 30_000
+    )
   });
 }
 

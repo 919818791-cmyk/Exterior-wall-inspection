@@ -71,6 +71,7 @@ export function ProjectListPage() {
             onOpen={(project) => navigate(`/detections/${project.id}`)}
             openOnRowClick
             renderCompletionTime={(project) => {
+              if (project.professionalState.status === "failed") return <span title={project.current_task_failed_reason ?? undefined}>检测失败，可重试</span>;
               if (project.professionalState.status === "draft") return "未开始检测";
               if (project.professionalState.status === "completed") {
                 if (!project.completed_at) return "--";

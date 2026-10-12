@@ -351,7 +351,7 @@ def _result_detections(
 
     for index, box in enumerate(boxes):
         detected_type = _result_defect_type(result, box)
-        if detected_type is not None and detected_type != defect_type:
+        if detected_type != defect_type:
             continue
 
         xyxy = [float(value) for value in box.xyxy[0].tolist()]

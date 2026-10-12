@@ -21,6 +21,8 @@ from app.services.local_qwen_lifecycle import LocalQwenStatus
 from app.services.trial_qwen_inference import TrialQwenImageInput
 from test_system_settings import _settings
 
+from sample_data import fixture_url
+
 
 @pytest.fixture
 def registry(monkeypatch):
@@ -53,7 +55,7 @@ def save(registry, *items):
 
 
 def create_vision(registry, kind="cloud_api", **fields):
-    payload = {"name": "专项视觉模型", "kind": kind, "model_name": "special-vl", "api_base_url": "https://special.test/v1", "api_key_env": "SPECIAL_API_KEY", **fields}
+    payload = {"name": "专项视觉模型", "kind": kind, "model_name": "special-vl", "api_base_url": fixture_url('special.test', '/v1'), "api_key_env": "SPECIAL_API_KEY", **fields}
     response = registry.client.post("/api/vision-models", json=payload)
     assert response.status_code == 201, response.text
     return response.json()
@@ -139,6 +141,76 @@ def test_fixed_yolo_version_cannot_be_removed(registry):
     assert registry.client.delete(f"/api/yolo-models/{yolo['id']}/versions/{version.id}").status_code == 409
 
 
+def test_running_yolo_executes_quick_detection_and_restores_fixed_version(registry, monkeypatch):
+    from io import BytesIO
+    import httpx
+    from PIL import Image
+    from app.services import yolo_inference, yolo_runtime
+
+    yolo = create_yolo(registry)
+    version = create_version(registry, yolo)
+    assert save(registry, bind(registry, "crack_prompt", "yolo", yolo["id"], str(version.id))).status_code == 200
+    checked = []
+    def runtime_url(selected):
+        checked.append((str(selected.id), selected.sha256))
+        return "http://127.0.0.1:19002"
+    monkeypatch.setattr(yolo_runtime, "runtime_url", runtime_url)
+    plan = strategies.resolve_plan(registry.db, "general", ["crack"])
+    snapshot = plan[0].snapshot
+    assert snapshot["version_id"] == str(version.id)
+    assert snapshot["sha256"] == version.sha256
+    assert plan[0].runtime.provider == "yolo"
+
+    # A queued task must retain its weights after administrators change routing.
+    newer = create_version(registry, yolo, "v2")
+    assert save(registry, bind(registry, "crack_prompt", "yolo", yolo["id"], str(newer.id))).status_code == 200
+    restored = strategies.restore_plan([snapshot], registry.db)
+    assert restored[0].runtime.id == version.id
+    calls = []
+    def handler(request):
+        calls.append(request)
+        return httpx.Response(200, json={"model_id": yolo["id"], "version_id": str(version.id),
+            "sha256": version.sha256, "model_version": version.version,
+            "detections": [{"type": "crack", "class_id": 0, "class_name": "crack", "confidence": 0.95,
+                            "bbox": {"x": 10, "y": 20, "width": 100, "height": 200}}]})
+    client_class = httpx.AsyncClient
+    monkeypatch.setattr(yolo_inference.httpx, "AsyncClient", lambda **kwargs: client_class(transport=httpx.MockTransport(handler), **kwargs))
+    output = BytesIO()
+    Image.new("RGB", (640, 480)).save(output, format="PNG")
+    image = TrialQwenImageInput(filename="wall.png", content=output.getvalue(), content_type="image/png")
+    async def no_cloud(*args, **kwargs):
+        pytest.fail("YOLO must use its version service")
+    result = asyncio.run(strategies.execute_plan(restored, [image], infer=no_cloud))[0]
+    assert result["detections"][0]["model_provider"] == "yolo"
+    assert result["detections"][0]["model_version"] == version.version
+    assert result["strategy_models"][0]["version_id"] == str(version.id)
+    assert checked == [(str(version.id), version.sha256)] * 2
+    assert len(calls) == 1
+
+    # Exercise the quick-experience adapter through result rendering as well.
+    assert save(registry, bind(registry, "crack_prompt", "yolo", yolo["id"], str(version.id))).status_code == 200
+    findings, raw = asyncio.run(reports._trial_outputs_for_images(
+        [image], [{"filename": image.filename}], db=registry.db, source="test", models=["裂缝"]))
+    assert findings[0]["model"] == "裂缝" and findings[0]["bbox"]["x"] == 10
+    assert raw[0]["upstream_provider"] == "yolo"
+    assert raw[0]["strategy_models"][0]["version_id"] == str(version.id)
+
+
+@pytest.mark.parametrize("message", ["该权重版本已停止。", "模型正在加载和预热，请稍候。", "NVIDIA 驱动未加载。"])
+def test_yolo_plan_reports_actual_runtime_status(registry, monkeypatch, message):
+    from app.services import yolo_runtime
+    yolo = create_yolo(registry)
+    version = create_version(registry, yolo)
+    assert save(registry, bind(registry, "crack_prompt", "yolo", yolo["id"], str(version.id))).status_code == 200
+    def unavailable(_):
+        raise HTTPException(409, message)
+    monkeypatch.setattr(yolo_runtime, "runtime_url", unavailable)
+    with pytest.raises(HTTPException) as error:
+        strategies.resolve_plan(registry.db, "general", ["crack"])
+    assert error.value.status_code == 409
+    assert version.version in error.value.detail and message in error.value.detail
+
+
 def test_cloud_profiles_crud_and_never_return_key(registry, monkeypatch):
     monkeypatch.setenv("SPECIAL_API_KEY", "secret-test-key")
     model = create_vision(registry)
@@ -166,16 +238,16 @@ def test_yolo_requires_explicit_version_and_preserves_separate_bindings(registry
     assert save(registry, bind(registry, "coating_crack_prompt", "yolo", other["id"], str(first.id))).status_code == 422
 
 
-@pytest.mark.parametrize("fields", [{"api_base_url": "file:///models"}, {"api_base_url": "https://user:key@example.test/v1"}, {"api_key_env": "literal-secret"}, {"api_key": "should-not-be-stored"}])
+@pytest.mark.parametrize("fields", [{"api_base_url": "file:///models"}, {"api_base_url": fixture_url('user:key@example.test', '/v1')}, {"api_key_env": "literal-secret"}, {"api_key": "should-not-be-stored"}])
 def test_invalid_api_settings_return_validation_error(registry, fields):
-    response = registry.client.post("/api/vision-models", json={"name": "Bad", "kind": "cloud_api", "model_name": "bad", "api_base_url": "https://valid.test/v1", **fields})
+    response = registry.client.post("/api/vision-models", json={"name": "Bad", "kind": "cloud_api", "model_name": "bad", "api_base_url": fixture_url('valid.test', '/v1'), **fields})
     assert response.status_code == 422
 
 
 def test_local_configuration_is_saved_without_starting(registry, monkeypatch):
     calls = []
     monkeypatch.setattr(vision_api, "start_local_qwen", lambda *_: calls.append("start"))
-    local = create_vision(registry, "local_vlm", api_base_url="http://127.0.0.1:9006/v1", api_key_env="", model_path="/models/special-vl")
+    local = create_vision(registry, "local_vlm", api_base_url=fixture_url('127.0.0.1:9006', '/v1', scheme='http'), api_key_env="", model_path="/models/special-vl")
     assert save(registry, bind(registry, "coating_crack_prompt", "local_vlm", local["id"])).status_code == 200
     assert calls == []
     assert not local["control_supported"]
@@ -200,7 +272,7 @@ def test_local_switch_reflects_process_presence_even_when_health_fails(registry,
 
 
 def test_local_control_only_runs_from_management_endpoint(registry, monkeypatch):
-    local = create_vision(registry, "local_vlm", api_base_url="http://127.0.0.1:9006/v1", api_key_env="", model_path="/models/special-vl")
+    local = create_vision(registry, "local_vlm", api_base_url=fixture_url('127.0.0.1:9006', '/v1', scheme='http'), api_key_env="", model_path="/models/special-vl")
     original = models.model_read
     monkeypatch.setattr(models, "model_read", lambda db, identifier: original(db, identifier).model_copy(update={"control_supported": True, "runtime_status": "stopped"}))
     calls = []
@@ -211,10 +283,58 @@ def test_local_control_only_runs_from_management_endpoint(registry, monkeypatch)
     response = registry.client.post(f"/api/vision-models/{local['id']}/runtime/start")
     assert response.status_code == 200
     assert response.json()["state"] == "starting"
-    assert calls[0][:2] == ("/models/special-vl", "http://127.0.0.1:9006/v1")
+    assert calls[0][:2] == ("/models/special-vl", fixture_url('127.0.0.1:9006', '/v1', scheme='http'))
     assert calls[0][2].endswith("vision-" + local["id"])
     monkeypatch.setattr(vision_api, "stop_local_qwen", lambda *_: LocalQwenStatus("stopped", "已停止"))
     assert registry.client.post(f"/api/vision-models/{local['id']}/runtime/stop").json()["state"] == "stopped"
+
+
+def test_photo_guard_uses_its_systemd_service_and_endpoint(registry, monkeypatch):
+    monkeypatch.delenv("XDG_RUNTIME_DIR", raising=False)
+    monkeypatch.delenv("DBUS_SESSION_BUS_ADDRESS", raising=False)
+    registry.settings.photo_guard_provider = "openai_compatible"
+    registry.settings.photo_guard_model = "qwen3-vl-2b-photo-guard"
+    registry.settings.photo_guard_api_base_url = fixture_url('127.0.0.1:9006', '/v1', scheme='http')
+    registry.settings.photo_guard_systemd_user_service = "building-photo-guard.service"
+    calls = []
+
+    def run(args, **kwargs):
+        assert kwargs["env"]["DBUS_SESSION_BUS_ADDRESS"] == f"unix:path={kwargs['env']['XDG_RUNTIME_DIR']}/bus"
+        calls.append(args)
+        return SimpleNamespace(stdout="ActiveState=active\nSubState=running\nMainPID=1703\n")
+
+    def healthy(settings):
+        assert settings.local_qwen_api_base_url == fixture_url('127.0.0.1:9006', '/v1', scheme='http')
+        return True
+
+    monkeypatch.setattr(models.subprocess, "run", run)
+    monkeypatch.setattr(models, "_is_healthy", healthy)
+    monkeypatch.setattr(vision_api, "start_local_qwen", lambda *_: pytest.fail("Must not launch a second vLLM process"))
+    profile = registry.client.get("/api/vision-models").json()
+    guard = next(item for item in profile if item["id"] == "photo_guard")
+    assert guard["runtime_status"] == "running"
+    assert guard["runtime_active"] and guard["control_supported"]
+    for action in ("start", "stop"):
+        response = registry.client.post(f"/api/vision-models/photo_guard/runtime/{action}")
+        assert response.status_code == 200
+        assert ["systemctl", "--user", action, "--", "building-photo-guard.service"] in calls
+    config = models.model_config(registry.db, "photo_guard")
+    config.api_base_url = fixture_url('127.0.0.1:9999', '/v1', scheme='http')
+    assert models.managed_photo_guard_service("photo_guard", config) == ""
+    assert models.managed_photo_guard_service("local_qwen", config) == ""
+
+
+def test_managed_photo_guard_control_reports_service_failure(monkeypatch):
+    from app.services.local_qwen_lifecycle import LocalQwenLifecycleError
+    import subprocess
+    settings = _settings()
+    settings.photo_guard_systemd_user_service = "building-photo-guard.service"
+    monkeypatch.setattr(models, "get_settings", lambda: settings)
+    def fail(*args, **kwargs):
+        raise subprocess.CalledProcessError(1, args[0])
+    monkeypatch.setattr(models.subprocess, "run", fail)
+    with pytest.raises(LocalQwenLifecycleError, match="启停失败"):
+        models.control_managed_photo_guard("building-photo-guard.service", None, "start")
 
 
 def test_profiles_execute_with_separate_calls_and_immutable_snapshot(registry, monkeypatch):
@@ -227,7 +347,7 @@ def test_profiles_execute_with_separate_calls_and_immutable_snapshot(registry, m
     assert "secret-test-key" not in json.dumps(snapshots)
     settings = registry.db.get(SystemSetting, models.VISION_PREFIX + custom["id"])
     data = json.loads(settings.value)
-    data.update(model_name="updated-model", api_base_url="https://changed.test/v1")
+    data.update(model_name="updated-model", api_base_url=fixture_url('changed.test', '/v1'))
     settings.value = json.dumps(data)
     registry.db.commit()
     restored = strategies.restore_plan(snapshots, registry.db)
@@ -238,7 +358,7 @@ def test_profiles_execute_with_separate_calls_and_immutable_snapshot(registry, m
     images = [TrialQwenImageInput(filename="visible.jpg", content=b"unused", content_type="image/jpeg"), TrialQwenImageInput(filename="thermal.jpg", content=b"unused", content_type="image/jpeg", thermal_imaging_available=True)]
     results = asyncio.run(strategies.execute_plan(restored, images, infer=infer))
     assert [call[1]["model"] for call in calls] == ["special-vl", "qwen3-vl-32b"]
-    assert calls[0][1]["base_url"] == "https://special.test/v1"
+    assert calls[0][1]["base_url"] == fixture_url('special.test', '/v1')
     assert calls[0][1]["api_key"] == "secret-test-key"
     assert calls[0][1]["visible_defect_types"] == ["crack", "spalling"]
     assert calls[1][1]["max_concurrency"] == 1
@@ -254,6 +374,21 @@ def test_quick_detection_keeps_actionable_strategy_error(registry):
         asyncio.run(reports._trial_outputs_for_images([image], [{"filename": image.filename}], db=registry.db, source="test", models=["裂缝"]))
     assert raised.value.status_code == 409
     assert "尚未配置" in raised.value.detail
+
+
+@pytest.mark.parametrize("selected", [["crack"], ["spalling"], ["crack", "spalling"]])
+def test_strategy_output_only_keeps_requested_types(registry, selected):
+    plan = strategies.resolve_plan(registry.db, "general", selected)
+    image = TrialQwenImageInput(filename="visible.jpg", content=b"unused", content_type="image/jpeg")
+    source = {"detections": [{"type": "crack"}, {"type": "spalling"}, {"type": "damage"}, None]}
+
+    async def infer(images, **kwargs):
+        assert kwargs["visible_defect_types"] == selected
+        return [source]
+
+    result = asyncio.run(strategies.execute_plan(plan, [image], infer=infer))[0]
+    assert [box["type"] for box in result["detections"]] == selected
+    assert len(source["detections"]) == 4
 
 
 def test_limits_save_without_global_model_configuration(registry, monkeypatch):
@@ -284,7 +419,7 @@ def test_cloud_strategy_uses_real_image_pipeline_and_custom_endpoint(registry, m
     image = TrialQwenImageInput(filename="wall.png", content=output.getvalue(), content_type="image/png")
     result = asyncio.run(strategies.execute_plan(strategies.resolve_plan(registry.db, "coating", ["crack", "peeling"]), [image], infer=qwen.infer_trial_images))[0]
     assert len(requests) == 1
-    assert str(requests[0].url) == "https://special.test/v1/chat/completions"
+    assert str(requests[0].url) == fixture_url('special.test', '/v1/chat/completions')
     assert requests[0].headers["authorization"] == "Bearer secret-test-key"
     body = json.loads(requests[0].content)
     assert body["model"] == "special-vl"
@@ -310,19 +445,19 @@ def test_photo_guard_preserves_existing_local_flash_environment(registry):
     from app.services.photo_guard_strategy import photo_guard_strategy_settings
     registry.settings.photo_guard_provider = "openai_compatible"
     registry.settings.photo_guard_model = "local-qwen3-vl-flash"
-    registry.settings.photo_guard_api_base_url = "http://127.0.0.1:19006/v1"
+    registry.settings.photo_guard_api_base_url = fixture_url('127.0.0.1:19006', '/v1', scheme='http')
     registry.settings.photo_guard_api_key = "guard-private-key"
     item = next(item for item in registry.client.get("/api/detection-strategies").json() if item["key"] == "photo_guard_prompt")
     assert item["model_kind"] == "local_vlm"
     assert item["model_id"] == "photo_guard"
     profile = next(item for item in registry.client.get("/api/vision-models").json() if item["id"] == "photo_guard")
     assert profile["effective_model_name"] == "local-qwen3-vl-flash"
-    assert profile["effective_api_base_url"] == "http://127.0.0.1:19006/v1"
+    assert profile["effective_api_base_url"] == fixture_url('127.0.0.1:19006', '/v1', scheme='http')
     assert "guard-private-key" not in json.dumps(profile)
     resolved, _ = photo_guard_strategy_settings(registry.db, registry.settings)
     assert resolved.photo_guard_api_key == "guard-private-key"
     assert resolved.photo_guard_model != registry.settings.local_qwen_model
-    assert registry.settings.photo_guard_api_base_url == "http://127.0.0.1:19006/v1"
+    assert registry.settings.photo_guard_api_base_url == fixture_url('127.0.0.1:19006', '/v1', scheme='http')
 
 
 @pytest.mark.parametrize("kind", ["cloud_api", "local_vlm"])
@@ -335,7 +470,7 @@ def test_uploaded_photo_precheck_calls_bound_cloud_or_local_profile(registry, mo
     from test_photo_precheck import _photo
 
     monkeypatch.setenv("SPECIAL_API_KEY", "guard-api-key")
-    model = create_vision(registry, kind, api_base_url="http://127.0.0.1:19007/v1" if kind == "local_vlm" else "https://special.test/v1")
+    model = create_vision(registry, kind, api_base_url=fixture_url('127.0.0.1:19007', '/v1', scheme='http') if kind == "local_vlm" else fixture_url('special.test', '/v1'))
     assert save(registry, bind(registry, "photo_guard_prompt", kind, model["id"])).status_code == 200
     row = next(item for item in registry.client.get("/api/detection-strategies").json() if item["key"] == "photo_guard_prompt")
     assert row["model_id"] == model["id"]
@@ -413,28 +548,28 @@ def test_health_uses_selected_photo_guard_profile(registry, monkeypatch):
     assert response.status_code == 200
     assert response.json()["photo_guard"]["ready"]
     assert response.json()["photo_guard"]["model"] == "special-vl"
-    assert response.json()["photo_guard"]["endpoint"] == "https://special.test/v1"
+    assert response.json()["photo_guard"]["endpoint"] == fixture_url('special.test', '/v1')
 
 
 @pytest.mark.parametrize("kind,setting_name", [("cloud_api", "qwen_api_base_url"), ("local_vlm", "local_qwen_api_base_url")])
 def test_model_without_service_address_uses_server_config(registry, kind, setting_name):
-    setattr(registry.settings, setting_name, "http://configured.test/v1")
+    setattr(registry.settings, setting_name, fixture_url('configured.test', '/v1', scheme='http'))
     payload = {"name": "默认地址模型", "kind": kind, "model_name": "test-vl"}
     response = registry.client.post("/api/vision-models", json=payload)
     assert response.status_code == 201
     model = response.json()
     assert model["api_base_url"] == ""
-    assert model["effective_api_base_url"] == "http://configured.test/v1"
+    assert model["effective_api_base_url"] == fixture_url('configured.test', '/v1', scheme='http')
     payload["name"] = "更新名称"
     updated = registry.client.patch(f"/api/vision-models/{model['id']}", json=payload)
     assert updated.status_code == 200
-    assert updated.json()["effective_api_base_url"] == "http://configured.test/v1"
+    assert updated.json()["effective_api_base_url"] == fixture_url('configured.test', '/v1', scheme='http')
 
 
 @pytest.mark.parametrize("kind,prefix", [("cloud_api", "qwen"), ("local_vlm", "local_qwen")])
 def test_model_without_service_model_name_uses_server_config(registry, kind, prefix):
     setattr(registry.settings, prefix + "_model", "server-model")
-    setattr(registry.settings, prefix + "_api_base_url", "http://configured.test/v1")
+    setattr(registry.settings, prefix + "_api_base_url", fixture_url('configured.test', '/v1', scheme='http'))
     payload = {"name": "显示名称", "kind": kind}
     response = registry.client.post("/api/vision-models", json=payload)
     assert response.status_code == 201

@@ -6,8 +6,6 @@ import { AuthPanel } from "@/components/auth/AuthModal";
 import { HeroVideoPlaylist } from "@/components/HeroVideoPlaylist";
 import { useAuthStore } from "@/stores/useAuthStore";
 
-const loginHeroVideos = ["/videos/N3.mp4"];
-
 function safeRedirectPath(value: string | null) {
   if (!value || !value.startsWith("/") || value.startsWith("//") || value.startsWith("/login")) return "/";
   return value;
@@ -35,7 +33,7 @@ export function LoginPage() {
   return (
     <main className="auth-page">
       <section aria-label="外墙巡检平台介绍" className="auth-page-hero">
-        <HeroVideoPlaylist videos={loginHeroVideos} />
+        <HeroVideoPlaylist />
         <Link className="auth-page-hero-brand" to="/" aria-label="外墙智能巡检平台首页">
           <span className="brand-mark" aria-hidden="true"><span /><span /><span /></span>
           <span className="brand-name">外墙智能巡检平台</span>

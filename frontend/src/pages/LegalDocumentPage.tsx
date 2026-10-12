@@ -1,10 +1,9 @@
 import { ArrowLeft, Building2, Scale, ShieldCheck } from "lucide-react";
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
+import { publicContact } from "@/config/publicContact";
 
 const OPERATOR_NAME = "国家城市安全发展科技研究院";
-const CONTACT_MOBILE = "13826521065";
-const CONTACT_LANDLINE = "0755-8812702";
 
 interface LegalDocumentShellProps {
   title: string;
@@ -44,8 +43,9 @@ function ContactBlock() {
         <strong>{OPERATOR_NAME}</strong>
         <span>个人信息保护与投诉联系电话</span>
         <div>
-          <a href={`tel:${CONTACT_MOBILE}`}>{CONTACT_MOBILE}</a>
-          <a href={`tel:${CONTACT_LANDLINE}`}>{CONTACT_LANDLINE}</a>
+          {publicContact.businessMobile && <a href={`tel:${publicContact.businessMobile}`}>{publicContact.businessMobile}</a>}
+          {publicContact.landline && <a href={`tel:${publicContact.landline}`}>{publicContact.landline}</a>}
+          {!publicContact.businessMobile && !publicContact.landline && <span>联系电话暂未配置</span>}
         </div>
       </div>
     </div>

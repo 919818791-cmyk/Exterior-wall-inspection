@@ -56,6 +56,7 @@ def _version_read(version: YoloModelVersion) -> YoloVersionRead:
 
 
 def _ensure_version_stopped(version: YoloModelVersion) -> None:
+    yolo_runtime.ensure_stopped(version)
     if yolo_runtime.version_status(version).state in {"running", "starting", "stopping"}:
         raise HTTPException(409, "版本正在运行或切换状态，请先停止该版本。")
 
@@ -78,6 +79,7 @@ def list_models(db: Session = Depends(get_db)) -> YoloModelCatalog:
             versions=versions_by_model.get(model.id, []),
         ) for model in models],
         max_upload_bytes=get_settings().yolo_model_max_upload_bytes,
+        inference_ready=any(version.runtime_status == "running" for versions in versions_by_model.values() for version in versions),
     )
 
 

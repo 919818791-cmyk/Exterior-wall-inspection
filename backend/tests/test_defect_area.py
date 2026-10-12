@@ -1,4 +1,7 @@
 from decimal import Decimal
+from types import SimpleNamespace
+
+from app.models.tables import Photo
 
 import pytest
 
@@ -93,3 +96,14 @@ def test_bbox_length_returns_none_without_required_measurement_data() -> None:
         {"image_width": 4032, "image_height": 3024},
         {"width": 100, "height": 100},
     ) is None
+
+
+@pytest.mark.parametrize("factory", [dict, SimpleNamespace, Photo])
+def test_measurement_fields_support_mapping_and_named_objects(factory):
+    photo = factory(calibrated_focal_length=3000, lrf_target_distance=6)
+    assert approximate_bbox_area_m2(photo, {"width": 100, "height": 50}) == Decimal("0.020000")
+
+
+@pytest.mark.parametrize("photo", [None, 12, "invalid", {}, SimpleNamespace(), Photo()])
+def test_missing_or_wrong_photo_type_does_not_produce_measurement(photo):
+    assert approximate_bbox_area_m2(photo, {"width": 100, "height": 50}) is None

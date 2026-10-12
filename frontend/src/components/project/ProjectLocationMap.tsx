@@ -68,6 +68,7 @@ function cleanAmapCredential(value: string | undefined) {
 }
 
 const AMAP_KEY = cleanAmapCredential(import.meta.env.VITE_AMAP_KEY);
+const AMAP_SDK_URL = cleanAmapCredential(import.meta.env.VITE_AMAP_SDK_URL);
 const AMAP_SERVICE_HOST = new URL(
   cleanAmapCredential(import.meta.env.VITE_AMAP_SERVICE_HOST) || "/_AMapService",
   window.location.origin
@@ -95,7 +96,15 @@ function loadAmap(key: string, serviceHost: string) {
   amapLoader = new Promise<AMapNamespace>((resolve, reject) => {
     script = document.createElement("script");
     script.async = true;
-    script.src = `https://webapi.amap.com/maps?v=2.0&key=${encodeURIComponent(key)}&plugin=AMap.Geocoder,AMap.PlaceSearch`;
+    const sdkUrl = new URL(AMAP_SDK_URL);
+    if (sdkUrl.protocol !== "https:" || sdkUrl.username || sdkUrl.password) {
+      reject(new Error("地图脚本地址配置无效。"));
+      return;
+    }
+    sdkUrl.searchParams.set("v", "2.0");
+    sdkUrl.searchParams.set("key", key);
+    sdkUrl.searchParams.set("plugin", "AMap.Geocoder,AMap.PlaceSearch");
+    script.src = sdkUrl.toString();
     script.onload = () => {
       const AMap = window.AMap;
       if (!AMap) {
@@ -189,7 +198,7 @@ export function ProjectLocationMap({
   const markerRef = useRef<AMapMarker | null>(null);
   const lastLocateSignalRef = useRef(0);
   const initialMapPosition = initialPosition ?? DEFAULT_POSITION;
-  const hasMapCredentials = Boolean(AMAP_KEY && AMAP_SERVICE_HOST);
+  const hasMapCredentials = Boolean(AMAP_KEY && AMAP_SERVICE_HOST && AMAP_SDK_URL);
   const [mapStatus, setMapStatus] = useState<MapStatus>(hasMapCredentials ? "loading" : "unconfigured");
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [isLocating, setIsLocating] = useState(false);
@@ -290,7 +299,7 @@ export function ProjectLocationMap({
   useEffect(() => {
     const element = mapElementRef.current;
     if (!element) return;
-    if (!AMAP_KEY || !AMAP_SERVICE_HOST) {
+    if (!AMAP_KEY || !AMAP_SERVICE_HOST || !AMAP_SDK_URL) {
       setMapStatus("unconfigured");
       setStatusText("地图服务暂未配置，请联系管理员");
       return;

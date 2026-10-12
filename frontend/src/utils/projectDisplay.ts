@@ -1,6 +1,6 @@
-import type { ProjectStatus } from "@/types/projects";
+import type { DetectionTaskStatus, ProjectStatus } from "@/types/projects";
 
-export type ProfessionalDisplayStatus = "draft" | "detecting" | "completed";
+export type ProfessionalDisplayStatus = "draft" | "failed" | "detecting" | "completed";
 
 export interface ProfessionalDisplayState {
   status: ProfessionalDisplayStatus;
@@ -16,9 +16,13 @@ interface ProfessionalEstimatedCompletionSource {
 
 interface ProfessionalDetectionSource {
   status: ProjectStatus;
+  current_task_status?: DetectionTaskStatus | null;
 }
 
 export function getProfessionalDisplayState(project: ProfessionalDetectionSource): ProfessionalDisplayState {
+  if (project.current_task_status === "failed") {
+    return { status: "failed", statusLabel: "检测失败" };
+  }
   if (project.status === "draft") {
     return {
       status: "draft",
@@ -37,6 +41,18 @@ export function getProfessionalDisplayState(project: ProfessionalDetectionSource
     status: "detecting",
     statusLabel: "检测中"
   };
+}
+
+export function getProfessionalFailureMessage(project: {
+  current_task_status: DetectionTaskStatus | null;
+  current_task_failed_reason: string | null;
+}): string | null {
+  if (project.current_task_status !== "failed") return null;
+  const reason = project.current_task_failed_reason;
+  if (reason === "Trial request creates too many image tiles.") {
+    return "上次检测因照片切片总量超出单批上限而中断，请重新检测。";
+  }
+  return `检测失败：${reason || "任务中断，请重新检测。"}`;
 }
 
 export function getProfessionalEstimatedCompletionAt(

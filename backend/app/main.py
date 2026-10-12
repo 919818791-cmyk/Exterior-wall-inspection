@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.router import api_router
 from app.core.config import get_settings
 from app.core.exceptions import register_exception_handlers
+from app.core.upload_temp import configure_upload_temp_directory
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -15,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    configure_upload_temp_directory()
     from app.api.detection_tasks import (
         schedule_queued_formal_detections,
         stop_formal_detection_jobs,

@@ -44,6 +44,8 @@ from app.schemas.phase7 import ReportListItem, TrialGeneratedResult, TrialReport
 from app.services.docx_report import build_report_docx
 from app.services.photo_metadata import extract_photo_metadata_from_bytes
 
+from sample_data import fixture_url
+
 client = TestClient(app)
 TRIAL_JPEG_BYTES = b"\xff\xd8\xff\xe0fake-image\xff\xd9"
 TRIAL_PNG_BYTES = b"\x89PNG\r\n\x1a\nfake-image"
@@ -312,7 +314,11 @@ def _mock_trial_inference(
         "app.api.reports.get_settings",
         lambda: SimpleNamespace(
             dashscope_api_key="test-key",
-            qwen_api_base_url="https://qwen.test/compatible-mode/v1",
+            trial_max_image_pixels=64_000_000,
+            trial_inference_max_image_pixels=64_000_000,
+            trial_max_tiles_per_image=100,
+            trial_max_tiles_per_request=1000,
+            qwen_api_base_url=fixture_url('qwen.test', '/compatible-mode/v1'),
             qwen_model="qwen3-vl-plus",
             qwen_request_timeout_seconds=120,
             qwen_max_concurrency=5,
@@ -1327,7 +1333,11 @@ def test_trial_generate_endpoint_requires_configured_inference_service(monkeypat
         "app.api.reports.get_settings",
         lambda: SimpleNamespace(
             dashscope_api_key="",
-            qwen_api_base_url="https://qwen.test/compatible-mode/v1",
+            trial_max_image_pixels=64_000_000,
+            trial_inference_max_image_pixels=64_000_000,
+            trial_max_tiles_per_image=100,
+            trial_max_tiles_per_request=1000,
+            qwen_api_base_url=fixture_url('qwen.test', '/compatible-mode/v1'),
             qwen_model="qwen3-vl-plus",
             qwen_request_timeout_seconds=120,
             qwen_max_concurrency=5,

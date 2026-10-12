@@ -12,6 +12,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { capabilityDescriptions } from "@/data/capabilityDescriptions";
+import { publicContact } from "@/config/publicContact";
 import { HeroVideoPlaylist } from "@/components/HeroVideoPlaylist";
 import { TimeRecommendationDialog } from "@/components/TimeRecommendationDialog";
 import { usePublicHeroAnimation } from "@/hooks/usePublicHeroAnimation";
@@ -438,19 +439,19 @@ export function DashboardPage() {
                 <dt>商务联系人</dt>
                 <dd className="home-contact-person">
                   <span className="home-contact-person-name">邓鹏</span>
-                  <span className="home-contact-number">13826521065</span>
+                  <span className="home-contact-number">{publicContact.businessMobile || "暂未配置"}</span>
                 </dd>
               </div>
               <div>
                 <dt>技术联系人</dt>
                 <dd className="home-contact-person">
                   <span className="home-contact-person-name">陆伟庆</span>
-                  <span className="home-contact-number">13556995290</span>
+                  <span className="home-contact-number">{publicContact.technicalMobile || "暂未配置"}</span>
                 </dd>
               </div>
               <div>
                 <dt>座机号码</dt>
-                <dd><span className="home-contact-number">0755-8812702</span></dd>
+                <dd><span className="home-contact-number">{publicContact.landline || "暂未配置"}</span></dd>
               </div>
               <div className="home-contact-address">
                 <dt>地址</dt>

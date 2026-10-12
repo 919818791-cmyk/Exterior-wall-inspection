@@ -3,6 +3,8 @@ from types import SimpleNamespace
 from app.core.config import Settings
 from app.services.sms_verification import SmsVerificationService
 
+from sample_data import synthetic_phone
+
 
 def _settings() -> Settings:
     return Settings(
@@ -33,10 +35,10 @@ def test_send_code_uses_provider_generated_numeric_code() -> None:
             )
 
     client = FakeClient()
-    result = SmsVerificationService(_settings(), client=client).send_code("13800000000")
+    result = SmsVerificationService(_settings(), client=client).send_code(synthetic_phone(1))
 
     request = client.request
-    assert request.phone_number == "13800000000"
+    assert request.phone_number == synthetic_phone(1)
     assert request.sign_name == "测试签名"
     assert request.template_code == "100001"
     assert request.template_param == '{"code":"##code##","min":"5"}'
@@ -68,13 +70,13 @@ def test_verify_code_requires_pass_result() -> None:
     client = FakeClient()
     service = SmsVerificationService(_settings(), client=client)
 
-    assert service.verify_code("13800000000", "1234") is True
-    assert client.request.phone_number == "13800000000"
+    assert service.verify_code(synthetic_phone(1), "1234") is True
+    assert client.request.phone_number == synthetic_phone(1)
     assert client.request.verify_code == "1234"
     assert client.request.case_auth_policy == 2
 
     client.verify_result = "UNKNOWN"
-    assert service.verify_code("13800000000", "9999") is False
+    assert service.verify_code(synthetic_phone(1), "9999") is False
 
 
 def test_verify_code_maps_provider_invalid_code_response_to_false() -> None:
@@ -90,4 +92,4 @@ def test_verify_code_maps_provider_invalid_code_response_to_false() -> None:
 
     service = SmsVerificationService(_settings(), client=FakeClient())
 
-    assert service.verify_code("13800000000", "9999") is False
+    assert service.verify_code(synthetic_phone(1), "9999") is False

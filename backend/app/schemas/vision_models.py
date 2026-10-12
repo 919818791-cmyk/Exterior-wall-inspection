@@ -1,8 +1,13 @@
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 from pydantic_core import PydanticCustomError
 from urllib.parse import urlsplit
+
+from app.core.model_security import MODEL_IDENTIFIER_PATTERN
+
+
+ModelIdentifier = Annotated[str, StringConstraints(min_length=1, max_length=64, pattern=MODEL_IDENTIFIER_PATTERN)]
 
 
 class VisionModelEdit(BaseModel):

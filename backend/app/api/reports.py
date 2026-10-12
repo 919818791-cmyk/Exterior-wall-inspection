@@ -62,7 +62,7 @@ from app.services.inference_scheduling import (
     InferenceUsageReservation,
     reserve_inference_usage,
 )
-from app.services.object_storage import get_object_bytes, presigned_get_url, put_object, remove_object, signed_object_url
+from app.services.object_storage import get_object_bytes, put_object, remove_object, signed_object_url
 from app.services.photo_metadata import extract_photo_metadata
 from app.services.photo_upload_quota import (
     ensure_photo_upload_capacity,
@@ -74,10 +74,6 @@ from app.services.photo_precheck import run_stored_photo_precheck
 from app.services.photo_thumbnails import build_thumbnail, store_thumbnail
 from app.services.report_data import build_report_data
 from app.services.trial_qwen_inference import (
-    DEFAULT_MAX_IMAGE_PIXELS,
-    DEFAULT_INFERENCE_MAX_IMAGE_PIXELS,
-    DEFAULT_MAX_TILES_PER_IMAGE,
-    DEFAULT_MAX_TILES_PER_REQUEST,
     NMS_IOU_THRESHOLD,
     TILE_HEIGHT,
     TILE_OVERLAP_RATIO,
@@ -360,7 +356,7 @@ def _get_trial_result_or_404(
 
 
 def _ensure_trial_result_writable(result: TrialDetectionResult) -> None:
-    if getattr(result, "is_example", False):
+    if result.is_example:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="示例项目为只读项目。",
@@ -380,9 +376,8 @@ def _safe_photo_url(request: Request | None, bucket: str | None, object_key: str
     if not bucket or not object_key:
         return None
     try:
-        if request is not None:
-            return signed_object_url(_api_base_url(request), bucket, object_key)
-        return presigned_get_url(bucket, object_key)
+        api_base_url = _api_base_url(request) if request is not None else get_settings().api_prefix
+        return signed_object_url(api_base_url, bucket, object_key)
     except Exception:
         return None
 
@@ -904,23 +899,23 @@ def _quick_detection_photos_for_user(
     if len(photo_by_id) != len(unique_photo_ids):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Uploaded photo not found.")
     ordered_photos = [photo_by_id[photo_id] for photo_id in photo_ids]
-    incomplete = [
-        photo
-        for photo in ordered_photos
-        if getattr(photo, "precheck_status", None)
-        in {
+    photo_prechecks = [(photo, photo.precheck_status, photo.precheck_category) for photo in ordered_photos]
+    incomplete_statuses = [
+        precheck_status
+        for _, precheck_status, _ in photo_prechecks
+        if precheck_status in {
             PhotoPrecheckStatus.PENDING.value,
             PhotoPrecheckStatus.RUNNING.value,
             PhotoPrecheckStatus.ERROR.value,
+            None,
         }
-        or getattr(photo, "precheck_status", None) is None
     ]
-    if incomplete:
+    if incomplete_statuses:
         status_counts = {
             value: sum(
                 1
-                for photo in incomplete
-                if getattr(photo, "precheck_status", None) == value
+                for precheck_status in incomplete_statuses
+                if precheck_status == value
             )
             for value in (
                 PhotoPrecheckStatus.PENDING.value,
@@ -940,9 +935,9 @@ def _quick_detection_photos_for_user(
         )
     rejected = [
         photo
-        for photo in ordered_photos
-        if getattr(photo, "precheck_status", None) != PhotoPrecheckStatus.PASSED.value
-        or getattr(photo, "precheck_category", None) != "BUILDING"
+        for photo, precheck_status, precheck_category in photo_prechecks
+        if precheck_status != PhotoPrecheckStatus.PASSED.value
+        or precheck_category != "BUILDING"
     ]
     if rejected:
         rejected_names = "、".join(photo.original_filename for photo in rejected[:3])
@@ -1017,22 +1012,10 @@ async def _trial_inference_requests(
     return await execute_plan(plan,
         images,
         infer=infer_trial_images,
-        max_image_pixels=getattr(settings, "trial_max_image_pixels", DEFAULT_MAX_IMAGE_PIXELS),
-        inference_max_image_pixels=getattr(
-            settings,
-            "trial_inference_max_image_pixels",
-            DEFAULT_INFERENCE_MAX_IMAGE_PIXELS,
-        ),
-        max_tiles_per_image=getattr(
-            settings,
-            "trial_max_tiles_per_image",
-            DEFAULT_MAX_TILES_PER_IMAGE,
-        ),
-        max_tiles_per_request=getattr(
-            settings,
-            "trial_max_tiles_per_request",
-            DEFAULT_MAX_TILES_PER_REQUEST,
-        ),
+        max_image_pixels=settings.trial_max_image_pixels,
+        inference_max_image_pixels=settings.trial_inference_max_image_pixels,
+        max_tiles_per_image=settings.trial_max_tiles_per_image,
+        max_tiles_per_request=settings.trial_max_tiles_per_request,
     )
 
 
@@ -1194,22 +1177,10 @@ def _trial_estimated_api_request_count(images: list[TrialQwenImageInput]) -> int
     try:
         return estimate_trial_api_request_count(
             images,
-            max_image_pixels=getattr(settings, "trial_max_image_pixels", DEFAULT_MAX_IMAGE_PIXELS),
-            inference_max_image_pixels=getattr(
-                settings,
-                "trial_inference_max_image_pixels",
-                DEFAULT_INFERENCE_MAX_IMAGE_PIXELS,
-            ),
-            max_tiles_per_image=getattr(
-                settings,
-                "trial_max_tiles_per_image",
-                DEFAULT_MAX_TILES_PER_IMAGE,
-            ),
-            max_tiles_per_request=getattr(
-                settings,
-                "trial_max_tiles_per_request",
-                DEFAULT_MAX_TILES_PER_REQUEST,
-            ),
+            max_image_pixels=settings.trial_max_image_pixels,
+            inference_max_image_pixels=settings.trial_inference_max_image_pixels,
+            max_tiles_per_image=settings.trial_max_tiles_per_image,
+            max_tiles_per_request=settings.trial_max_tiles_per_request,
         )
     except Exception as exc:
         logger.exception("trial_image_preflight_failed error_type=%s", type(exc).__name__)
@@ -1617,9 +1588,7 @@ async def generate_trial_result(
         )
         for photo in photos
     ]
-    rollback = getattr(db, "rollback", None)
-    if callable(rollback):
-        rollback()
+    db.rollback()
     images = await _trial_images_for_quick_photos(photo_sources)
     _trial_strategy_plan(images, db, trial_request.models)
     estimated_api_requests = _trial_estimated_api_request_count(images)

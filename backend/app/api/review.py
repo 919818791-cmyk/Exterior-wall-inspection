@@ -19,6 +19,7 @@ from app.api.building_models import has_complete_building_model_images
 from app.api.dependencies import AuthenticatedUser, get_current_user, require_roles
 from app.api.projects import _get_project_or_404
 from app.api.reports import _detail_item
+from app.core.config import get_settings
 from app.db.session import get_db
 from app.enums.status import (
     DefectType,
@@ -63,7 +64,7 @@ from app.schemas.projects import DeleteResponse
 from app.schemas.phase7 import ReportDetailRead
 from app.services.defect_area import approximate_bbox_area_m2, approximate_bbox_length_m
 from app.services.defect_numbering import number_defects
-from app.services.object_storage import get_object_bytes, presigned_get_url
+from app.services.object_storage import get_object_bytes, signed_object_url
 from app.services.report_data import build_report_data
 
 router = APIRouter(
@@ -321,8 +322,9 @@ def _ensure_task_reviewable(db: Session, task_id: UUID) -> None:
 
 
 def _photo_to_read(photo: Photo) -> ReviewPhotoRead:
-    preview_url = presigned_get_url(photo.storage_bucket, photo.storage_object_key)
-    thumbnail_url = presigned_get_url(photo.storage_bucket, photo.thumbnail_object_key) or preview_url
+    api_base_url = get_settings().api_prefix
+    preview_url = signed_object_url(api_base_url, photo.storage_bucket, photo.storage_object_key)
+    thumbnail_url = signed_object_url(api_base_url, photo.storage_bucket, photo.thumbnail_object_key) or preview_url
     return ReviewPhotoRead(
         id=photo.id,
         project_id=photo.project_id,

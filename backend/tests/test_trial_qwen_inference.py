@@ -8,6 +8,8 @@ from PIL import Image
 
 from app.services import trial_qwen_inference as qwen
 
+from sample_data import fixture_url
+
 
 class FakeResponse:
     status_code = 200
@@ -98,7 +100,7 @@ def _mpo_bytes(width: int, height: int) -> bytes:
 
 
 def _run_inference(images: list[qwen.TrialQwenImageInput], **kwargs: Any):
-    base_url = kwargs.pop("base_url", "https://qwen.test/compatible-mode/v1")
+    base_url = kwargs.pop("base_url", fixture_url('qwen.test', '/compatible-mode/v1'))
     return asyncio.run(
         qwen.infer_trial_images(
             images,
@@ -134,6 +136,27 @@ def test_qwen_rejects_excessive_batch_tiles_before_api_calls(monkeypatch) -> Non
         _run_inference(images, max_tiles_per_request=7)
 
     assert RecordingAsyncClient.requests == []
+
+
+def test_uncapped_streaming_retains_image_safety_limits(monkeypatch) -> None:
+    RecordingAsyncClient.reset()
+    monkeypatch.setattr(qwen.httpx, "AsyncClient", RecordingAsyncClient)
+    images = [qwen.TrialQwenImageInput(filename=f"{i}.png", content=_image_bytes(600, 600)) for i in range(5)]
+    results = _run_inference(images, max_tiles_per_request=None)
+    assert len(results) == len(RecordingAsyncClient.requests) == 5
+    with pytest.raises(qwen.TrialQwenInferenceError, match="too many tiles"):
+        _run_inference([qwen.TrialQwenImageInput(filename="large.png", content=_image_bytes(2000, 1000))],
+                       max_tiles_per_request=None, max_tiles_per_image=1)
+    assert len(RecordingAsyncClient.requests) == 5
+
+
+@pytest.mark.parametrize("orientation", [1, 3, 5, 6, 7, 8])
+def test_tile_estimate_matches_exif_oriented_grid(orientation) -> None:
+    content = _oriented_jpeg_bytes(8000, 6000, orientation)
+    image = qwen.TrialQwenImageInput(filename="48mp.jpg", content=content)
+    width, height = (6000, 8000) if orientation in {5, 6, 7, 8} else (8000, 6000)
+    assert qwen.estimate_trial_api_request_count([image]) == qwen._tile_count(width, height)
+    assert qwen.estimate_trial_api_request_count([image], inference_max_image_pixels=12_000_000) == qwen._tile_count(*qwen._scaled_dimensions(width, height, 12_000_000))
 
 
 def test_qwen_downscales_large_source_for_inference_and_maps_boxes_back(monkeypatch) -> None:
@@ -228,7 +251,7 @@ def test_qwen_tiles_image_and_sends_one_stateless_request_per_tile(monkeypatch) 
     assert "corrosion" not in qwen.TRIAL_QWEN_PROMPT
 
     for endpoint, payload in RecordingAsyncClient.requests:
-        assert endpoint == "https://qwen.test/compatible-mode/v1/chat/completions"
+        assert endpoint == fixture_url('qwen.test', '/compatible-mode/v1/chat/completions')
         assert payload["model"] == "qwen3-vl-plus"
         assert payload["enable_thinking"] is False
         assert "response_format" not in payload

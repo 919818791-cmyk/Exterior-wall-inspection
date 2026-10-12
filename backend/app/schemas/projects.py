@@ -75,6 +75,8 @@ class ProjectListItem(ApiSchema):
     generate_building_model: bool = False
     has_building_model: bool = False
     current_report_id: UUID | None
+    current_task_status: DetectionTaskStatus | None = None
+    current_task_failed_reason: str | None = None
     photo_count: int
     valid_photo_count: int
     total_defects: int = 0
@@ -92,7 +94,6 @@ class ProjectListItem(ApiSchema):
 class ProjectDetailRead(ProjectListItem):
     current_task_id: UUID | None
     current_report_id: UUID | None
-    current_task_status: DetectionTaskStatus | None = None
     completed_at: datetime | None
 
 

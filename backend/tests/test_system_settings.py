@@ -16,6 +16,8 @@ from app.services.trial_inference_provider import (
     trial_inference_runtime,
 )
 
+from sample_data import fixture_url
+
 
 class FakeSettingsDb:
     def __init__(self) -> None:
@@ -58,12 +60,21 @@ def _admin() -> AuthenticatedUser:
 def _settings() -> SimpleNamespace:
     return SimpleNamespace(
         dashscope_api_key="qwen-key",
-        qwen_api_base_url="https://qwen.test/v1",
+        qwen_api_base_url=fixture_url('qwen.test', '/v1'),
         qwen_model="qwen3-vl-plus",
         qwen3_vl_flash_model="qwen3-vl-flash",
         local_qwen_api_key="",
-        local_qwen_api_base_url="http://127.0.0.1:9005/v1",
+        local_qwen_api_base_url=fixture_url('127.0.0.1:9005', '/v1', scheme='http'),
         local_qwen_model="qwen3-vl-32b",
+        local_qwen_model_path="",
+        local_qwen_runtime_dir="",
+        local_qwen_control_enabled=False,
+        app_env="test",
+        photo_guard_systemd_user_service="",
+        trial_max_image_pixels=64_000_000,
+        trial_inference_max_image_pixels=64_000_000,
+        trial_max_tiles_per_image=100,
+        trial_max_tiles_per_request=1000,
         local_qwen_max_concurrency=1,
         qwen_request_timeout_seconds=120,
         qwen_max_concurrency=5,

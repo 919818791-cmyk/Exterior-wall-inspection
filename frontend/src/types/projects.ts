@@ -70,6 +70,8 @@ export interface ProjectListItem {
   generate_building_model: boolean;
   has_building_model: boolean;
   current_report_id: string | null;
+  current_task_status: DetectionTaskStatus | null;
+  current_task_failed_reason: string | null;
   photo_count: number;
   valid_photo_count: number;
   total_defects: number;
@@ -86,7 +88,6 @@ export interface ProjectListItem {
 
 export interface ProjectDetail extends ProjectListItem {
   current_task_id: string | null;
-  current_task_status: DetectionTaskStatus | null;
   completed_at: string | null;
 }
 

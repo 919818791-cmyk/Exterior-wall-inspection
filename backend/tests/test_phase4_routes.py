@@ -94,7 +94,6 @@ def test_upload_batch_has_no_building_dimension() -> None:
 
 def test_photo_upload_rejects_files_larger_than_twenty_megabytes(monkeypatch) -> None:
     monkeypatch.setattr("app.api.photos.put_object", lambda **_: "test-bucket")
-    monkeypatch.setattr("app.api.photos.presigned_get_url", lambda bucket, key: f"https://storage.local/{key}" if key else None)
 
     owner_id = uuid4()
     project = Project(
@@ -187,10 +186,6 @@ def test_customer_upload_does_not_consume_detection_quota(monkeypatch) -> None:
         lambda _db, _actor_id, **kwargs: capacity_checks.append(kwargs),
     )
     monkeypatch.setattr("app.api.photos.put_object", put)
-    monkeypatch.setattr(
-        "app.api.photos.presigned_get_url",
-        lambda bucket, key: f"https://storage.local/{key}" if key else None,
-    )
 
     fake_db = FakePhotoUploadDb(project, batch)
     fake_db.photos = [SimpleNamespace() for _ in range(50)]
@@ -262,10 +257,6 @@ def test_formal_drone_metadata_runs_building_precheck_and_records_model(monkeypa
 
     monkeypatch.setattr("app.api.photos.put_object", lambda **_: "test-bucket")
     monkeypatch.setattr("app.api.photos.run_stored_photo_precheck", pass_building_precheck)
-    monkeypatch.setattr(
-        "app.api.photos.presigned_get_url",
-        lambda bucket, key: f"https://storage.local/{key}" if key else None,
-    )
 
     uploaded = upload_photo(
         project_id=project.id,
@@ -277,6 +268,8 @@ def test_formal_drone_metadata_runs_building_precheck_and_records_model(monkeypa
     )
 
     assert uploaded.precheck_status == "passed"
+    assert uploaded.preview_url.startswith("/api/object-storage/test-bucket/")
+    assert "signature=" in uploaded.preview_url
     assert batch.drone_type == "dji_mavic_3_thermal"
     assert project.drone_type == "dji_mavic_3_thermal"
     assert project.setup_completed_at is not None

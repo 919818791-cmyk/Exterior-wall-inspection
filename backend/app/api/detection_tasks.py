@@ -79,13 +79,11 @@ from app.services.trial_qwen_inference import (
     DEFAULT_INFERENCE_MAX_IMAGE_PIXELS,
     DEFAULT_MAX_IMAGE_PIXELS,
     DEFAULT_MAX_TILES_PER_IMAGE,
-    DEFAULT_MAX_TILES_PER_REQUEST,
     NMS_IOU_THRESHOLD,
     TILE_HEIGHT,
     TILE_OVERLAP_RATIO,
     TILE_WIDTH,
     TrialQwenImageInput,
-    estimate_trial_api_request_count,
     infer_trial_images,
 )
 from app.services.usage_tracking import (
@@ -966,22 +964,6 @@ async def _run_formal_project_inference(
             inference_snapshot,
         )
         task_started_at = perf_counter()
-        image_pairs = [
-            (photo, await _formal_image_input(photo))
-            for photo in all_photos
-        ]
-        inference_pairs = [
-            (photo, image)
-            for photo, image in image_pairs
-            if (
-                image.thermal_imaging_available
-                and "hollow" in selected_model_types
-            )
-            or (
-                not image.thermal_imaging_available
-                and bool(FORMAL_VISIBLE_DEFECT_TYPES.intersection(selected_model_types))
-            )
-        ]
         settings = get_settings()
         prompt_snapshot = inference_snapshot.get("prompts") or {}
         dedicated_visible_prompts = (
@@ -989,8 +971,7 @@ async def _run_formal_project_inference(
             if isinstance(prompt_snapshot.get("visible_by_defect"), dict)
             else {}
         )
-        estimated_api_requests_per_pass = estimate_trial_api_request_count(
-            [image for _, image in inference_pairs],
+        image_limits = dict(
             max_image_pixels=getattr(
                 settings,
                 "trial_max_image_pixels",
@@ -1006,31 +987,27 @@ async def _run_formal_project_inference(
                 "trial_max_tiles_per_image",
                 DEFAULT_MAX_TILES_PER_IMAGE,
             ),
-            max_tiles_per_request=getattr(
-                settings,
-                "trial_max_tiles_per_request",
-                DEFAULT_MAX_TILES_PER_REQUEST,
-            ),
-        )
-        estimated_api_requests = estimated_api_requests_per_pass * max(
-            1,
-            len(dedicated_visible_prompts),
+            # Formal projects stream one photo at a time through the bounded
+            # tile queue; total project tiles are not a request-size limit.
+            max_tiles_per_request=None,
         )
         # The formal and TRIAL paths intentionally share the scheduler's
         # semaphore and per-account counters configured in 推理设置.
         usage_reservation = reserve_inference_usage(
             actor_id,
-            estimated_api_requests,
+            # The scheduler reserves job slots, not a tile/request quota.
+            0,
             db=db,
             generate_limit_detail="检测请求过于频繁，请稍后重试。",
             settings=settings,
         )
         async def infer_with_prompt(
+            image: TrialQwenImageInput,
             prompt: str,
             defect_types: list[str],
         ) -> list[dict[str, Any]]:
             return await infer_trial_images(
-                [image for _, image in inference_pairs],
+                [image],
                 api_key=runtime.api_key,
                 base_url=runtime.base_url,
                 model=runtime.model,
@@ -1040,65 +1017,43 @@ async def _run_formal_project_inference(
                 visible_defect_types=defect_types,
                 timeout_seconds=runtime.timeout_seconds,
                 max_concurrency=runtime.max_concurrency,
-                max_image_pixels=getattr(
-                    settings,
-                    "trial_max_image_pixels",
-                    DEFAULT_MAX_IMAGE_PIXELS,
-                ),
-                inference_max_image_pixels=getattr(
-                    settings,
-                    "trial_inference_max_image_pixels",
-                    DEFAULT_INFERENCE_MAX_IMAGE_PIXELS,
-                ),
-                max_tiles_per_image=getattr(
-                    settings,
-                    "trial_max_tiles_per_image",
-                    DEFAULT_MAX_TILES_PER_IMAGE,
-                ),
-                max_tiles_per_request=getattr(
-                    settings,
-                    "trial_max_tiles_per_request",
-                    DEFAULT_MAX_TILES_PER_REQUEST,
-                ),
+                **image_limits,
             )
 
         strategy_snapshots = inference_snapshot.get("strategies")
-        if strategy_snapshots:
-            inferences = await execute_plan(restore_plan(strategy_snapshots, db), [image for _, image in inference_pairs],
-                infer=infer_trial_images,
-                max_image_pixels=getattr(settings, "trial_max_image_pixels", DEFAULT_MAX_IMAGE_PIXELS),
-                inference_max_image_pixels=getattr(settings, "trial_inference_max_image_pixels", DEFAULT_INFERENCE_MAX_IMAGE_PIXELS),
-                max_tiles_per_image=getattr(settings, "trial_max_tiles_per_image", DEFAULT_MAX_TILES_PER_IMAGE),
-                max_tiles_per_request=getattr(settings, "trial_max_tiles_per_request", DEFAULT_MAX_TILES_PER_REQUEST))
-        elif not inference_pairs:
-            inferences = []
-        elif dedicated_visible_prompts:
-            inference_passes = [
-                await infer_with_prompt(prompt, [defect_type])
-                for defect_type, prompt in dedicated_visible_prompts.items()
-            ]
-            inferences = (
-                inference_passes[0]
-                if len(inference_passes) == 1
-                else _merge_formal_inference_passes(inference_passes)
-            )
-        else:
-            inferences = await infer_with_prompt(
-                visible_prompt,
-                [
-                    value
-                    for value in selected_model_types
-                    if value in FORMAL_VISIBLE_DEFECT_TYPES
-                ],
-            )
-        inference_by_photo_id = {
-            photo.id: inference
-            for (photo, _), inference in zip(
-                inference_pairs,
-                inferences,
-                strict=True,
-            )
-        }
+        strategy_plan = restore_plan(strategy_snapshots, db) if strategy_snapshots else None
+        inferences: list[dict[str, Any]] = []
+        inference_by_photo_id: dict[UUID, dict[str, Any]] = {}
+        for photo in all_photos:
+            image = await _formal_image_input(photo)
+            try:
+                if image.thermal_imaging_available:
+                    if "hollow" not in selected_model_types:
+                        continue
+                elif not FORMAL_VISIBLE_DEFECT_TYPES.intersection(selected_model_types):
+                    continue
+                if strategy_plan is not None:
+                    results = await execute_plan(
+                        strategy_plan, [image], infer=infer_trial_images, **image_limits,
+                    )
+                elif dedicated_visible_prompts:
+                    results = _merge_formal_inference_passes([
+                        await infer_with_prompt(image, prompt, [defect_type])
+                        for defect_type, prompt in dedicated_visible_prompts.items()
+                    ])
+                else:
+                    results = await infer_with_prompt(
+                        image,
+                        visible_prompt,
+                        [value for value in selected_model_types if value in FORMAL_VISIBLE_DEFECT_TYPES],
+                    )
+                if len(results) != 1:
+                    raise RuntimeError("检测服务返回的照片结果数量不匹配。")
+                inference_by_photo_id[photo.id] = results[0]
+                inferences.append(results[0])
+            finally:
+                # Release original bytes before fetching the next photo.
+                del image
         duration_seconds = round(perf_counter() - task_started_at, 3)
         finished_at = datetime.now(UTC)
         actual_api_requests = sum(

@@ -1,6 +1,6 @@
 # 外墙智能巡检平台
 
-> **当前方案决策（2026-10-09）**：检测模型按“墙面类型 + 检测项”在“检测策略”中独立绑定，可选云端 API、本地视觉大模型或 YOLO；组合项单独配置。云端及 OpenAI 兼容视觉服务调用已接入，YOLO 权重执行仍需在模型服务器完成接入。专业检测按建筑生成独立结果并进入审核工作台。
+> **当前方案决策（2026-10-12）**：检测模型按“墙面类型 + 检测项”在“检测策略”中独立绑定，可选云端 API、本地视觉大模型或 YOLO；组合项单独配置。云端、OpenAI 兼容视觉服务及 YOLO 版本推理调用已接入。专业检测按建筑生成独立结果并进入审核工作台。
 
 本仓库当前已推进到第 8 阶段：登录、角色权限与菜单边界。静态原型已整理至 `原型/`，新开发工程位于：
 
@@ -22,7 +22,11 @@
 Copy-Item .env.example .env
 ```
 
-前端 Vite 已配置 `envDir: ".."`，会读取根目录 `.env` 中的 `VITE_API_BASE_URL`。开发环境默认使用同源 `/api`，由 Vite 转发到 `BACKEND_DEV_SERVER_URL`（默认 `http://127.0.0.1:8000`），避免浏览器从局域网地址访问时把后端误解析为客户端自己的 `127.0.0.1`。
+前端 Vite 已配置 `envDir: ".."`，会读取根目录 `.env` 中的 `VITE_API_BASE_URL`。开发环境默认使用同源 `/api`，由 Vite 转发到配置项 `BACKEND_DEV_SERVER_URL`（示例值见 `.env.example`，开发及预览启动时必须配置），避免浏览器从局域网地址访问时把后端误解析为客户端自己的 `127.0.0.1`。
+
+首页和法律文件的公开联系电话统一读取 `VITE_CONTACT_BUSINESS_MOBILE`、`VITE_CONTACT_TECHNICAL_MOBILE`、`VITE_CONTACT_LANDLINE`；留空时显示“暂未配置”，法律文件不生成空的拨号链接。这些是公开展示配置，会进入前端产物，请只填写获准公开的联系号码；修改后需要重新构建前端。
+
+高德地图脚本地址由 `VITE_AMAP_SDK_URL` 配置（使用 HTTPS），开发代理的上游由服务端 `AMAP_WEB_API_URL`、`AMAP_REST_API_URL` 配置；启用安全码代理时必须同时配置这两个地址。`VITE_AMAP_SERVICE_HOST` 可使用同源 `/_AMapService`。云端模型地址必须显式配置 `QWEN_API_BASE_URL`，不再使用代码内置地址；隐私披露链接由 `QWEN_PRIVACY_POLICY_URL` 配置，留空时不展示链接。CORS、MinIO 公开下载地址和 Worker 后端地址也仅从配置读取，示例见 `.env.example`。
 
 ## 2. 启动基础服务
 
@@ -36,6 +40,8 @@ docker compose up -d postgres minio redis
 - MinIO API：`http://127.0.0.1:9002`
 - MinIO Console：`http://127.0.0.1:9003`
 - Redis：`127.0.0.1:6379`
+
+浏览器中的照片、缩略图和模型文件通过带签名的 `/api/object-storage/...` 地址由后端流式返回，不会跳转到 `localhost:9002`。局域网访问只需开放系统入口，无需开放 MinIO 端口；`MINIO_PUBLIC_URL` 仍用于算法工作节点的直接下载地址，外部工作节点需要将其配置为该节点可访问的存储地址。
 
 MinIO 默认账号密码来自 `.env.example`：
 
@@ -100,11 +106,32 @@ API Key 只保存在服务端环境变量中，不使用 `VITE_` 前缀，不写
 
 本地模型启停统一从“模型管理”操作。Linux GPU 服务器启用 `LOCAL_QWEN_CONTROL_ENABLED=true` 并配置 vLLM 后可手动启动或停止；保存策略、保存推理设置及后端启动均不会触发启停。Windows 显示不可启停的原因，允许先保存配置。预置本地模型使用 `.runtime/local-qwen.log`，新增模型使用独立的 `.runtime/vision-<模型 ID>/local-qwen.log`，多个模型需配置不同服务端口。服务器待完成内容见 [检测策略与模型服务器接入说明](docs/检测策略与模型服务器接入说明.md)。
 
-YOLO 模型管理维护名称、说明及独立权重版本，不再设置“适用墙面”和“支持的检测类型”。详情（`?model=<模型 UUID>`）提供 `.pt` 权重上传、版本编辑、版本独立启停和删除；元数据保存在数据库，文件保存在 MinIO，默认上传上限为 1 GB（`YOLO_MODEL_MAX_UPLOAD_BYTES`）。同一模型版本号唯一，各版本独立启停，允许多个版本同时运行；运行中或被检测策略引用的版本不能删除。执行 `alembic upgrade head` 更新数据库：0061 保留原有权重和版本，0062 把原全局模型选择迁移到独立策略；历史适用范围记录保留但不再用于模型筛选或绑定校验。0063 移除版本互斥约束，并将旧的跟随绑定固定到原选定版本。YOLO 启停入口位于各版本行，运行服务未接入时按钮禁用并说明原因，绑定 YOLO 的策略会在执行前明确报错。
+YOLO 模型管理维护名称、说明及独立权重版本，不再设置“适用墙面”和“支持的检测类型”。详情（`?model=<模型 UUID>`）提供 `.pt` 权重上传、版本编辑、版本独立启停和删除；元数据保存在数据库，文件保存在 MinIO，默认上传上限为 1 GB（`YOLO_MODEL_MAX_UPLOAD_BYTES`）。同一模型版本号唯一，各版本独立启停，允许多个版本同时运行；运行中或被检测策略引用的版本不能删除。执行 `alembic upgrade head` 更新数据库：0061 保留原有权重和版本，0062 把原全局模型选择迁移到独立策略；历史适用范围记录保留但不再用于模型筛选或绑定校验。0063 移除版本互斥约束，并将旧的跟随绑定固定到原选定版本。YOLO 启停入口位于各版本行，运行环境未启用时按钮禁用并说明原因；绑定 YOLO 的策略读取指定版本的实际状态，就绪后调用该版本推理服务。
+
+通过 Nginx 部署时，模型上传接口也需要允许 1 GiB 文件及 multipart 表单开销，否则约 130 MB 的 PT 文件可能在到达后端前就被拒绝（413）。在项目根目录执行 `sudo python3 deploy/configure-nginx-model-upload.py`，会备份现有站点配置，仅为 `/api/yolo-models/<模型 ID>/versions` 权重上传接口调整上传限制及响应等待时间，并为 Nginx worker 用户创建独立的上传临时目录 `/var/lib/nginx/yolo-model-upload-body`，避免默认临时目录不可写导致 500。模型列表继续使用原 API 代理，避免以斜杠结尾的代理前缀触发重定向循环。脚本检查配置后重载 Nginx；检查或重载失败会恢复原配置。非默认站点路径使用 `--site`，自定义后端上传上限时传入相同的 `--max-upload-bytes`。该步骤只需在首次部署或修改上传上限后执行。
+
+若保存检测策略等 JSON 请求返回 Nginx 500，日志显示 `/var/cache/nginx/client_temp` 无权写入，执行 `sudo python3 deploy/configure-nginx-temp-paths.py`。脚本备份 Nginx 主配置，将 HTTP 层请求及上游响应等五类临时目录设置为 `/var/lib/nginx` 下的 worker 用户私有目录，保留模型上传等已有专用目录，检查并重载配置；失败恢复原配置。
+
+建筑 GLB 模型上传的后端上限也是 1 GiB；建筑图片一次可上传多个槽位，不能只沿用站点的 105 MiB 限制。执行 `sudo python3 deploy/configure-nginx-app.py`，仅为 `/api/projects/<项目 ID>/building-model` 和 `building-model-images` 配置 1 GiB 请求容量及 1 MiB 表单余量。批量图片的 1 GiB 是整次请求的上限，GLB 的 1 GiB 是单文件上限；普通照片继续由后端限制为单张 20 MiB。脚本明确 API 的 HTTP 1.1、900 秒响应等待时间及 300 秒上传停顿等待时间，保留现有请求头、地图代理和其他接口限制；修改前备份，检查或重载失败时恢复原配置。当前试用检测及结果归档使用照片 ID 和 JSON，不开放这些接口的大文件 multipart 上传。
+
+更换 Nginx 安装源或版本后，运行 `sudo python3 deploy/check-nginx.py`。它除检查配置语法外，还以实际 worker 用户检查全部显式临时目录和站点静态文件权限；缺少显式临时目录配置也会失败，避免依赖新安装包的默认路径。`start.sh` 已在重启后端前执行此检查。部署回归验证：`python3 -m unittest discover -s deploy/tests -v`。
+
+Linux 上设置 `YOLO_RUNTIME_ENABLED=true` 可启用上传权重的实际启停，后端运行账号需有 Docker 权限，`YOLO_RUNTIME_IMAGE` 指向已安装 PyTorch、CUDA、Ultralytics 的算法镜像（默认 `building-exterior-algorithm-model:cuda`），`YOLO_RUNTIME_DEVICE` 默认 `cuda:0`。每个版本运行于独立容器，仅发布本机回环端口；启动时从 MinIO 缓存权重并校验大小和 SHA256，模型加载及预热完成后才显示“运行中”。GPU 不可用会明确失败，不切换 CPU。容器采用 `unless-stopped` 重启策略，停止某个版本不影响其他版本。缓存位于 `.runtime/yolo/<版本 ID>/`，日志使用 `docker logs building-exterior-yolo-<无连字符版本 ID>`。运行服务提供 `/health` 与上传图片的 `/predict`，返回原始类别、置信度和像素 bbox。快速体验与专业检测均按策略调用固定版本，并复用图片切片、原图坐标恢复和跨切片去重；任务快照保留模型 ID、版本 ID 和 SHA256，执行时重新解析本机端口并校验响应身份。
+
+`npm run build` 完成后会把 `frontend/dist` 中目录权限设为 755、静态文件权限设为 644，使独立的 Nginx worker 用户可以读取构建结果，避免 shell 的 `umask 0007` 导致首页或登录页返回 403。权限处理仅限公开构建产物。
 
 ## 3. 启动后端
 
 Windows 本地开发可直接双击项目根目录的 `start.bat`，它会分别打开前端和后端窗口；停止时双击 `stop.bat`。这两个脚本只管理前后端，不会启动或停止 Docker 服务。首次运行时会自动补齐缺失的 Python 或前端依赖。
+
+当前 Linux 生产环境使用项目根目录的脚本：
+
+```bash
+./start.sh
+./stop.sh
+```
+
+`start.sh` 会启动 PostgreSQL、MinIO 和 Redis，同步依赖，执行数据库迁移，构建前端，并通过 systemd 启动后端和重载 Nginx。`stop.sh` 会停止本项目后端及上述三个基础容器，但不会停止可能由同机其他站点共用的 Nginx。
 
 ```powershell
 Set-Location backend
@@ -113,6 +140,8 @@ python -m venv .venv
 python -m pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
+
+后端启动时会创建并检查应用专用上传临时目录 `.runtime/upload-temp`（仅运行账号可访问），大于 1 MiB 的 multipart 文件在此暂存，完成后自动关闭并删除临时文件。可用服务端 `UPLOAD_TEMP_DIR` 指定其他可写目录；目录不可用时启动会明确失败。该设置避免长期运行的 Python 进程缓存系统 `/tmp` 后，因系统临时目录权限变化导致快速体验、专业检测等上传统一报 `400 There was an error parsing the body`。单张照片的 20 MiB 上限仍由原接口校验。
 
 健康检查：
 
@@ -160,11 +189,13 @@ npm run dev
 
 未登录时，专业检测和快速体验列表都会展示只读的“示例项目”；登录后会在示例之后显示当前账号可访问的数据。该示例对所有账号开放查看和结果导出，但不能重命名、追加检测或删除。
 
-| 角色 | 用户名 / 手机号 | 密码 | 可用范围 |
+| 角色 | 用户名 | 密码 | 可用范围 |
 | --- | --- | --- | --- |
-| 客户用户 | `customer` / `13800000001` | `Customer123!` | 本人项目、快速体验和审核完成报告 |
-| 内部审核人员 | `reviewer` / `13800000002` | `Reviewer123!` | 全部专业检测只读、审核工作台和正式报告下载；快速体验记录仅本人及示例项目 |
-| 管理员 | `admin` / `13800000003` | `Admin123!` | 全部功能 |
+| 客户用户 | `customer` | `Customer123!` | 本人项目、快速体验和审核完成报告 |
+| 内部审核人员 | `reviewer` | `Reviewer123!` | 全部专业检测只读、审核工作台和正式报告下载；快速体验记录仅本人及示例项目 |
+| 管理员 | `admin` | `Admin123!` | 全部功能 |
+
+演示账号不再内置手机号。需要绑定时，通过 `AUTH_DEMO_CUSTOMER_PHONE`、`AUTH_DEMO_REVIEWER_PHONE`、`AUTH_DEMO_ADMIN_PHONE` 配置，留空的新账号仍可用用户名和密码登录。初始化只为尚未绑定手机号的演示账号补充配置值，不覆盖数据库中已有的手机号。
 
 ### 注册与登录短信验证码
 
@@ -222,6 +253,7 @@ npm run dev -- --host 127.0.0.1 --port 5174
 - 专业检测提交后立即启动推理并显示“检测中”，任务启动期间短暂显示“正在排队”
 - `POST /api/projects/{project_id}/start-detection` 为项目启动唯一的 AI 检测任务；无热成像照片时不触发空鼓分析
 - 正式照片复用 TRIAL 的 `1280 x 960`、25% 重叠切片、跨 TILE 融合和 NMS 坐标回写流程
+- 专业项目逐张读取原图并完成该照片的所有检测策略，再读取下一张；切片通过有界队列按配置的请求并发数处理。专业项目不受 `TRIAL_MAX_TILES_PER_REQUEST` 的切片总数限制，该设置只用于快速体验单批校验；单张像素和切片安全上限仍生效。切片预估按实际 EXIF 方向计算：8000×6000 原图为 64 片，4000×3000 为 16 片，不会为了减少请求自动降低专业检测分辨率。
 - 正式项目与简易检测共用推理模型、检测提示词和全局/单任务并发；实际送检照片额度分别计算
 - 每个正式项目只生成一个检测任务、一条审核工作台记录和一份正式报告
 - 检测任务成功后自动写入 `ai_detection_result`、创建项目草稿报告并将项目流转到 `pending_review`

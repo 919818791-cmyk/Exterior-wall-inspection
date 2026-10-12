@@ -12,12 +12,14 @@ from app.enums.status import ProjectStatus, UserRole
 from app.main import app
 from app.services.sms_verification import SmsSendResult, get_sms_verification_service
 
+from sample_data import synthetic_phone
+
 
 CUSTOMER = AuthenticatedUser(
     id=UUID("11111111-1111-4111-8111-111111111111"),
     username="fault_tolerance_customer",
     real_name="容错测试用户",
-    phone="13800000009",
+    phone=synthetic_phone(4),
     role=UserRole.CUSTOMER.value,
     organization="测试单位",
 )
@@ -50,7 +52,7 @@ def test_registration_idempotency_does_not_create_duplicate_account() -> None:
     payload = {
         "username": "idempotent_user",
         "password": "Trial123!",
-        "phone": "13800000008",
+        "phone": synthetic_phone(3),
         "verification_code": "1234",
     }
     try:
@@ -131,7 +133,7 @@ def test_customer_can_delete_accessible_formal_report() -> None:
 
 def test_trial_result_delete_is_recoverable(monkeypatch: pytest.MonkeyPatch) -> None:
     result_id = UUID("33333333-3333-4333-8333-333333333333")
-    result = SimpleNamespace(id=result_id, deleted_at=None)
+    result = SimpleNamespace(id=result_id, deleted_at=None, is_example=False)
 
     class EmptyRows:
         def first(self):
