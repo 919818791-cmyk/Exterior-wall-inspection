@@ -13,6 +13,8 @@ import pytest
 
 @pytest.fixture
 def model_servers(monkeypatch):
+    from app.services import yolo_weights
+    monkeypatch.setitem(sys.modules, "yolo_weights", yolo_weights)
     monkeypatch.setitem(sys.modules, "torch", SimpleNamespace())
     monkeypatch.setitem(sys.modules, "ultralytics", SimpleNamespace(YOLO=object))
     for key in ("YOLO_VERSION_ID", "YOLO_MODEL_ID", "YOLO_VERSION", "YOLO_WEIGHTS_SHA256"):

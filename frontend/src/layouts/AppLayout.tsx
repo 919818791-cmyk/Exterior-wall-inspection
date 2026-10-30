@@ -47,18 +47,6 @@ function usesAppSidebar(pathname: string) {
     || pathname.startsWith("/accounts");
 }
 
-function sidebarCompactBreakpoint(pathname: string) {
-  if (pathname === "/detections") return 1663;
-  if (pathname === "/trials") return 1533;
-  return 1447;
-}
-
-function isSidebarCompactViewport(breakpoint: number) {
-  return typeof window !== "undefined"
-    && typeof window.matchMedia === "function"
-    && window.matchMedia(`(max-width: ${breakpoint}px)`).matches;
-}
-
 export function AppLayout() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -74,24 +62,12 @@ export function AppLayout() {
   const [headerScrolled, setHeaderScrolled] = useState(false);
   const [homeNavigationVisible, setHomeNavigationVisible] = useState(true);
   const [projectDetailListChrome, setProjectDetailListChrome] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
-    try {
-      const storedPreference = window.localStorage.getItem("exterior-wall:sidebar-collapsed");
-      return storedPreference === null ? true : storedPreference === "true";
-    } catch {
-      return true;
-    }
-  });
-  const sidebarBreakpoint = sidebarCompactBreakpoint(location.pathname);
-  const [sidebarViewportCompact, setSidebarViewportCompact] = useState(() => isSidebarCompactViewport(sidebarBreakpoint));
   const hasAppSidebar = usesAppSidebar(location.pathname);
-  const isSidebarCollapsed = sidebarCollapsed || sidebarViewportCompact;
   const accountUsageQuery = useQuery({
     ...currentAccountUsageQueryOptions,
-    enabled: Boolean(user && (accountMenuOpen || (hasAppSidebar && !isSidebarCollapsed)))
+    enabled: Boolean(user && (accountMenuOpen || hasAppSidebar))
   });
   const accountMenuRef = useRef<HTMLDivElement>(null);
-  const sidebarAccountMenuRef = useRef<HTMLElement>(null);
   const headerRef = useRef<HTMLElement>(null);
   const isBuildingModelRoute = /^\/detections\/[^/]+\/model$/.test(location.pathname);
   const isReviewBuildingModelRoute = /^\/review\/detections\/[^/]+\/model$/.test(location.pathname);
@@ -130,23 +106,6 @@ export function AppLayout() {
     document.body.scrollTop = 0;
     document.documentElement.style.scrollBehavior = previousScrollBehavior;
   }, [location.pathname, location.search]);
-
-  useEffect(() => {
-    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return undefined;
-    const mediaQuery = window.matchMedia(`(max-width: ${sidebarBreakpoint}px)`);
-    const updateSidebarViewport = () => setSidebarViewportCompact(mediaQuery.matches);
-    updateSidebarViewport();
-    mediaQuery.addEventListener("change", updateSidebarViewport);
-    return () => mediaQuery.removeEventListener("change", updateSidebarViewport);
-  }, [sidebarBreakpoint]);
-
-  useEffect(() => {
-    try {
-      window.localStorage.setItem("exterior-wall:sidebar-collapsed", String(sidebarCollapsed));
-    } catch {
-      // The layout still works if the browser does not expose persistent storage.
-    }
-  }, [sidebarCollapsed]);
 
   useEffect(() => {
     const handleUnauthorized = () => {
@@ -238,7 +197,7 @@ export function AppLayout() {
 
     const closeOnOutsidePointer = (event: PointerEvent) => {
       const target = event.target as Node;
-      if (!accountMenuRef.current?.contains(target) && !sidebarAccountMenuRef.current?.contains(target)) {
+      if (!accountMenuRef.current?.contains(target)) {
         setAccountMenuOpen(false);
       }
     };
@@ -294,11 +253,13 @@ export function AppLayout() {
     : [
       {
         label: "专业检测",
-        value: formatSidebarBalance(accountUsageQuery.data?.formal_photo_detection_balance)
+        value: formatSidebarBalance(accountUsageQuery.data?.formal_photo_detection_balance),
+        balance: accountUsageQuery.data?.formal_photo_detection_balance
       },
       {
         label: "快速体验",
-        value: formatSidebarBalance(accountUsageQuery.data?.trial_photo_detection_balance)
+        value: formatSidebarBalance(accountUsageQuery.data?.trial_photo_detection_balance),
+        balance: accountUsageQuery.data?.trial_photo_detection_balance
       }
     ];
   const adminLinks = [
@@ -343,22 +304,13 @@ export function AppLayout() {
 
   return (
     <div
-      className={`${resolvedPageClass}${hasAppSidebar ? " app-sidebar-route" : ""}${hasAppSidebar && isSidebarCollapsed ? " app-sidebar-collapsed" : ""}`.trim()}
+      className={`${resolvedPageClass}${hasAppSidebar ? " app-sidebar-route" : ""}`.trim()}
     >
       {hasAppSidebar ? (
         <AppSidebar
           onAddQuota={() => { setAccountMenuOpen(false); setAddQuotaModalOpen(true); }}
-          accountMenu={renderAccountDropdown("sidebar-account-dropdown")}
-          accountMenuOpen={accountMenuOpen}
-          accountMenuRef={sidebarAccountMenuRef}
           canAccessAdmin={canAccessAdmin}
           canAccessReview={canAccessReview}
-          canToggle={!sidebarViewportCompact}
-          collapsed={isSidebarCollapsed}
-          onCollapsedChange={() => {
-            if (!sidebarViewportCompact) setSidebarCollapsed((collapsed) => !collapsed);
-          }}
-          onAccountMenuToggle={() => setAccountMenuOpen((open) => !open)}
           onLogin={() => requestAuthentication()}
           onLogout={() => void handleLogout()}
           onPersonalInfo={() => {

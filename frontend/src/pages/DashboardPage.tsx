@@ -59,6 +59,8 @@ const defects: DefectCard[] = [
   }
 ];
 
+const DEFECT_AUTOPLAY_DURATION_MS = 4000;
+
 function DefectCardContent({ defect }: { defect: DefectCard }) {
   return (
     <>
@@ -82,6 +84,8 @@ export function DashboardPage() {
   const heroRef = useRef<HTMLElement>(null);
   const defectSectionRef = useRef<HTMLElement>(null);
   const defectCarouselRef = useRef<HTMLDivElement>(null);
+  const defectPaginationRef = useRef<HTMLDivElement>(null);
+  const defectAutoplayElapsedRef = useRef(0);
   const defectScrollEndTimerRef = useRef(0);
   const [activeDefectIndex, setActiveDefectIndex] = useState(0);
   const [isDefectSectionVisible, setIsDefectSectionVisible] = useState(false);
@@ -90,11 +94,17 @@ export function DashboardPage() {
   const [timeRecommendationOpenSignal, setTimeRecommendationOpenSignal] = useState(0);
   usePublicHeroAnimation(heroRef, undefined, pageRef);
 
+  const resetDefectProgress = () => {
+    defectAutoplayElapsedRef.current = 0;
+    defectPaginationRef.current?.style.setProperty("--defect-progress", "0");
+  };
+
   const scrollToDefect = (index: number) => {
     const carousel = defectCarouselRef.current;
     const card = carousel?.children[index] as HTMLElement | undefined;
     if (!carousel || !card) return;
 
+    resetDefectProgress();
     setIsDefectAutoplayComplete(false);
     setActiveDefectIndex(index);
     carousel.scrollTo({
@@ -117,6 +127,7 @@ export function DashboardPage() {
           ? index
           : closestIndex
       ), 0);
+      if (nearestIndex !== activeDefectIndex) resetDefectProgress();
       if (nearestIndex !== defects.length - 1) setIsDefectAutoplayComplete(false);
       setActiveDefectIndex(nearestIndex);
     }, 120);
@@ -125,16 +136,34 @@ export function DashboardPage() {
   useEffect(() => {
     if (isDefectAutoplayPaused || isDefectAutoplayComplete || !isDefectSectionVisible) return undefined;
 
-    const rotationTimer = window.setTimeout(() => {
-      if (activeDefectIndex === defects.length - 1) {
-        setIsDefectAutoplayComplete(true);
+    let animationFrame = 0;
+    let previousTime = performance.now();
+    const advanceProgress = (now: number) => {
+      const elapsed = Math.min(
+        defectAutoplayElapsedRef.current + now - previousTime,
+        DEFECT_AUTOPLAY_DURATION_MS
+      );
+      previousTime = now;
+      defectAutoplayElapsedRef.current = elapsed;
+      defectPaginationRef.current?.style.setProperty(
+        "--defect-progress",
+        String(elapsed / DEFECT_AUTOPLAY_DURATION_MS)
+      );
+
+      if (elapsed >= DEFECT_AUTOPLAY_DURATION_MS) {
+        if (activeDefectIndex === defects.length - 1) {
+          setIsDefectAutoplayComplete(true);
+        } else {
+          scrollToDefect(activeDefectIndex + 1);
+        }
         return;
       }
 
-      scrollToDefect(activeDefectIndex + 1);
-    }, 4000);
+      animationFrame = window.requestAnimationFrame(advanceProgress);
+    };
+    animationFrame = window.requestAnimationFrame(advanceProgress);
 
-    return () => window.clearTimeout(rotationTimer);
+    return () => window.cancelAnimationFrame(animationFrame);
   }, [activeDefectIndex, isDefectAutoplayComplete, isDefectAutoplayPaused, isDefectSectionVisible]);
 
   const toggleDefectAutoplay = () => {
@@ -343,7 +372,7 @@ export function DashboardPage() {
                   <Sparkles aria-hidden="true" />上传照片快速体验<ArrowRight className="hero-action-arrow" aria-hidden="true" />
                 </Link>
               </div>
-              <Link className="button secondary" to="/detections">
+              <Link className="button primary" to="/detections">
                 <ScanSearch aria-hidden="true" />开始专业检测<ArrowRight className="hero-action-arrow" aria-hidden="true" />
               </Link>
               <button className="button secondary" type="button" onClick={() => setTimeRecommendationOpenSignal((signal) => signal + 1)}>
@@ -376,7 +405,7 @@ export function DashboardPage() {
               >
                 <ChevronLeft aria-hidden="true" />
               </button>
-              <div className="defect-carousel-pagination" aria-label="选择检测能力">
+              <div ref={defectPaginationRef} className="defect-carousel-pagination" aria-label="选择检测能力">
                 {defects.map((defect, index) => (
                   <button
                     key={defect.key}
@@ -414,61 +443,32 @@ export function DashboardPage() {
         </div>
       </section>
 
-      <footer className="home-contact-footer" id="contact" data-home-panel aria-label="联合研发单位及联系方式">
+      <footer className="home-contact-footer" id="contact" data-home-panel aria-labelledby="contact-title">
         <div className="home-contact-inner">
-          <div className="home-contact-company">
-            <div className="home-contact-company-name">
-              <h2>联合研发单位</h2>
-              <ul className="home-contact-organization-list">
-                <li>
-                  <img className="home-contact-organization-logo" decoding="async" loading="lazy" src="/images/国家.png" alt="" />
-                  <strong>国家城市安全发展科技研究院</strong>
-                </li>
-                <li>
-                  <img className="home-contact-organization-logo" decoding="async" loading="lazy" src="/images/深圳.png" alt="" />
-                  <strong>深圳市公共城市安全研究院有限公司</strong>
-                </li>
-              </ul>
-            </div>
-          </div>
-
           <div className="home-contact-details">
             <h2 id="contact-title">联系我们</h2>
             <dl>
               <div>
-                <dt>商务联系人</dt>
+                <dt>商务咨询</dt>
                 <dd className="home-contact-person">
                   <span className="home-contact-person-name">邓鹏</span>
                   <span className="home-contact-number">{publicContact.businessMobile || "暂未配置"}</span>
                 </dd>
               </div>
               <div>
-                <dt>技术联系人</dt>
+                <dt>技术支持</dt>
                 <dd className="home-contact-person">
                   <span className="home-contact-person-name">陆伟庆</span>
                   <span className="home-contact-number">{publicContact.technicalMobile || "暂未配置"}</span>
                 </dd>
               </div>
-              <div>
-                <dt>座机号码</dt>
-                <dd><span className="home-contact-number">{publicContact.landline || "暂未配置"}</span></dd>
-              </div>
-              <div className="home-contact-address">
-                <dt>地址</dt>
-                <dd>深圳市罗湖区清水河街道清水河社区清水河三路18号博盈大厦（城安大厦实验楼）</dd>
-              </div>
             </dl>
           </div>
 
-          <div className="home-contact-bottom">
-            <nav className="home-legal-links" aria-label="法律文件">
-              <Link to="/privacy">隐私政策</Link>
-              <Link to="/terms">用户服务协议</Link>
-            </nav>
-            <small className="home-contact-meta" aria-label="版权信息">
-              <span>© 2026 国家城市安全发展科技研究院 版权所有</span>
-            </small>
-          </div>
+          <nav className="home-legal-links" aria-label="法律文件">
+            <Link to="/privacy">隐私政策</Link>
+            <Link to="/terms">用户服务协议</Link>
+          </nav>
         </div>
       </footer>
       </div>

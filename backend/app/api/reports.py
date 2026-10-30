@@ -27,7 +27,6 @@ from app.api.dependencies import (
     ensure_project_access,
     ensure_project_write_access,
     get_current_user,
-    get_optional_current_user,
 )
 from app.core.config import get_settings
 from app.db.session import get_db
@@ -97,7 +96,7 @@ from app.services.usage_tracking import (
     add_photo_upload_event,
 )
 
-router = APIRouter(tags=["reports"])
+router = APIRouter(tags=["reports"], dependencies=[Depends(get_current_user)])
 logger = logging.getLogger(__name__)
 
 DOCX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -105,7 +104,7 @@ PDF_CONTENT_TYPE = "application/pdf"
 TRIAL_RESULT_SOURCE_NAME = "简易AI检测"
 TRIAL_RESULT_ARCHIVE_ADDRESS = "简易检测归档"
 TRIAL_RESULT_CLIENT_NAME = "平台用户"
-TRIAL_MODEL_VERSION = "exterior-wall-vision-1280x960-overlap-fusion-nms-v3"
+TRIAL_MODEL_VERSION = "exterior-wall-vision-1280x960-overlap-fusion-nms-v4"
 TRIAL_MODEL_TO_DEFECT_TYPE = {
     "裂缝": "crack",
     "开裂": "crack",
@@ -275,8 +274,8 @@ def _report_access_filter(include_generated: bool) -> object:
     )
 
 
-def _can_manage_reports(current_user: AuthenticatedUser | None) -> bool:
-    return current_user is not None and current_user.role in {
+def _can_manage_reports(current_user: AuthenticatedUser) -> bool:
+    return current_user.role in {
         UserRole.REVIEWER.value,
         UserRole.ADMIN.value,
     }
@@ -289,9 +288,7 @@ def _project_reviewed_result_visible(project: Project) -> bool:
     }
 
 
-def _trial_access_criteria(current_user: AuthenticatedUser | None) -> list[object]:
-    if current_user is None:
-        return [TrialDetectionResult.is_example.is_(True)]
+def _trial_access_criteria(current_user: AuthenticatedUser) -> list[object]:
     if current_user.role == UserRole.ADMIN.value:
         return []
     return [
@@ -302,9 +299,7 @@ def _trial_access_criteria(current_user: AuthenticatedUser | None) -> list[objec
     ]
 
 
-def _formal_report_access_criteria(current_user: AuthenticatedUser | None) -> list[object]:
-    if current_user is None:
-        return [Project.is_example.is_(True)]
+def _formal_report_access_criteria(current_user: AuthenticatedUser) -> list[object]:
     if current_user.role == UserRole.CUSTOMER.value:
         return [or_(Project.created_by == current_user.id, Project.is_example.is_(True))]
     return []
@@ -314,7 +309,7 @@ def _get_report_or_404(
     db: Session,
     report_id: UUID,
     *,
-    current_user: AuthenticatedUser | None,
+    current_user: AuthenticatedUser,
     include_generated: bool = False,
 ) -> tuple[InspectionReport, Project]:
     can_manage = _can_manage_reports(current_user)
@@ -338,7 +333,7 @@ def _get_trial_result_or_404(
     db: Session,
     result_id: UUID,
     *,
-    current_user: AuthenticatedUser | None,
+    current_user: AuthenticatedUser,
     include_deleted: bool = False,
 ) -> TrialDetectionResult:
     criteria: list[object] = [
@@ -715,7 +710,7 @@ def list_reports(
     request: Request = None,
     include_generated: bool = Query(default=False),
     db: Session = Depends(get_db),
-    current_user: AuthenticatedUser | None = Depends(get_optional_current_user),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> list[ReportListItem]:
     # This endpoint powers the “免费试用/试用记录” surface. Formal project
     # results remain available from their project and review detail routes and
@@ -742,7 +737,7 @@ def get_project_reviewed_result(
     request: Request,
     project_id: UUID,
     db: Session = Depends(get_db),
-    current_user: AuthenticatedUser | None = Depends(get_optional_current_user),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> ReportDetailRead:
     """Return the project's single result after review is complete.
 
@@ -1009,14 +1004,20 @@ async def _trial_inference_requests(
     settings = get_settings()
     from app.services.detection_strategies import execute_plan
     plan = _trial_strategy_plan(images, db, models)
-    return await execute_plan(plan,
-        images,
-        infer=infer_trial_images,
-        max_image_pixels=settings.trial_max_image_pixels,
-        inference_max_image_pixels=settings.trial_inference_max_image_pixels,
-        max_tiles_per_image=settings.trial_max_tiles_per_image,
-        max_tiles_per_request=settings.trial_max_tiles_per_request,
-    )
+    results: list[dict[str, Any]] = []
+    for batch, _ in _trial_image_batches(images):
+        results.extend(
+            await execute_plan(
+                plan,
+                batch,
+                infer=infer_trial_images,
+                max_image_pixels=settings.trial_max_image_pixels,
+                inference_max_image_pixels=settings.trial_inference_max_image_pixels,
+                max_tiles_per_image=settings.trial_max_tiles_per_image,
+                max_tiles_per_request=settings.trial_max_tiles_per_request,
+            )
+        )
+    return results
 
 
 def _trial_findings_from_inference(
@@ -1128,6 +1129,11 @@ def _trial_model_output_from_inference(
         "cross_tile_merge_ios_threshold": inference_config.get(
             "cross_tile_merge_ios_threshold"
         ),
+        "spalling_overlap_band_iou_threshold": inference_config.get("spalling_overlap_band_iou_threshold"),
+        "spalling_tile_edge_tolerance_ratio": inference_config.get("spalling_tile_edge_tolerance_ratio"),
+        "spalling_containment_ios_threshold": inference_config.get("spalling_containment_ios_threshold"),
+        "post_cross_tile_merge_detection_count": inference_config.get("post_cross_tile_merge_detection_count"),
+        "contained_spalling_removed_count": inference_config.get("contained_spalling_removed_count"),
         "pre_merge_detection_count": inference_config.get(
             "pre_merge_detection_count"
         ),
@@ -1172,16 +1178,36 @@ async def _trial_images_for_quick_photos(
     return images
 
 
-def _trial_estimated_api_request_count(images: list[TrialQwenImageInput]) -> int:
+def _trial_image_batches(
+    images: list[TrialQwenImageInput],
+) -> list[tuple[list[TrialQwenImageInput], int]]:
+    """Keep each inference batch within the tile budget without limiting the task."""
     settings = get_settings()
-    try:
-        return estimate_trial_api_request_count(
-            images,
+    batches: list[tuple[list[TrialQwenImageInput], int]] = []
+    batch: list[TrialQwenImageInput] = []
+    batch_tiles = 0
+    for image in images:
+        image_tiles = estimate_trial_api_request_count(
+            [image],
             max_image_pixels=settings.trial_max_image_pixels,
             inference_max_image_pixels=settings.trial_inference_max_image_pixels,
             max_tiles_per_image=settings.trial_max_tiles_per_image,
             max_tiles_per_request=settings.trial_max_tiles_per_request,
         )
+        if batch and batch_tiles + image_tiles > settings.trial_max_tiles_per_request:
+            batches.append((batch, batch_tiles))
+            batch = []
+            batch_tiles = 0
+        batch.append(image)
+        batch_tiles += image_tiles
+    if batch:
+        batches.append((batch, batch_tiles))
+    return batches
+
+
+def _trial_estimated_api_request_count(images: list[TrialQwenImageInput]) -> int:
+    try:
+        return sum(tile_count for _, tile_count in _trial_image_batches(images))
     except Exception as exc:
         logger.exception("trial_image_preflight_failed error_type=%s", type(exc).__name__)
         raise _trial_inference_unavailable(exc) from exc
@@ -1781,7 +1807,7 @@ def get_report(
     report_id: UUID,
     include_generated: bool = Query(default=False),
     db: Session = Depends(get_db),
-    current_user: AuthenticatedUser | None = Depends(get_optional_current_user),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> ReportDetailRead:
     try:
         report, project = _get_report_or_404(

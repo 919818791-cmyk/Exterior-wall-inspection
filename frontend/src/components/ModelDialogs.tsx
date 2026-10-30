@@ -1,4 +1,4 @@
-import { Modal, ModalBody, ModalContent, ModalFooter, ModalHeader } from "@heroui/react";
+import { Modal, ModalBody, ModalContent, ModalFooter, ModalHeader } from "@/components/Modal";
 import { X } from "lucide-react";
 import type { ReactNode } from "react";
 function errorMessage(error: unknown) { return error instanceof Error ? error.message : String(error); }

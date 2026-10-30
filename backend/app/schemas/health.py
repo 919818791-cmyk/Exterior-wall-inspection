@@ -19,6 +19,10 @@ class PhotoGuardHealth(BaseModel):
 
 
 class HealthResponse(BaseModel):
+    status: Literal["ok"]
+
+
+class HealthDetailsResponse(BaseModel):
     status: Literal["ok", "degraded"]
     service: str
     environment: str

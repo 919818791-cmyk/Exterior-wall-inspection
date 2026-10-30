@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 // The shell may use umask 0007; Nginx runs as a different user and must be
 // able to read the public build output. Limit this to dist, never source/.env.
-async function prepareDirectory(directory) {
+export async function prepareDirectory(directory) {
   await chmod(directory, 0o755);
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     const path = join(directory, entry.name);
@@ -13,4 +13,6 @@ async function prepareDirectory(directory) {
   }
 }
 
-await prepareDirectory(fileURLToPath(new URL("../dist", import.meta.url)));
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  await prepareDirectory(fileURLToPath(new URL("../dist", import.meta.url)));
+}

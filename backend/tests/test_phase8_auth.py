@@ -13,7 +13,6 @@ from app.api.dependencies import (
     ensure_project_write_access,
     get_current_session,
     get_current_user,
-    get_optional_current_user,
     require_roles,
 )
 from app.api.projects import list_projects
@@ -672,13 +671,13 @@ def test_customer_can_read_shared_example_project() -> None:
     ensure_project_access(project, customer)
 
 
-def test_anonymous_viewer_can_only_read_shared_example_projects() -> None:
-    ensure_project_access(SimpleNamespace(is_example=True), None)
+def test_anonymous_viewer_cannot_read_any_project() -> None:
+    for is_example in (False, True):
+        with raises(HTTPException) as raised:
+            ensure_project_access(SimpleNamespace(is_example=is_example), None)
 
-    with raises(HTTPException) as raised:
-        ensure_project_access(SimpleNamespace(is_example=False), None)
-
-    assert raised.value.status_code == 404
+        assert raised.value.status_code == 401
+        assert raised.value.headers == {"WWW-Authenticate": "Bearer"}
 
 
 def test_shared_example_project_is_read_only_for_owner_and_admin() -> None:
@@ -722,7 +721,7 @@ def test_all_authenticated_roles_can_access_project_workbench() -> None:
             role=role.value,
             organization=None,
         )
-        app.dependency_overrides[get_optional_current_user] = lambda user=current_user: user
+        app.dependency_overrides[get_current_user] = lambda user=current_user: user
         app.dependency_overrides[get_db] = EmptyProjectDb
 
         try:
@@ -734,7 +733,7 @@ def test_all_authenticated_roles_can_access_project_workbench() -> None:
         assert response.json() == []
 
 
-def test_anonymous_project_list_only_includes_shared_example() -> None:
+def test_customer_project_list_only_includes_own_and_shared_example_projects() -> None:
     class CapturingProjectDb:
         def __init__(self) -> None:
             self.statements: list[object] = []
@@ -745,11 +744,19 @@ def test_anonymous_project_list_only_includes_shared_example() -> None:
 
     fake_db = CapturingProjectDb()
 
-    assert list_projects(request=None, db=fake_db, current_user=None) == []
+    customer = AuthenticatedUser(
+        id=UUID(int=1),
+        username="customer",
+        real_name=None,
+        role=UserRole.CUSTOMER.value,
+        organization=None,
+    )
+    assert list_projects(request=None, db=fake_db, current_user=customer) == []
     assert len(fake_db.statements) == 1
     project_query = str(fake_db.statements[0])
     assert "project.is_example IS true" in project_query
-    assert "project.created_by =" not in project_query
+    assert "project.created_by =" in project_query
+    assert customer.id in fake_db.statements[0].compile().params.values()
 
 
 def test_customer_can_reach_project_photo_config_and_detection_apis() -> None:

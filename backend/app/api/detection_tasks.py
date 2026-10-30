@@ -535,6 +535,12 @@ def _formal_raw_model_output(
         "tile_token_usages": inference.get("tile_token_usages") or [],
         "deduplication_method": "cross_tile_union+nms",
         "cross_tile_merge_method": inference_config.get("cross_tile_merge_method"),
+        "cross_tile_merge_ios_threshold": inference_config.get("cross_tile_merge_ios_threshold"),
+        "spalling_overlap_band_iou_threshold": inference_config.get("spalling_overlap_band_iou_threshold"),
+        "spalling_tile_edge_tolerance_ratio": inference_config.get("spalling_tile_edge_tolerance_ratio"),
+        "spalling_containment_ios_threshold": inference_config.get("spalling_containment_ios_threshold"),
+        "post_cross_tile_merge_detection_count": inference_config.get("post_cross_tile_merge_detection_count"),
+        "contained_spalling_removed_count": inference_config.get("contained_spalling_removed_count"),
         "pre_merge_detection_count": inference_config.get(
             "pre_merge_detection_count"
         ),
@@ -732,167 +738,181 @@ async def start_detection(
             status_code=status.HTTP_409_CONFLICT,
             detail=detail,
         )
-    now = datetime.now(UTC)
-    _remove_rejected_project_photos(db, rejected_photos, deleted_at=now)
-    inference_snapshot = {
-        "source": "formal_project",
-        "facade_type": facade_type,
-        "generate_building_model": bool(payload.generate_building_model) if payload else False,
-        "model_types": selected_model_types,
-        "high_precision": True,
-        "provider": runtime.provider,
-        "provider_label": runtime.label,
-        "upstream_provider": runtime.upstream_provider,
-        "model": runtime.model,
-        "strategies": [item.snapshot for item in strategy_plan],
-        "scheduling": {
-            "global_job_concurrency": scheduling.global_job_concurrency,
-            "request_concurrency": runtime.max_concurrency,
-            "trial_photo_detection_limit": scheduling.trial_photo_detection_limit,
-            "formal_photo_detection_limit": scheduling.formal_photo_detection_limit,
-            "generate_limit_per_user": scheduling.generate_limit_per_user,
-            "request_timeout_seconds": runtime.timeout_seconds,
-        },
-        "tiling": {
-            "tile_width": TILE_WIDTH,
-            "tile_height": TILE_HEIGHT,
-            "tile_overlap_ratio": TILE_OVERLAP_RATIO,
-        },
-        "prompts": {
-            "visible": visible_prompt,
-            "thermal": thermal_prompt,
-            "visible_by_defect": dedicated_visible_prompts,
-        },
-        "prompt_files": {
-            "visible": (
-                specialized_prompts.visible_file
-                if specialized_prompts is not None
-                else None
-            ),
-            "thermal": (
-                specialized_prompts.thermal_file
-                if specialized_prompts is not None
-                else None
-            ),
-            "visible_by_defect": specialized_prompts.visible_files,
-        },
-        "qualified_photo_count": len(qualified_photos),
-        "rejected_photo_count": rejected_photo_count,
-    }
-    detection_config = db.scalar(
-        select(DetectionConfig).where(DetectionConfig.project_id == project.id)
-    )
-    if detection_config is None:
-        detection_config = DetectionConfig(
-            project_id=project.id,
-            model_types=selected_model_types,
-            high_precision=True,
-            config_json=inference_snapshot,
-            created_by=current_user.id,
-        )
-        db.add(detection_config)
-    else:
-        detection_config.model_types = selected_model_types
-        detection_config.high_precision = True
-        detection_config.config_json = inference_snapshot
-    db.flush()
-
-    task = db.scalar(
-        select(DetectionTask).where(DetectionTask.project_id == project.id)
-    )
-    if task is not None:
-        if task.status != DetectionTaskStatus.FAILED.value:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="项目已经创建过检测任务。",
-            )
-        db.execute(
-            delete(ReviewResult).where(ReviewResult.detection_task_id == task.id)
-        )
-        db.execute(
-            delete(AiDetectionResult).where(
-                AiDetectionResult.detection_task_id == task.id
-            )
-        )
-        db.execute(
-            delete(DetectionTaskPhoto).where(
-                DetectionTaskPhoto.detection_task_id == task.id
-            )
-        )
-        task.retry_count += 1
-    else:
-        task = DetectionTask(
-            project_id=project.id,
-            task_no=_now_task_no(),
-            priority=0,
-            retry_count=0,
-            created_by=current_user.id,
-        )
-        db.add(task)
-    task.detection_config_id = detection_config.id
-    task.status = DetectionTaskStatus.PENDING.value
-    task.photo_count = len(qualified_photos)
-    task.result_summary = {"detection_config": inference_snapshot}
-    task.started_at = None
-    task.finished_at = None
-    task.failed_reason = None
-    task.model_version = runtime.model
-    task.worker_id = FORMAL_BACKEND_WORKER_ID
-    task.locked_at = None
-    task.worker_heartbeat_at = None
-    task.lease_expires_at = None
-    db.flush()
-    for photo in qualified_photos:
-        photo.status = PhotoStatus.UPLOADED.value
-        db.add(
-            DetectionTaskPhoto(
-                detection_task_id=task.id,
-                photo_id=photo.id,
-                status=PhotoStatus.UPLOADED.value,
-            )
-        )
-
-    project.status = ProjectStatus.QUEUED.value
-    project.current_task_id = task.id
-    project.started_at = now
-    project.updated_at = now
-
-    quota_reservation = reserve_photo_detection_quota(
+    # Reject scheduling conflicts before creating a task or charging photos.
+    usage_reservation = reserve_inference_usage(
         current_user.id,
-        source="formal",
-        role=current_user.role,
-        amount=len(qualified_photos),
+        0,
         db=db,
+        generate_limit_detail="检测请求过于频繁，请稍后重试。",
+        settings=get_settings(),
     )
     try:
-        add_photo_detection_event(
-            db,
-            source_type="formal",
-            detection_run_id=f"{task.id}:{task.retry_count}",
-            actor_id=current_user.id,
-            photo_count=len(qualified_photos),
-            occurred_at=now,
+        now = datetime.now(UTC)
+        _remove_rejected_project_photos(db, rejected_photos, deleted_at=now)
+        inference_snapshot = {
+            "source": "formal_project",
+            "facade_type": facade_type,
+            "generate_building_model": bool(payload.generate_building_model) if payload else False,
+            "model_types": selected_model_types,
+            "high_precision": True,
+            "provider": runtime.provider,
+            "provider_label": runtime.label,
+            "upstream_provider": runtime.upstream_provider,
+            "model": runtime.model,
+            "strategies": [item.snapshot for item in strategy_plan],
+            "scheduling": {
+                "global_job_concurrency": scheduling.global_job_concurrency,
+                "request_concurrency": runtime.max_concurrency,
+                "trial_photo_detection_limit": scheduling.trial_photo_detection_limit,
+                "formal_photo_detection_limit": scheduling.formal_photo_detection_limit,
+                "generate_limit_per_user": scheduling.generate_limit_per_user,
+                "request_timeout_seconds": runtime.timeout_seconds,
+            },
+            "tiling": {
+                "tile_width": TILE_WIDTH,
+                "tile_height": TILE_HEIGHT,
+                "tile_overlap_ratio": TILE_OVERLAP_RATIO,
+            },
+            "prompts": {
+                "visible": visible_prompt,
+                "thermal": thermal_prompt,
+                "visible_by_defect": dedicated_visible_prompts,
+            },
+            "prompt_files": {
+                "visible": (
+                    specialized_prompts.visible_file
+                    if specialized_prompts is not None
+                    else None
+                ),
+                "thermal": (
+                    specialized_prompts.thermal_file
+                    if specialized_prompts is not None
+                    else None
+                ),
+                "visible_by_defect": specialized_prompts.visible_files,
+            },
+            "qualified_photo_count": len(qualified_photos),
+            "rejected_photo_count": rejected_photo_count,
+        }
+        detection_config = db.scalar(
+            select(DetectionConfig).where(DetectionConfig.project_id == project.id)
         )
-        db.commit()
-    except BaseException:
-        refund_photo_detection_quota(
-            quota_reservation,
-            amount=len(qualified_photos),
-        )
-        raise
+        if detection_config is None:
+            detection_config = DetectionConfig(
+                project_id=project.id,
+                model_types=selected_model_types,
+                high_precision=True,
+                config_json=inference_snapshot,
+                created_by=current_user.id,
+            )
+            db.add(detection_config)
+        else:
+            detection_config.model_types = selected_model_types
+            detection_config.high_precision = True
+            detection_config.config_json = inference_snapshot
+        db.flush()
 
-    _schedule_formal_project_inference(
-        project_id=project.id,
-        task_id=task.id,
-        actor_id=current_user.id,
-        photo_ids=[photo.id for photo in all_photos],
-        selected_model_types=selected_model_types,
-        runtime=runtime,
-        prompts=prompts,
-        inference_snapshot=inference_snapshot,
-    )
-    db.refresh(task)
-    return _task_read(task)
+        task = db.scalar(
+            select(DetectionTask).where(DetectionTask.project_id == project.id)
+        )
+        if task is not None:
+            if task.status != DetectionTaskStatus.FAILED.value:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="项目已经创建过检测任务。",
+                )
+            db.execute(
+                delete(ReviewResult).where(ReviewResult.detection_task_id == task.id)
+            )
+            db.execute(
+                delete(AiDetectionResult).where(
+                    AiDetectionResult.detection_task_id == task.id
+                )
+            )
+            db.execute(
+                delete(DetectionTaskPhoto).where(
+                    DetectionTaskPhoto.detection_task_id == task.id
+                )
+            )
+            task.retry_count += 1
+        else:
+            task = DetectionTask(
+                project_id=project.id,
+                task_no=_now_task_no(),
+                priority=0,
+                retry_count=0,
+                created_by=current_user.id,
+            )
+            db.add(task)
+        task.detection_config_id = detection_config.id
+        task.status = DetectionTaskStatus.PENDING.value
+        task.photo_count = len(qualified_photos)
+        task.result_summary = {"detection_config": inference_snapshot}
+        task.started_at = None
+        task.finished_at = None
+        task.failed_reason = None
+        task.model_version = runtime.model
+        task.worker_id = FORMAL_BACKEND_WORKER_ID
+        task.locked_at = None
+        task.worker_heartbeat_at = None
+        task.lease_expires_at = None
+        db.flush()
+        for photo in qualified_photos:
+            photo.status = PhotoStatus.UPLOADED.value
+            db.add(
+                DetectionTaskPhoto(
+                    detection_task_id=task.id,
+                    photo_id=photo.id,
+                    status=PhotoStatus.UPLOADED.value,
+                )
+            )
+
+        project.status = ProjectStatus.QUEUED.value
+        project.current_task_id = task.id
+        project.started_at = now
+        project.updated_at = now
+
+        quota_reservation = reserve_photo_detection_quota(
+            current_user.id,
+            source="formal",
+            role=current_user.role,
+            amount=len(qualified_photos),
+            db=db,
+        )
+        try:
+            add_photo_detection_event(
+                db,
+                source_type="formal",
+                detection_run_id=f"{task.id}:{task.retry_count}",
+                actor_id=current_user.id,
+                photo_count=len(qualified_photos),
+                occurred_at=now,
+            )
+            db.commit()
+        except BaseException:
+            refund_photo_detection_quota(
+                quota_reservation,
+                amount=len(qualified_photos),
+            )
+            raise
+
+        _schedule_formal_project_inference(
+            project_id=project.id,
+            task_id=task.id,
+            actor_id=current_user.id,
+            photo_ids=[photo.id for photo in all_photos],
+            selected_model_types=selected_model_types,
+            runtime=runtime,
+            prompts=prompts,
+            inference_snapshot=inference_snapshot,
+            usage_reservation=usage_reservation,
+        )
+        db.refresh(task)
+        return _task_read(task)
+
+    except BaseException:
+        usage_reservation.release(successful=False)
+        raise
 
 
 async def _run_formal_project_inference(
@@ -905,15 +925,18 @@ async def _run_formal_project_inference(
     runtime: Any,
     prompts: Any,
     inference_snapshot: dict[str, Any],
+    usage_reservation: InferenceUsageReservation | None = None,
 ) -> None:
     """Run a formal task immediately after it has been persisted."""
     from app.db.session import SessionLocal
 
     db = SessionLocal()
-    usage_reservation: InferenceUsageReservation | None = None
     project: Project | None = None
     task: DetectionTask | None = None
     try:
+        if usage_reservation is not None:
+            # Transfer lease renewal from the submitting request to this job.
+            usage_reservation.start_heartbeat(usage_reservation.lease_seconds)
         project = db.scalar(
             select(Project)
             .where(Project.id == project_id)
@@ -993,14 +1016,15 @@ async def _run_formal_project_inference(
         )
         # The formal and TRIAL paths intentionally share the scheduler's
         # semaphore and per-account counters configured in 推理设置.
-        usage_reservation = reserve_inference_usage(
-            actor_id,
-            # The scheduler reserves job slots, not a tile/request quota.
-            0,
-            db=db,
-            generate_limit_detail="检测请求过于频繁，请稍后重试。",
-            settings=settings,
-        )
+        if usage_reservation is None:
+            usage_reservation = reserve_inference_usage(
+                actor_id,
+                # The scheduler reserves job slots, not a tile/request quota.
+                0,
+                db=db,
+                generate_limit_detail="检测请求过于频繁，请稍后重试。",
+                settings=settings,
+            )
         async def infer_with_prompt(
             image: TrialQwenImageInput,
             prompt: str,
@@ -1239,6 +1263,8 @@ async def _run_formal_project_inference(
         ) from exc
 
     finally:
+        if usage_reservation is not None:
+            usage_reservation.release(successful=False)
         db.close()
 
 
@@ -1247,7 +1273,15 @@ def _schedule_formal_project_inference(
 ) -> None:
     task = asyncio.create_task(_run_formal_project_inference(**job))
     _formal_detection_jobs.add(task)
-    task.add_done_callback(_formal_detection_jobs.discard)
+    task.add_done_callback(_formal_detection_job_finished)
+
+
+def _formal_detection_job_finished(task: asyncio.Task[None]) -> None:
+    _formal_detection_jobs.discard(task)
+    if not task.cancelled():
+        # The runner has already logged the cause and persisted the failure.
+        # Retrieve its exception so asyncio does not emit a second unhandled error.
+        task.exception()
 
 
 def schedule_queued_formal_detections() -> None:

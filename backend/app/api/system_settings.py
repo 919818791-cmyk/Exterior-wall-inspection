@@ -28,6 +28,7 @@ from app.services.trial_inference_provider import (
     TRIAL_PHOTO_DETECTION_LIMIT_KEY,
     TRIAL_GENERATE_LIMIT_PER_USER_KEY,
     TRIAL_GLOBAL_JOB_CONCURRENCY_KEY,
+    TRIAL_USER_JOB_CONCURRENCY_KEY,
     TRIAL_INFERENCE_PROVIDER_KEY,
     TRIAL_REQUEST_CONCURRENCY_KEY,
     TRIAL_SPALLING_PROMPT_KEY,
@@ -58,6 +59,7 @@ def _setting_read(db: Session) -> TrialInferenceSettingRead:
     return TrialInferenceSettingRead(
         provider=get_trial_inference_provider(db),
         global_job_concurrency=scheduling.global_job_concurrency,
+        user_job_concurrency=scheduling.user_job_concurrency,
         request_concurrency=scheduling.request_concurrency,
         trial_photo_detection_limit=scheduling.trial_photo_detection_limit,
         formal_photo_detection_limit=scheduling.formal_photo_detection_limit,
@@ -139,6 +141,7 @@ def update_trial_inference_setting(
 ) -> TrialInferenceSettingRead:
     numeric_settings = (
         ("global_job_concurrency", TRIAL_GLOBAL_JOB_CONCURRENCY_KEY),
+        ("user_job_concurrency", TRIAL_USER_JOB_CONCURRENCY_KEY),
         ("request_concurrency", TRIAL_REQUEST_CONCURRENCY_KEY),
         ("trial_photo_detection_limit", TRIAL_PHOTO_DETECTION_LIMIT_KEY),
         ("formal_photo_detection_limit", FORMAL_PHOTO_DETECTION_LIMIT_KEY),

@@ -11,7 +11,7 @@ import {
   ModalContent,
   ModalFooter,
   ModalHeader
-} from "@heroui/react";
+} from "@/components/Modal";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   type ChangeEvent,

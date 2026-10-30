@@ -5,8 +5,6 @@ import {
   Gauge,
   Images,
   LogOut,
-  PanelLeftClose,
-  PanelLeftOpen,
   Plus,
   ScanSearch,
   Settings,
@@ -14,26 +12,18 @@ import {
   Users,
   UserRound
 } from "lucide-react";
-import { type ReactNode, type RefObject } from "react";
 import { Link, NavLink } from "react-router-dom";
 
 import type { AuthUser } from "@/types/auth";
 
 interface AppSidebarProps {
-  accountMenu: ReactNode;
-  accountMenuOpen: boolean;
-  accountMenuRef: RefObject<HTMLElement>;
   canAccessAdmin: boolean;
   canAccessReview: boolean;
-  canToggle: boolean;
-  collapsed: boolean;
-  onCollapsedChange: () => void;
-  onAccountMenuToggle: () => void;
   onLogin: () => void;
   onLogout: () => void;
   onPersonalInfo: () => void;
   onAddQuota: () => void;
-  quotaItems: ReadonlyArray<{ label: string; value: string }>;
+  quotaItems: ReadonlyArray<{ label: string; value: string; balance?: { remaining: number; limit: number } }>;
   quotaLabel: string;
   user: AuthUser | null;
 }
@@ -42,7 +32,7 @@ interface AppSidebarUserMenuContentProps {
   onAddQuota: () => void;
   onLogout: () => void;
   onPersonalInfo: () => void;
-  quotaItems: ReadonlyArray<{ label: string; value: string }>;
+  quotaItems: ReadonlyArray<{ label: string; value: string; balance?: { remaining: number; limit: number } }>;
   quotaLabel: string;
 }
 
@@ -57,16 +47,36 @@ export function AppSidebarUserMenuContent({
     <div className="app-sidebar-user-expanded">
       {quotaItems.length ? (
         <>
-          <div className="app-sidebar-user-row app-sidebar-user-quota-title">
-            <Gauge aria-hidden="true" />
-            <span>{quotaLabel}</span>
-          </div>
-          {quotaItems.map((item) => (
-            <div aria-label={`${item.label}照片检测额度 ${item.value}`} className="app-sidebar-user-quota-value" key={item.label}>
-              <span>{item.label}</span>
-              <strong>{item.value}</strong>
+          <div className="app-sidebar-quota-panel">
+            <div className="app-sidebar-user-row app-sidebar-user-quota-title">
+              <Gauge aria-hidden="true" />
+              <span>{quotaLabel}</span>
             </div>
-          ))}
+            {quotaItems.map((item) => {
+              const percent = item.balance && item.balance.limit > 0
+                ? Math.min(100, Math.max(0, item.balance.remaining / item.balance.limit * 100))
+                : 0;
+              return (
+                <div className="app-sidebar-quota-line" key={item.label}>
+                  <div aria-label={`${item.label}照片检测额度 ${item.value}`} className="app-sidebar-user-quota-value">
+                    <span>{item.label}</span>
+                    <strong>{item.value}</strong>
+                  </div>
+                  <div
+                    aria-label={`${item.label}剩余照片检测额度`}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={item.balance ? percent : undefined}
+                    aria-valuetext={item.value}
+                    className="app-sidebar-quota-progress"
+                    role="progressbar"
+                  >
+                    <span style={{ width: `${percent}%` }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
           <button className="app-sidebar-user-row app-sidebar-user-action" type="button" onClick={onAddQuota}>
             <Plus aria-hidden="true" />
             <span>添加额度</span>
@@ -86,15 +96,8 @@ export function AppSidebarUserMenuContent({
 }
 
 export function AppSidebar({
-  accountMenu,
-  accountMenuOpen,
-  accountMenuRef,
   canAccessAdmin,
   canAccessReview,
-  canToggle,
-  collapsed,
-  onCollapsedChange,
-  onAccountMenuToggle,
   onLogin,
   onLogout,
   onPersonalInfo,
@@ -103,29 +106,17 @@ export function AppSidebar({
   quotaLabel,
   user
 }: AppSidebarProps) {
-  const collapseLabel = canToggle
-    ? (collapsed ? "展开左侧栏" : "收纳左侧栏")
-    : "当前窗口宽度下左侧栏已自动收纳";
-
   return (
-    <aside aria-label="应用导航" className={`app-sidebar${collapsed ? " is-collapsed" : ""}`}>
+    <aside aria-label="应用导航" className="app-sidebar">
       <div className="app-sidebar-brand-row">
         <Link aria-label="外墙智能巡检平台首页" className="app-sidebar-brand" title="外墙智能巡检平台" to="/">
+          <span className="app-sidebar-brand-symbol"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 21V6l8-3v18M12 10h8v11M2 21h20M8 8h1m-1 4h1m-1 4h1m7-2h1m-1 3h1" /></svg></span>
           <span className="app-sidebar-label app-sidebar-brand-name">外墙智能巡检平台</span>
         </Link>
-        <button
-          aria-label={collapseLabel}
-          className="app-sidebar-collapse"
-          disabled={!canToggle}
-          title={collapseLabel}
-          type="button"
-          onClick={onCollapsedChange}
-        >
-          {collapsed ? <PanelLeftOpen aria-hidden="true" /> : <PanelLeftClose aria-hidden="true" />}
-        </button>
       </div>
 
       <nav aria-label="功能菜单" className="app-sidebar-menu">
+        <div className="app-sidebar-menu-section">检测服务</div>
         <NavLink aria-label="专业检测" className={({ isActive }) => `app-sidebar-menu-item${isActive ? " is-active" : ""}`} title="专业检测" to="/detections">
           <ScanSearch aria-hidden="true" />
           <span className="app-sidebar-label">专业检测</span>
@@ -138,6 +129,7 @@ export function AppSidebar({
           <Images aria-hidden="true" />
           <span className="app-sidebar-label">照片管理</span>
         </NavLink> : null}
+        {canAccessReview || canAccessAdmin ? <div className="app-sidebar-menu-section is-management">管理工作台</div> : null}
         {canAccessReview ? (
           <NavLink aria-label="工作台" className={({ isActive }) => `app-sidebar-menu-item${isActive ? " is-active" : ""}`} title="工作台" to="/review">
             <LayoutDashboard aria-hidden="true" />
@@ -166,27 +158,8 @@ export function AppSidebar({
         ) : null}
       </nav>
 
-      <section
-        ref={accountMenuRef}
-        aria-label="用户模块"
-        className={`app-sidebar-user account-menu${accountMenuOpen ? " is-open" : ""}`}
-      >
-        {user ? (collapsed ? (
-          <>
-            <button
-              aria-controls="sidebar-account-dropdown"
-              aria-expanded={accountMenuOpen}
-              aria-label="账号与使用量"
-              className="app-sidebar-user-trigger"
-              title="账号与使用量"
-              type="button"
-              onClick={onAccountMenuToggle}
-            >
-              <span aria-hidden="true" className="app-sidebar-user-avatar"><UserRound /></span>
-            </button>
-            {accountMenu}
-          </>
-        ) : (
+      <section aria-label="用户模块" className="app-sidebar-user">
+        {user ? (
           <AppSidebarUserMenuContent
             onAddQuota={onAddQuota}
             onLogout={onLogout}
@@ -194,7 +167,7 @@ export function AppSidebar({
             quotaItems={quotaItems}
             quotaLabel={quotaLabel}
           />
-        )) : (
+        ) : (
           <button aria-label="登录" className="nav-cta auth-trigger app-sidebar-login" title="登录" type="button" onClick={onLogin}>
             <UserRound aria-hidden="true" />
             <span className="app-sidebar-label">登录</span>

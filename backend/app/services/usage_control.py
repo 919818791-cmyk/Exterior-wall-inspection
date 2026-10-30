@@ -77,6 +77,19 @@ redis.call('ZADD', KEYS[1], tonumber(ARGV[3]), ARGV[4])
 redis.call('EXPIRE', KEYS[1], tonumber(ARGV[5]))
 return 1
 """
+    _RENEW_JOB_SCRIPT = """
+local user_expiry = redis.call('ZSCORE', KEYS[1], ARGV[1])
+if not user_expiry or tonumber(user_expiry) <= tonumber(ARGV[3]) then return 0 end
+local expiry = redis.call('ZSCORE', KEYS[2], ARGV[2])
+if not expiry or tonumber(expiry) <= tonumber(ARGV[3]) then return 0 end
+redis.call('ZADD', KEYS[1], tonumber(ARGV[3]) + tonumber(ARGV[4]), ARGV[1])
+local user_ttl = redis.call('TTL', KEYS[1])
+redis.call('EXPIRE', KEYS[1], math.max(user_ttl, tonumber(ARGV[4])))
+redis.call('ZADD', KEYS[2], tonumber(ARGV[3]) + tonumber(ARGV[4]), ARGV[2])
+local ttl = redis.call('TTL', KEYS[2])
+redis.call('EXPIRE', KEYS[2], math.max(ttl, tonumber(ARGV[4])))
+return 1
+"""
 
     def __init__(self, settings: Settings | None = None) -> None:
         self.settings = settings or get_settings()
@@ -237,6 +250,45 @@ return 1
                 self._memory[key] = (members, expiry)
             else:
                 self._memory.pop(key, None)
+
+    def renew_job_reservation(
+        self,
+        *,
+        user_semaphore_scope: str,
+        user_semaphore_token: str,
+        semaphore_scope: str,
+        semaphore_token: str,
+        ttl_seconds: int,
+    ) -> bool:
+        """Extend both owned leases atomically; never revive an expired job."""
+        user_key = self._key("semaphore", user_semaphore_scope)
+        semaphore_key = self._key("semaphore", semaphore_scope)
+        now = time.time()
+        if self._redis is not None:
+            try:
+                return bool(self._redis.eval(
+                    self._RENEW_JOB_SCRIPT, 2, user_key, semaphore_key,
+                    user_semaphore_token, semaphore_token, now, ttl_seconds,
+                ))
+            except RedisError as exc:
+                self._redis_failure(exc)
+                return False
+        with self._memory_lock:
+            self._purge_memory(now)
+            user_members, user_expiry = self._memory.get(user_key, ({}, None))
+            members, expiry = self._memory.get(semaphore_key, ({}, None))
+            if (
+                user_members.get(user_semaphore_token, 0) <= now
+                or members.get(semaphore_token, 0) <= now
+            ):
+                return False
+            members = dict(members)
+            members[semaphore_token] = now + ttl_seconds
+            user_members = dict(user_members)
+            user_members[user_semaphore_token] = now + ttl_seconds
+            self._memory[user_key] = (user_members, max(user_expiry or 0, now + ttl_seconds))
+            self._memory[semaphore_key] = (members, max(expiry or 0, now + ttl_seconds))
+            return True
 
     def cache_get(self, scope: str, identity: str) -> dict[str, Any] | None:
         key = self._key(f"cache:{scope}", identity)

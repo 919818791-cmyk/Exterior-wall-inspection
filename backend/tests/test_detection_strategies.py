@@ -153,7 +153,7 @@ def test_running_yolo_executes_quick_detection_and_restores_fixed_version(regist
     checked = []
     def runtime_url(selected):
         checked.append((str(selected.id), selected.sha256))
-        return "http://127.0.0.1:19002"
+        return fixture_url("127.0.0.1:19002", scheme="http")
     monkeypatch.setattr(yolo_runtime, "runtime_url", runtime_url)
     plan = strategies.resolve_plan(registry.db, "general", ["crack"])
     snapshot = plan[0].snapshot
@@ -261,10 +261,11 @@ def test_local_configuration_is_saved_without_starting(registry, monkeypatch):
 def test_local_switch_reflects_process_presence_even_when_health_fails(registry, monkeypatch, state, pid, active):
     import os
     local = create_vision(registry, "local_vlm", model_path="/models/special-vl")
-    monkeypatch.setattr(models, "os", SimpleNamespace(name="posix", environ=os.environ))
-    monkeypatch.setattr(models, "local_model_settings", lambda *_: SimpleNamespace(
+    # Replace explicit module entries; pytest restores them after each case.
+    monkeypatch.setitem(models.__dict__, "os", SimpleNamespace(name="posix", environ=os.environ))
+    monkeypatch.setitem(models.__dict__, "local_model_settings", lambda *_: SimpleNamespace(
         local_qwen_control_enabled=True, app_env="development", local_qwen_model_path="/models/special-vl"))
-    monkeypatch.setattr(models, "local_qwen_status", lambda *_: LocalQwenStatus(state, "服务状态", pid))
+    monkeypatch.setitem(models.__dict__, "local_qwen_status", lambda *_: LocalQwenStatus(state, "服务状态", pid))
     model = models.model_read(registry.db, local["id"])
     assert model.runtime_status == state
     assert model.runtime_active is active
@@ -317,7 +318,7 @@ def test_photo_guard_uses_its_systemd_service_and_endpoint(registry, monkeypatch
     for action in ("start", "stop"):
         response = registry.client.post(f"/api/vision-models/photo_guard/runtime/{action}")
         assert response.status_code == 200
-        assert ["systemctl", "--user", action, "--", "building-photo-guard.service"] in calls
+        assert ["/usr/bin/systemctl", "--user", action, "--", "building-photo-guard.service"] in calls
     config = models.model_config(registry.db, "photo_guard")
     config.api_base_url = fixture_url('127.0.0.1:9999', '/v1', scheme='http')
     assert models.managed_photo_guard_service("photo_guard", config) == ""
@@ -544,7 +545,7 @@ def test_health_uses_selected_photo_guard_profile(registry, monkeypatch):
     model = create_vision(registry)
     assert save(registry, bind(registry, "photo_guard_prompt", model_id=model["id"])).status_code == 200
     monkeypatch.setattr(health, "get_settings", guard_settings)
-    response = registry.client.get("/api/health")
+    response = registry.client.get("/api/health/details")
     assert response.status_code == 200
     assert response.json()["photo_guard"]["ready"]
     assert response.json()["photo_guard"]["model"] == "special-vl"

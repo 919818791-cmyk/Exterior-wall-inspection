@@ -4,7 +4,7 @@ import {
   ModalContent,
   ModalFooter,
   ModalHeader
-} from "@heroui/react";
+} from "@/components/Modal";
 import { X } from "lucide-react";
 import { useEffect, useState } from "react";
 

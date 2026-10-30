@@ -169,8 +169,13 @@ TILE_HEIGHT = 960
 TILE_OVERLAP_RATIO = 0.25
 NMS_IOU_THRESHOLD = 0.5
 CROSS_TILE_MERGE_IOS_THRESHOLD = 0.60
+SPALLING_OVERLAP_BAND_IOU_THRESHOLD = 0.60
+SPALLING_TILE_EDGE_TOLERANCE_RATIO = 0.02
+SPALLING_CONTAINMENT_IOS_THRESHOLD = 0.90
 MAX_QWEN_CONCURRENCY = 10
 UPSTREAM_REQUEST_MAX_ATTEMPTS = 3
+UPSTREAM_CONNECT_MAX_ATTEMPTS = 6
+UPSTREAM_CONNECT_RETRY_BASE_DELAY_SECONDS = 2.0
 UPSTREAM_RETRY_BASE_DELAY_SECONDS = 0.5
 UPSTREAM_RETRYABLE_STATUS_CODES = frozenset({408, 429, 500, 502, 503, 504})
 DEFAULT_MAX_IMAGE_PIXELS = 64_000_000
@@ -579,16 +584,17 @@ def _inference_result(
         raw_detections,
         ios_threshold=CROSS_TILE_MERGE_IOS_THRESHOLD,
     )
+    merged_detections = _merge_contained_spalling_boxes(cross_tile_merged_detections)
     if (
         state.processing_width != state.width
         or state.processing_height != state.height
     ):
-        cross_tile_merged_detections = [
+        merged_detections = [
             _scale_detection_to_original(detection, state)
-            for detection in cross_tile_merged_detections
+            for detection in merged_detections
         ]
     detections = _class_aware_nms(
-        cross_tile_merged_detections,
+        merged_detections,
         iou_threshold=NMS_IOU_THRESHOLD,
     )
     detections = [_public_detection(detection) for detection in detections]
@@ -636,12 +642,17 @@ def _inference_result(
             "padding": "white",
             "bbox_coordinate_space": "normalized_0_999",
             "bbox_coordinate_scale": int(QWEN_BBOX_COORDINATE_SCALE),
-            "cross_tile_merge_method": "intersection_over_smaller_union",
+            "cross_tile_merge_method": "intersection_over_smaller_union+spalling_overlap_band_union",
             "cross_tile_merge_ios_threshold": CROSS_TILE_MERGE_IOS_THRESHOLD,
+            "spalling_overlap_band_iou_threshold": SPALLING_OVERLAP_BAND_IOU_THRESHOLD,
+            "spalling_tile_edge_tolerance_ratio": SPALLING_TILE_EDGE_TOLERANCE_RATIO,
+            "spalling_containment_ios_threshold": SPALLING_CONTAINMENT_IOS_THRESHOLD,
             "pre_merge_detection_count": len(raw_detections),
-            "post_merge_detection_count": len(cross_tile_merged_detections),
+            "post_cross_tile_merge_detection_count": len(cross_tile_merged_detections),
+            "post_merge_detection_count": len(merged_detections),
+            "contained_spalling_removed_count": len(cross_tile_merged_detections) - len(merged_detections),
             "nms_iou_threshold": NMS_IOU_THRESHOLD,
-            "pre_nms_detection_count": len(cross_tile_merged_detections),
+            "pre_nms_detection_count": len(merged_detections),
             "post_nms_detection_count": len(detections),
         },
         "requested_models": list(
@@ -881,18 +892,23 @@ async def _request_tile(
         request_payload["enable_thinking"] = False
     provider_label = "Qwen"
     response: httpx.Response | None = None
-    for attempt in range(1, UPSTREAM_REQUEST_MAX_ATTEMPTS + 1):
+    # A failed connection has not submitted the image to the model. Allow a
+    # longer recovery window without repeating successful tile requests.
+    for attempt in range(1, UPSTREAM_CONNECT_MAX_ATTEMPTS + 1):
         try:
             response = await client.post(endpoint, json=request_payload)
         except httpx.TransportError as exc:
-            if attempt >= UPSTREAM_REQUEST_MAX_ATTEMPTS:
+            connection_error = isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout))
+            max_attempts = UPSTREAM_CONNECT_MAX_ATTEMPTS if connection_error else UPSTREAM_REQUEST_MAX_ATTEMPTS
+            if attempt >= max_attempts:
                 raise TrialQwenInferenceError(
-                    f"{provider_label} request failed after {attempt} attempts: {exc}"
+                    f"{provider_label} request failed after {attempt} attempts: {type(exc).__name__}: {exc}"
                 ) from exc
             await _wait_before_upstream_retry(
                 provider_label=provider_label,
                 attempt=attempt,
                 reason=type(exc).__name__,
+                connection_error=connection_error,
             )
             continue
         except httpx.HTTPError as exc:
@@ -932,10 +948,12 @@ async def _wait_before_upstream_retry(
     attempt: int,
     reason: str,
     retry_after: float | None = None,
+    connection_error: bool = False,
 ) -> None:
-    exponential_delay = UPSTREAM_RETRY_BASE_DELAY_SECONDS * (2 ** (attempt - 1))
+    base_delay = UPSTREAM_CONNECT_RETRY_BASE_DELAY_SECONDS if connection_error else UPSTREAM_RETRY_BASE_DELAY_SECONDS
+    exponential_delay = base_delay * (2 ** (attempt - 1))
     jitter = random.uniform(0, UPSTREAM_RETRY_BASE_DELAY_SECONDS)
-    delay = min(10.0, retry_after if retry_after is not None else exponential_delay + jitter)
+    delay = min(30.0 if connection_error else 10.0, retry_after if retry_after is not None else exponential_delay + jitter)
     logger.warning(
         "trial_upstream_request_retry provider=%s attempt=%d next_attempt=%d delay_seconds=%.2f reason=%s",
         provider_label,
@@ -1316,10 +1334,115 @@ def _is_cross_tile_duplicate(
         or not _tiles_overlap(left_tile, right_tile)
     ):
         return False
-    return (
+    if (
         _bbox_intersection_over_smaller(left.get("bbox"), right.get("bbox"))
         >= ios_threshold
+    ):
+        return True
+    return left.get("type") == "spalling" and _spalling_continues_across_tiles(
+        left.get("bbox"), right.get("bbox"), left_tile, right_tile
     )
+
+
+def _spalling_continues_across_tiles(
+    left_bbox: object,
+    right_bbox: object,
+    left_tile: _Tile,
+    right_tile: _Tile,
+) -> bool:
+    """Match truncated regions in the shared tile band, not their full areas."""
+    left_geometry = _bbox_geometry(left_bbox)
+    right_geometry = _bbox_geometry(right_bbox)
+    if left_geometry is None or right_geometry is None:
+        return False
+
+    overlap = (
+        max(left_tile.x, right_tile.x),
+        max(left_tile.y, right_tile.y),
+        min(left_tile.x + left_tile.valid_width, right_tile.x + right_tile.valid_width),
+        min(left_tile.y + left_tile.valid_height, right_tile.y + right_tile.valid_height),
+    )
+    left_band = _clip_bbox_geometry(left_geometry, overlap)
+    right_band = _clip_bbox_geometry(right_geometry, overlap)
+    if left_band is None or right_band is None:
+        return False
+    intersection = _geometry_intersection_area(left_band, right_band)
+    union = left_band[4] + right_band[4] - intersection
+    if intersection / union < SPALLING_OVERLAP_BAND_IOU_THRESHOLD:
+        return False
+
+    # Matching boxes must also be truncated at the facing tile edges and
+    # extend outside both sides of the shared band. This rejects nearby
+    # complete regions that merely overlap within the band.
+    for axis, left_start, left_size, right_start, right_size in (
+        (0, left_tile.x, left_tile.valid_width, right_tile.x, right_tile.valid_width),
+        (1, left_tile.y, left_tile.valid_height, right_tile.y, right_tile.valid_height),
+    ):
+        if left_start == right_start:
+            continue
+        earlier, later = left_geometry, right_geometry
+        if left_start > right_start:
+            earlier, later = later, earlier
+            left_start, right_start = right_start, left_start
+            left_size, right_size = right_size, left_size
+        earlier_end = left_start + left_size
+        tolerance = min(left_size, right_size) * SPALLING_TILE_EDGE_TOLERANCE_RATIO
+        if (
+            earlier[axis + 2] < earlier_end - tolerance
+            or later[axis] > right_start + tolerance
+            or earlier[axis] >= right_start
+            or later[axis + 2] <= earlier_end
+        ):
+            return False
+    return True
+
+
+def _clip_bbox_geometry(
+    geometry: tuple[float, float, float, float, float],
+    bounds: tuple[float, float, float, float],
+) -> tuple[float, float, float, float, float] | None:
+    left, top = max(geometry[0], bounds[0]), max(geometry[1], bounds[1])
+    right, bottom = min(geometry[2], bounds[2]), min(geometry[3], bounds[3])
+    if right <= left or bottom <= top:
+        return None
+    return left, top, right, bottom, (right - left) * (bottom - top)
+
+
+def _merge_contained_spalling_boxes(
+    detections: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Keep full coverage when a spalling box contains a smaller duplicate."""
+    candidates = [
+        (index, geometry[4])
+        for index, detection in enumerate(detections)
+        if detection.get("type") == "spalling"
+        and (geometry := _bbox_geometry(detection.get("bbox"))) is not None
+    ]
+    candidates.sort(key=lambda item: item[1], reverse=True)
+    groups: dict[int, list[dict[str, Any]]] = {}
+    absorbed: set[int] = set()
+    for position, (index, _) in enumerate(candidates):
+        if index in absorbed:
+            continue
+        container = detections[index]
+        groups[index] = [container]
+        for smaller_index, _ in candidates[position + 1:]:
+            if smaller_index in absorbed:
+                continue
+            smaller = detections[smaller_index]
+            # Compare against the original container so an expanding union
+            # cannot progressively absorb unrelated neighboring regions.
+            if (
+                _bbox_intersection_over_smaller(container.get("bbox"), smaller.get("bbox"))
+                >= SPALLING_CONTAINMENT_IOS_THRESHOLD
+            ):
+                groups[index].append(smaller)
+                absorbed.add(smaller_index)
+    return [
+        _union_detection_group(groups[index]) if index in groups else detection
+        for index, detection in enumerate(detections)
+        if index not in absorbed
+    ]
 
 
 def _tiles_overlap(left: _Tile, right: _Tile) -> bool:

@@ -1,7 +1,9 @@
 """Regression evidence for the 34 findings in the Part 1 remediation plan."""
 import importlib.util
+from ipaddress import IPv4Address, IPv6Address
 import logging
 from pathlib import Path
+import socket
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -25,7 +27,7 @@ from test_detection_strategies import registry
 from test_phase7_routes import JsonTrialRequest, UploadedPhotoDb, _trial_customer, _uploaded_photo
 
 
-INVALID_IDENTIFIERS = ["", "../outside", "a/../../outside", "/tmp/outside", "a\\outside",
+INVALID_IDENTIFIERS = ["", "../outside", "a/../../outside", "/outside", "a\\outside",
     "%2e%2e%2f", "a%252f", "a" * 65, "a\n", ".hidden", "a\x00", "模型"]
 
 
@@ -170,8 +172,8 @@ def test_approved_control_uses_arguments_option_separator_and_timeouts(managed_s
         return SimpleNamespace(stdout="ActiveState=inactive\nSubState=dead\nMainPID=0\nIgnored=secret\n")
     monkeypatch.setattr(models.subprocess, "run", run)
     assert models.control_managed_photo_guard(PHOTO_GUARD_SERVICE, None, action).state == "stopped"
-    assert calls[0][0] == ["systemctl", "--user", action, "--", PHOTO_GUARD_SERVICE]
-    assert calls[1][0] == ["systemctl", "--user", "show", "--property=ActiveState,SubState,MainPID", "--", PHOTO_GUARD_SERVICE]
+    assert calls[0][0] == ["/usr/bin/systemctl", "--user", action, "--", PHOTO_GUARD_SERVICE]
+    assert calls[1][0] == ["/usr/bin/systemctl", "--user", "show", "--property=ActiveState,SubState,MainPID", "--", PHOTO_GUARD_SERVICE]
     assert [kwargs["timeout"] for _, kwargs in calls] == [50, 5]
     assert all(kwargs["shell"] is False and kwargs["check"] is True for _, kwargs in calls)
 
@@ -234,11 +236,25 @@ def test_environment_and_service_settings_fail_closed():
     assert Settings(_env_file=None, photo_guard_systemd_user_service=PHOTO_GUARD_SERVICE).photo_guard_systemd_user_service == PHOTO_GUARD_SERVICE
 
 
-@pytest.mark.parametrize("bindings", [[], [{"HostIp": "::", "HostPort": "19002"}],
-    [{"HostIp": "0.0.0.0", "HostPort": "19002"}], [{"HostIp": "192.0.2.1", "HostPort": "19002"}],
-    [{"HostIp": "127.0.0.1", "HostPort": "19002"}, {"HostIp": "0.0.0.0", "HostPort": "19003"}]])
-def test_yolo_rejects_public_or_ambiguous_host_port_mappings(bindings):
+@pytest.mark.parametrize(
+    "hosts",
+    [
+        [],
+        [IPv6Address(0)],
+        [IPv4Address(0)],
+        [IPv4Address(1)],
+        [IPv4Address(socket.INADDR_LOOPBACK), IPv4Address(0)],
+    ],
+    ids=["missing-binding", "ipv6-unspecified", "ipv4-unspecified", "non-loopback", "multiple-bindings"],
+)
+def test_yolo_rejects_public_or_ambiguous_host_port_mappings(hosts):
     from app.services import yolo_runtime
+
+    # Obtain a valid port from the OS; these mocked bindings never open a service.
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as port_probe:
+        port_probe.bind((str(IPv4Address(socket.INADDR_LOOPBACK)), 0))
+        host_port = str(port_probe.getsockname()[1])
+    bindings = [{"HostIp": str(host), "HostPort": host_port} for host in hosts]
     container = {"NetworkSettings": {"Ports": {"9002/tcp": bindings}}}
     with pytest.raises(RuntimeError, match="回环"):
         yolo_runtime._url(container)

@@ -2,6 +2,7 @@ from asyncio import run
 from datetime import UTC, datetime
 from io import BytesIO
 from json import dumps
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 from uuid import UUID
@@ -15,7 +16,7 @@ from sqlalchemy.orm import Session
 from starlette.datastructures import Headers
 
 from app.api import reports
-from app.api.dependencies import AuthenticatedUser, get_current_user, get_optional_current_user
+from app.api.dependencies import AuthenticatedUser, get_current_user
 from app.api.reports import (
     _append_trial_detection_result,
     _project_reviewed_result_visible,
@@ -462,7 +463,7 @@ def test_project_reviewed_results_endpoint_enforces_review_boundary(
         deleted_at=None,
         status=project_status,
     )
-    app.dependency_overrides[get_optional_current_user] = _trial_customer
+    app.dependency_overrides[get_current_user] = _trial_customer
     app.dependency_overrides[get_db] = lambda: ProjectResultVisibilityDb(project, report)
     try:
         response = client.get(f"/api/projects/{project_id}/reviewed-result")
@@ -699,31 +700,21 @@ def test_customer_trial_report_list_includes_own_and_shared_example_results() ->
     assert "inspection_report" not in trial_result_query
 
 
-def test_anonymous_trial_report_list_only_includes_shared_example() -> None:
-    fake_db = CapturingReportDb()
-
-    list_reports(db=fake_db, current_user=None)
-
-    assert len(fake_db.statements) == 1
-    trial_result_query = str(fake_db.statements[0])
-    assert "trial_detection_result.is_example IS true" in trial_result_query
-    assert "trial_detection_result.generated_by =" not in trial_result_query
-
-
-def test_anonymous_formal_report_detail_only_queries_shared_examples() -> None:
+def test_customer_formal_report_detail_only_queries_own_and_shared_examples() -> None:
     fake_db = CapturingReportDb()
 
     with pytest.raises(HTTPException) as raised:
         reports._get_report_or_404(
             fake_db,
             UUID("00000000-0000-0000-0000-000000000001"),
-            current_user=None,
+            current_user=_trial_customer(),
         )
 
     assert raised.value.status_code == 404
     report_query = str(fake_db.statements[0])
     assert "project.is_example IS true" in report_query
-    assert "project.created_by =" not in report_query
+    assert "project.created_by =" in report_query
+    assert _trial_customer().id in fake_db.statements[0].compile().params.values()
 
 
 def test_reviewer_trial_report_list_includes_own_and_shared_example_results() -> None:
@@ -1530,7 +1521,10 @@ def test_account_detection_quota_overrides_system_default(monkeypatch, source, e
             formal_photo_detection_limit=50,
         ),
     )
-    monkeypatch.setattr(photo_upload_quota, "_photo_detection_count", lambda *_args, **_kwargs: 3)
+    monkeypatch.setattr(
+        photo_upload_quota, "_photo_detection_count",
+        lambda *_args, event_type="photo_detection", **_kwargs: 3 if event_type == "photo_detection" else 0,
+    )
 
     assert photo_upload_quota._quota_limit_and_baseline(
         FakeDb(),
@@ -1774,7 +1768,7 @@ def test_report_data_exposes_current_building_model_images_with_urls(
 
 def _jpeg_with_metadata(*, image_source: str, image_description: str) -> bytes:
     xmp = (
-        b"http://ns.adobe.com/xap/1.0/\x00"
+        (Path(__file__).parent / "fixtures" / "jpeg_xmp_header.bin").read_bytes()
         + f'<rdf:Description drone-dji:ImageSource="{image_source}" />'.encode()
     )
     return b"\xff\xd8" + _app1_segment(b"Exif\x00\x00" + _tiff_with_image_description(image_description)) + _app1_segment(xmp) + b"\xff\xd9"

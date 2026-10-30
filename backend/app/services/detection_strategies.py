@@ -177,7 +177,11 @@ def merge_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         merged[field] = list(dict.fromkeys(value for result in results for value in result.get(field) or []))
     merged["detections"] = [value for result in results for value in result.get("detections") or []]
     details = dict(merged.get("inference") or {})
-    for field in ("tile_count", "api_request_count", "pre_merge_detection_count", "post_merge_detection_count", "pre_nms_detection_count", "post_nms_detection_count"):
+    for field in (
+        "tile_count", "api_request_count", "pre_merge_detection_count",
+        "post_cross_tile_merge_detection_count", "post_merge_detection_count",
+        "contained_spalling_removed_count", "pre_nms_detection_count", "post_nms_detection_count",
+    ):
         details[field] = sum(int((result.get("inference") or {}).get(field) or 0) for result in results)
     merged["inference"] = details
     from app.services.trial_qwen_inference import _aggregate_token_usages

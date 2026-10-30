@@ -1,0 +1,95 @@
+
+> building-exterior-frontend@0.1.0 prebuild
+> npm run lockfile:check
+
+
+> building-exterior-frontend@0.1.0 lockfile:check
+> node scripts/normalize-lockfile.mjs --check
+
+Lockfile HTTP-address check passed.
+
+> building-exterior-frontend@0.1.0 build
+> tsc --noEmit -p tsconfig.json && vite build && node scripts/prepare-static-files.mjs
+
+vite v8.1.0 building client environment for production...
+[2K
+transforming...✓ 788 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                                         3.03 kB │ gzip:   1.42 kB
+dist/assets/HarmonyOS_Sans_Black-yLUwplZi.ttf         155.75 kB
+dist/assets/HarmonyOS_Sans_Bold-Bnfj93cu.ttf          155.81 kB
+dist/assets/HarmonyOS_Sans_Regular-4GE96iRn.ttf       155.96 kB
+dist/assets/HarmonyOS_Sans_Semibold-U_FjLS17.ttf      155.99 kB
+dist/assets/HarmonyOS_Sans_Medium-g2KiBxrz.ttf        156.00 kB
+dist/assets/HarmonyOS_Sans_Light-DEIXpkIG.ttf         156.22 kB
+dist/assets/HarmonyOS_Sans_Thin-AWxG_rtH.ttf          156.78 kB
+dist/assets/HarmonyOS_SansSC_Black-DR277WN6.ttf     8,345.85 kB
+dist/assets/HarmonyOS_SansSC_Bold-C7Thw8dZ.ttf      8,379.89 kB
+dist/assets/HarmonyOS_SansSC_Semibold-CvNKN9Nf.ttf  8,409.69 kB
+dist/assets/HarmonyOS_SansSC_Medium-A2vtdrtA.ttf    8,449.14 kB
+dist/assets/HarmonyOS_SansSC_Regular-CKAwHTTU.ttf   8,483.13 kB
+dist/assets/HarmonyOS_SansSC_Light-Dee55E9D.ttf     8,558.58 kB
+dist/assets/HarmonyOS_SansSC_Thin-BE4-7tn_.ttf      8,631.06 kB
+dist/assets/ModelManagementPage-ChRVxXUh.css            4.50 kB │ gzip:   1.27 kB
+dist/assets/index-DMF36J60.css                        300.55 kB │ gzip:  53.02 kB
+dist/assets/loader-circle-iwvi4J9z.js                   0.14 kB │ gzip:   0.15 kB
+dist/assets/publicContact-BcTUBHvj.js                   0.16 kB │ gzip:   0.14 kB
+dist/assets/search-C0Zg5wWB.js                          0.17 kB │ gzip:   0.16 kB
+dist/assets/circle-check-C1BsZVSN.js                    0.17 kB │ gzip:   0.16 kB
+dist/assets/download-CayR76Qe.js                        0.18 kB │ gzip:   0.16 kB
+dist/assets/rotate-ccw-2FxjG8Z8.js                      0.19 kB │ gzip:   0.18 kB
+dist/assets/chevron-right-B-Ic6-Pu.js                   0.20 kB │ gzip:   0.17 kB
+dist/assets/check-C2I1VqcD.js                           0.23 kB │ gzip:   0.19 kB
+dist/assets/id-6dOZRk7Y.js                              0.24 kB │ gzip:   0.18 kB
+dist/assets/asyncLimiter-CMB5DdtL.js                    0.25 kB │ gzip:   0.19 kB
+dist/assets/upload-DwU6nmCI.js                          0.25 kB │ gzip:   0.21 kB
+dist/assets/image-DD2CsyEP.js                           0.26 kB │ gzip:   0.22 kB
+dist/assets/pencil-Cgznk82T.js                          0.27 kB │ gzip:   0.22 kB
+dist/assets/zoom-in-CR7P6Pzc.js                         0.30 kB │ gzip:   0.21 kB
+dist/assets/box-ClCFuewo.js                             0.31 kB │ gzip:   0.22 kB
+dist/assets/trash-2-Cx1dN-rJ.js                         0.35 kB │ gzip:   0.24 kB
+dist/assets/triangle-alert-DAtzBx-x.js                  0.40 kB │ gzip:   0.28 kB
+dist/assets/WorkbenchNameSearch-twTcONCz.js             0.45 kB │ gzip:   0.32 kB
+dist/assets/WorkspaceTitleBar-BTK4aItn.js               0.77 kB │ gzip:   0.38 kB
+dist/assets/HeroVideoPlaylist-BQmL_c7p.js               0.92 kB │ gzip:   0.60 kB
+dist/assets/review-BYBnOESd.js                          1.24 kB │ gzip:   0.51 kB
+dist/assets/ListPagination-BZyOCZeG.js                  1.26 kB │ gzip:   0.69 kB
+dist/assets/projectDisplay-B8LK8syK.js                  1.39 kB │ gzip:   0.84 kB
+dist/assets/reports-B9Kd5D9f.js                         1.69 kB │ gzip:   0.76 kB
+dist/assets/yoloModels-RiYEqGwS.js                      1.91 kB │ gzip:   0.77 kB
+dist/assets/trialDefectDisplay-4Zy6s9HY.js              1.92 kB │ gzip:   0.61 kB
+dist/assets/projects-DRLYP20Z.js                        2.28 kB │ gzip:   0.83 kB
+dist/assets/ReportListPage-DS4Ux7yQ.js                  2.99 kB │ gzip:   1.45 kB
+dist/assets/ProjectListPage-ZLM9UKX6.js                 3.23 kB │ gzip:   1.51 kB
+dist/assets/ReviewProjectListPage-CIdsEvS-.js           3.33 kB │ gzip:   1.55 kB
+dist/assets/WorkbenchResultTable-DjR7pZRH.js            5.26 kB │ gzip:   1.82 kB
+dist/assets/SystemSettingsPage-CT_FSR_z.js              5.60 kB │ gzip:   1.97 kB
+dist/assets/DetectionPromptsPage-CaZZjSGt.js            6.38 kB │ gzip:   2.18 kB
+dist/assets/react-BRNZa73l.js                           7.32 kB │ gzip:   2.90 kB
+dist/assets/scrape-motion-values-CGiuJHyh.js            7.69 kB │ gzip:   3.45 kB
+dist/assets/QueryClientProvider-COjvvPtS.js             7.72 kB │ gzip:   3.05 kB
+dist/assets/LegalDocumentPage--bB13kef.js              10.76 kB │ gzip:   4.53 kB
+dist/assets/StartDetectionModal-DU2JRa3z.js            10.77 kB │ gzip:   4.47 kB
+dist/assets/file-image-DGKuasq9.js                     11.86 kB │ gzip:   4.97 kB
+dist/assets/AccountManagementPage-Bud3fJFA.js          15.38 kB │ gzip:   5.00 kB
+dist/assets/NewProjectPage-BKbE08tT.js                 20.49 kB │ gzip:   6.80 kB
+dist/assets/ModelManagementPage-FXdjVs7J.js            23.39 kB │ gzip:   6.22 kB
+dist/assets/PhotoManagementPage-B4_VjXCF.js            24.00 kB │ gzip:   7.42 kB
+dist/assets/LoginPage-BBC6vTPb.js                      24.12 kB │ gzip:   6.48 kB
+dist/assets/ReportDetailPage-D8u_JVdV.js               24.33 kB │ gzip:   7.97 kB
+dist/assets/TrialExperiencePage-FB6JDFZ3.js            29.68 kB │ gzip:  10.42 kB
+dist/assets/dist-DJRp8EGr.js                           52.63 kB │ gzip:  18.53 kB
+dist/assets/index-OvM9EgoN.js                         141.56 kB │ gzip:  41.57 kB
+dist/assets/DashboardPage-CAqCDuiy.js                 156.71 kB │ gzip:  59.92 kB
+dist/assets/createLucideIcon-B8MA2U5r.js              200.53 kB │ gzip:  65.28 kB
+dist/assets/preload-helper-Bkye4OQU.js                248.98 kB │ gzip:  53.73 kB
+dist/assets/ReviewProjectDetailPage-DdzqML3Z.js       323.40 kB │ gzip:  98.00 kB
+dist/assets/BuildingModelPage-CySuK4qK.js             637.61 kB │ gzip: 162.90 kB
+
+[plugin builtin:vite-reporter]
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 982ms

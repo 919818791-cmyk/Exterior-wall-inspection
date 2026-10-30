@@ -15,6 +15,7 @@ from app.db.session import get_db
 from app.enums.status import DefectType
 from app.main import app
 from app.models.tables import SystemSetting, UserAccount, YoloModel, YoloModelDetectionType, YoloModelFacadeType, YoloModelVersion
+from yolo_weights_helpers import NEW_WEIGHTS, TEST_WEIGHTS
 
 
 @pytest.fixture
@@ -55,7 +56,7 @@ def registry(monkeypatch):
         engine.dispose()
 
 
-def upload(registry, label="v1.0", kind="crack", content=b"test-weights", filename="weights.pt", **kwargs):
+def upload(registry, label="v1.0", kind="crack", content=TEST_WEIGHTS, filename="weights.pt", **kwargs):
     return registry.client.post(f"{model_path(registry, kind)}/versions", data={
         "version": label, "description": "训练版本", **kwargs,
     }, files={"file": (filename, content, "application/octet-stream")})
@@ -93,11 +94,11 @@ def test_upload_delete_and_persistence(registry):
     assert "is_active" not in first
     assert first["runtime_status"] == "disabled"
     assert first["control_supported"] is False
-    assert first["sha256"] == sha256(b"test-weights").hexdigest()
-    second = upload(registry, "v2.0", content=b"new-weights").json()
+    assert first["sha256"] == sha256(TEST_WEIGHTS).hexdigest()
+    second = upload(registry, "v2.0", content=NEW_WEIGHTS).json()
     other = upload(registry, kind="hollow").json()
     stored = registry.db.get(YoloModelVersion, UUID(first["id"]))
-    assert registry.objects[stored.storage_object_key] == b"test-weights"
+    assert registry.objects[stored.storage_object_key] == TEST_WEIGHTS
     assert registry.client.put(f"{version_path(second)}/activate").status_code == 404
     assert len(catalog_model(registry)["versions"]) == 2
     assert registry.client.delete(version_path(first)).status_code == 204
@@ -232,7 +233,7 @@ def test_model_edit_preserves_versions_and_recreate_is_independent(registry):
     assert edited.json()["id"] == item["model_id"]
     assert edited.json()["versions"][0]["id"] == item["id"]
     stored = registry.db.get(YoloModelVersion, UUID(item["id"]))
-    assert registry.objects[stored.storage_object_key] == b"test-weights"
+    assert registry.objects[stored.storage_object_key] == TEST_WEIGHTS
     assert registry.client.delete(model_path(registry)).status_code == 204
     catalog = registry.client.get("/api/yolo-models").json()
     assert len(catalog["items"]) == 5
@@ -305,7 +306,7 @@ def test_edit_version_metadata_preserves_weights(registry):
     assert edited.json()["description"] == "已更新说明"
     assert edited.json()["sha256"] == first["sha256"]
     stored = registry.db.get(YoloModelVersion, UUID(first["id"]))
-    assert registry.objects[stored.storage_object_key] == b"test-weights"
+    assert registry.objects[stored.storage_object_key] == TEST_WEIGHTS
     assert edited.json()["runtime_status"] == "disabled"
     payload["version"] = other["version"]
     assert registry.client.patch(version_path(first), json=payload).status_code == 409

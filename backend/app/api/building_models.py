@@ -14,7 +14,6 @@ from app.api.dependencies import (
     AuthenticatedUser,
     ensure_project_access,
     get_current_user,
-    get_optional_current_user,
 )
 from app.api.projects import _api_base_url, _get_project_or_404
 from app.db.session import get_db
@@ -24,7 +23,7 @@ from app.schemas.projects import BuildingModelImageRead, BuildingModelRead, Dele
 from app.services.object_storage import put_object, remove_object, signed_object_url
 from app.services.usage_tracking import add_building_model_upload_event
 
-router = APIRouter(tags=["building-models"])
+router = APIRouter(tags=["building-models"], dependencies=[Depends(get_current_user)])
 
 MAX_BUILDING_MODEL_BYTES = 1024 * 1024 * 1024
 MODEL_IMAGE_SLOTS = (
@@ -132,7 +131,7 @@ def get_building_model(
     project_id: UUID,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: AuthenticatedUser | None = Depends(get_optional_current_user),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> BuildingModelRead | None:
     project = _get_project_or_404(db, project_id)
     ensure_project_access(project, current_user)
@@ -234,7 +233,7 @@ def get_building_model_images(
     project_id: UUID,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: AuthenticatedUser | None = Depends(get_optional_current_user),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> list[BuildingModelImageRead]:
     project = _get_project_or_404(db, project_id)
     ensure_project_access(project, current_user)

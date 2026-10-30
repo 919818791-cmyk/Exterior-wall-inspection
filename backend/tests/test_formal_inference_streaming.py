@@ -26,7 +26,7 @@ LIMITS = dict(max_image_pixels=10_000_000, inference_max_image_pixels=10_000_000
               max_tiles_per_image=100, max_tiles_per_request=2)
 
 
-@pytest.mark.parametrize("mode", ["legacy", "strategy", "dedicated"])
+@pytest.mark.parametrize("mode", ["legacy", "strategy", "dedicated", "reserved"])
 def test_formal_job_streams_photos_without_project_tile_limit(monkeypatch, mode):
     images = [image_input(i) for i in range(5)]
     photos = [SimpleNamespace(id=image.photo_id, photo_type="visible", original_filename=image.filename,
@@ -87,12 +87,24 @@ def test_formal_job_streams_photos_without_project_tile_limit(monkeypatch, mode)
     monkeypatch.setattr(detection_tasks, "add_inference_usage_event", lambda *_args, **_kwargs: None)
     execution = SimpleNamespace(defect_types=["crack"], runtime=runtime, prompt="test", key="tile_crack_prompt", snapshot={})
     monkeypatch.setattr(detection_tasks, "restore_plan", lambda *_: [execution])
+    reserved = None
+    heartbeat_calls = []
+    if mode == "reserved":
+        reserved = SimpleNamespace(lease_seconds=900,
+                                   start_heartbeat=lambda seconds: heartbeat_calls.append(seconds),
+                                   release=lambda **kw: releases.append(kw))
+
+        def unexpected_reservation(*_args, **_kwargs):
+            pytest.fail("An admitted job must reuse its reservation instead of acquiring the account lock again.")
+
+        monkeypatch.setattr(detection_tasks, "reserve_inference_usage", unexpected_reservation)
     asyncio.run(detection_tasks._run_formal_project_inference(
         project_id=project.id, task_id=task.id, actor_id=uuid4(), photo_ids=[photo.id for photo in photos],
         selected_model_types=["crack"], runtime=runtime,
         prompts=SimpleNamespace(visible_prompt_for_models=lambda _: "test", thermal_prompt="test"),
         inference_snapshot=({"strategies": [{}]} if mode == "strategy" else
                             {"prompts": {"visible_by_defect": {"crack": "test"}}} if mode == "dedicated" else {}),
+        usage_reservation=reserved,
     ))
     assert [len(call) for call in calls] == [1, 1, 1, 1, 1]
     assert events == [event for photo in photos for event in (("load", photo.id), ("infer", photo.id))]
@@ -102,3 +114,4 @@ def test_formal_job_streams_photos_without_project_tile_limit(monkeypatch, mode)
     assert all(photo.status == "detected" for photo in photos)
     assert len(task.result_summary["raw_model_outputs"]) == len(photos)
     assert releases == [{"successful": True, "actual_api_request_count": 5}]
+    assert heartbeat_calls == ([900] if mode == "reserved" else [])

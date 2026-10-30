@@ -36,8 +36,9 @@ def _backfill_model(db, model) -> tuple[int, int]:
             db.rollback()
             failed += 1
             print(
-                "Thumbnail backfill failed: "
-                f"{model.__tablename__} {photo.id} ({type(exc).__name__})"
+                "Thumbnail backfill failed: ",
+                model.__tablename__, " ", photo.id, " (", type(exc).__name__, ")",
+                sep="",
             )
     return completed, failed
 
@@ -101,8 +102,9 @@ def main() -> None:
 
     print(
         "Thumbnail backfill complete: "
-        f"formal={formal_completed}, trial={trial_completed}, "
-        f"failed={formal_failed + trial_failed}, report_snapshots={report_updates}"
+        "formal=", formal_completed, ", trial=", trial_completed, ", ",
+        "failed=", formal_failed + trial_failed, ", report_snapshots=", report_updates,
+        sep="",
     )
 
 

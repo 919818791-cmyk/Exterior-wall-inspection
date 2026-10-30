@@ -65,7 +65,7 @@ export function ProjectListPage() {
           <div className="project-table-wrap project-workbench-table-wrap">
           {projectsQuery.isLoading ? <div className="project-empty"><strong>正在加载项目…</strong></div> : visibleProjects.length && workbenchProjects.length ? <WorkbenchResultTable
             columnLabel="检测名称"
-            completionTimeLabel="完成时间"
+            completionTimeLabel="检测状态"
             getKey={(project) => project.id}
             items={paginatedProjects}
             onOpen={(project) => navigate(`/detections/${project.id}`)}
@@ -74,19 +74,23 @@ export function ProjectListPage() {
               if (project.professionalState.status === "failed") return <span title={project.current_task_failed_reason ?? undefined}>检测失败，可重试</span>;
               if (project.professionalState.status === "draft") return "未开始检测";
               if (project.professionalState.status === "completed") {
-                if (!project.completed_at) return "--";
-                return <time dateTime={project.completed_at ?? undefined}>
-                  {formatDateTime(project.completed_at)}
-                </time>;
+                return <span className="workbench-completion-time-content">
+                  <span className="status-tag ready">已完成</span>
+                  {project.completed_at ? <time dateTime={project.completed_at}>
+                    {formatDateTime(project.completed_at)}
+                  </time> : <span>--</span>}
+                </span>;
               }
-              return <time dateTime={project.estimatedCompletionAt ?? undefined}>
-                {formatEstimatedRemainingTime(project.estimatedCompletionAt)}
-              </time>;
+              return <span className="workbench-completion-time-content">
+                <span className="status-tag detecting">检测中</span>
+                <time dateTime={project.estimatedCompletionAt ?? undefined}>
+                  {formatEstimatedRemainingTime(project.estimatedCompletionAt)}
+                </time>
+              </span>;
             }}
             renderDetectionDescription={(project) => <WorkbenchDefectSummary
               counts={project.by_defect_type}
               placeholder={project.professionalState.status === "completed" ? undefined : "--"}
-              variant="compact"
             />}
             renderTrailingIndicator={(project) => project.generate_building_model ? (
               <img alt="" aria-hidden="true" src="/icons/action-cube.png" />

@@ -306,6 +306,7 @@ def test_admin_updates_runtime_limits_and_prompts(monkeypatch) -> None:
             json={
                 "provider": "qwen",
                 "global_job_concurrency": 7,
+                "user_job_concurrency": 2,
                 "request_concurrency": 3,
                 "trial_photo_detection_limit": 50,
                 "formal_photo_detection_limit": 50,
@@ -326,6 +327,9 @@ def test_admin_updates_runtime_limits_and_prompts(monkeypatch) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["global_job_concurrency"] == 7
+    assert body["user_job_concurrency"] == 2
+    assert fake_db.settings["trial_user_job_concurrency"].value == "2"
+    assert fake_db.settings["trial_user_job_concurrency"].updated_by == _admin().id
     assert body["request_concurrency"] == 3
     assert body["trial_photo_detection_limit"] == 50
     assert body["formal_photo_detection_limit"] == 50
@@ -348,3 +352,27 @@ def test_admin_updates_runtime_limits_and_prompts(monkeypatch) -> None:
     for option in body["options"]:
         assert "api_key" not in option
         assert "api_key_hint" not in option
+
+
+@pytest.mark.parametrize("value", [0, 11, 1.5])
+def test_account_concurrency_rejects_invalid_values(value):
+    app.dependency_overrides[get_current_user] = _admin
+    fake_db = FakeSettingsDb()
+    app.dependency_overrides[get_db] = lambda: fake_db
+    try:
+        response = TestClient(app).put(
+            "/api/system-settings/trial-inference", json={"user_job_concurrency": value},
+        )
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == 422
+    assert not fake_db.committed
+
+
+def test_account_concurrency_defaults_to_one_and_reads_saved_value():
+    from app.services.trial_inference_provider import trial_scheduling_settings
+
+    fake_db = FakeSettingsDb()
+    assert trial_scheduling_settings(fake_db, _settings()).user_job_concurrency == 1
+    fake_db.add(SystemSetting(key="trial_user_job_concurrency", value="3"))
+    assert trial_scheduling_settings(fake_db, _settings()).user_job_concurrency == 3

@@ -14,6 +14,7 @@ TrialInferenceProvider = Literal["qwen", "local_qwen"]
 UpstreamInferenceProvider = Literal["qwen"]
 TRIAL_INFERENCE_PROVIDER_KEY = "trial_inference_provider"
 TRIAL_GLOBAL_JOB_CONCURRENCY_KEY = "trial_global_job_concurrency"
+TRIAL_USER_JOB_CONCURRENCY_KEY = "trial_user_job_concurrency"
 TRIAL_REQUEST_CONCURRENCY_KEY = "trial_request_concurrency"
 TRIAL_PHOTO_DETECTION_LIMIT_KEY = "trial_photo_detection_limit"
 FORMAL_PHOTO_DETECTION_LIMIT_KEY = "formal_photo_detection_limit"
@@ -49,6 +50,7 @@ class TrialInferenceRuntime:
 @dataclass(frozen=True, slots=True)
 class TrialSchedulingSettings:
     global_job_concurrency: int
+    user_job_concurrency: int
     request_concurrency: int
     trial_photo_detection_limit: int
     formal_photo_detection_limit: int
@@ -136,6 +138,13 @@ def trial_scheduling_settings(
             db,
             TRIAL_GLOBAL_JOB_CONCURRENCY_KEY,
             getattr(settings, "trial_global_job_concurrency", 4),
+            minimum=1,
+            maximum=10,
+        ),
+        user_job_concurrency=_bounded_int_setting(
+            db,
+            TRIAL_USER_JOB_CONCURRENCY_KEY,
+            getattr(settings, "trial_user_job_concurrency", 1),
             minimum=1,
             maximum=10,
         ),

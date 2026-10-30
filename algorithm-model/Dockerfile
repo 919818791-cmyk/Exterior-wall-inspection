@@ -19,7 +19,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 RUN python -m pip install --upgrade pip \
-    && python -m pip install torch torchvision --index-url "${PYTORCH_INDEX_URL}"
+    && python -m pip install 'torch>=2.10.0' torchvision --index-url "${PYTORCH_INDEX_URL}"
 
 COPY requirements.txt /model/requirements.txt
 RUN python -m pip install -r /model/requirements.txt

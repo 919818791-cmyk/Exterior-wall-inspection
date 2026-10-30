@@ -3,7 +3,7 @@ from __future__ import annotations
 import secrets
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Literal
-from uuid import UUID
+from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -32,7 +32,7 @@ from app.schemas.auth import (
     AccountRead,
     AccountUpdateRequest,
 )
-from app.services.photo_upload_quota import reset_account_quota_counters
+from app.services.photo_upload_quota import PHOTO_QUOTA_ADD_EVENT, reset_account_quota_counters
 from app.services.trial_inference_provider import trial_scheduling_settings
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
@@ -306,6 +306,7 @@ def get_current_account_usage(
     metrics = _empty_usage_metrics()
     trial_photo_detection_count = 0
     formal_photo_detection_count = 0
+    added_counts = {"trial": 0, "formal": 0}
     account = db.get(UserAccount, current_user.id)
     quota_reset_at = getattr(account, "quota_reset_at", None)
     aware_quota_reset_at = _aware_utc(quota_reset_at) if quota_reset_at is not None else None
@@ -334,6 +335,9 @@ def get_current_account_usage(
         )
         if is_current_month:
             _add_usage_event(metrics, row)
+        if row.event_type == PHOTO_QUOTA_ADD_EVENT and is_after_quota_reset:
+            if row.source_type in added_counts:
+                added_counts[row.source_type] += max(0, int(row.photo_count or 0))
         if row.event_type == "photo_detection" and is_after_quota_reset:
             count = max(0, int(row.photo_count or 0))
             if row.source_type == "trial":
@@ -353,11 +357,11 @@ def get_current_account_usage(
         usage=AccountUsageTotals(**metrics),
         trial_photo_detection_balance=_quota_balance(
             effective_limit("trial", scheduling.trial_photo_detection_limit),
-            trial_photo_detection_count,
+            trial_photo_detection_count - added_counts["trial"],
         ),
         formal_photo_detection_balance=_quota_balance(
             effective_limit("formal", scheduling.formal_photo_detection_limit),
-            formal_photo_detection_count,
+            formal_photo_detection_count - added_counts["formal"],
         ),
     )
 
@@ -376,18 +380,21 @@ def add_current_account_quota(
     )
     if account is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="账号不存在。")
-    scheduling = trial_scheduling_settings(db, get_settings())
-    new_limits = {}
-    for source, label in (("trial", "快速体验"), ("formal", "专业检测")):
-        current_limit = getattr(account, f"{source}_detection_quota")
-        if current_limit is None:
-            current_limit = getattr(scheduling, f"{source}_photo_detection_limit")
-        new_limit = current_limit + payload.amount
-        if new_limit > 100000:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"{label}总额度不能超过 100000 张。")
-        new_limits[source] = new_limit
-    for source, new_limit in new_limits.items():
-        setattr(account, f"{source}_detection_quota", new_limit)
+    usage = get_current_account_usage(current_user, db)
+    for source in ("trial", "formal"):
+        balance = getattr(usage, f"{source}_photo_detection_balance")
+        amount = min(payload.amount, balance.limit - balance.remaining)
+        if amount == 0:
+            continue
+        # Preserve detection history and the configured total. Each source is
+        # replenished independently and stops at its own cap.
+        db.add(UsageEvent(
+            event_key=f"photo-quota-add:{source}:{uuid4()}",
+            event_type=PHOTO_QUOTA_ADD_EVENT,
+            source_type=source,
+            actor_id=current_user.id,
+            photo_count=amount,
+        ))
     db.commit()
     return get_current_account_usage(current_user, db)
 

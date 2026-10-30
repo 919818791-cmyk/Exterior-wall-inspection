@@ -1,4 +1,4 @@
-import { Modal, ModalBody, ModalContent, ModalFooter, ModalHeader } from "@heroui/react";
+import { Modal, ModalBody, ModalContent, ModalFooter, ModalHeader } from "@/components/Modal";
 import { X } from "lucide-react";
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -38,7 +38,7 @@ export function AddQuotaModal({ onClose }: { onClose: () => void }) {
           <span className="start-detection-modal-title-copy">添加额度</span>
         </ModalHeader>
         <ModalBody className="start-detection-modal-body">
-          <p>专业检测和快速体验各增加所选额度。</p>
+          <p>专业检测和快速体验各补充所选数量的剩余额度，最多补足至各自设定的总额度。</p>
           <fieldset className="start-detection-types" disabled={mutation.isPending}>
             <legend>添加数量</legend>
             <div className="start-detection-option-grid">

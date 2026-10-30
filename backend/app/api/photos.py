@@ -13,7 +13,6 @@ from app.api.dependencies import (
     ensure_project_access,
     ensure_project_write_access,
     get_current_user,
-    get_optional_current_user,
 )
 from app.api.projects import _ensure_project_editable, _get_project_or_404
 from app.core.config import get_settings
@@ -38,7 +37,7 @@ from app.services.photo_upload_validation import MAX_PHOTO_FILE_SIZE_BYTES
 from app.services.photo_thumbnails import build_thumbnail, store_thumbnail
 from app.services.usage_tracking import add_photo_upload_event
 
-router = APIRouter(tags=["photos"])
+router = APIRouter(tags=["photos"], dependencies=[Depends(get_current_user)])
 
 def _enum_value(value: object) -> str:
     return getattr(value, "value", value)
@@ -318,7 +317,7 @@ def upload_photo(
 def list_project_photos(
     project_id: UUID,
     db: Session = Depends(get_db),
-    current_user: AuthenticatedUser | None = Depends(get_optional_current_user),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> list[PhotoRead]:
     project = _get_project_or_404(db, project_id)
     ensure_project_access(project, current_user)

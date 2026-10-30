@@ -53,6 +53,7 @@ class Settings(BaseSettings):
     security_fail_closed: bool = True
     security_key_prefix: str = "exterior-wall"
 
+    login_rate_limit_enabled: bool = True
     login_rate_limit_per_identity: int = Field(default=5, ge=1)
     login_rate_window_seconds: int = Field(default=900, ge=60)
     trial_application_limit_per_identity: int = Field(default=3, ge=1)
@@ -87,6 +88,7 @@ class Settings(BaseSettings):
     trial_generate_limit_per_user: int = Field(default=5, ge=1)
     trial_generate_window_seconds: int = Field(default=600, ge=60)
     trial_global_job_concurrency: int = Field(default=4, ge=1, le=10)
+    trial_user_job_concurrency: int = Field(default=1, ge=1, le=10)
     trial_request_timeout_seconds: float = Field(default=300, ge=5, le=600)
     trial_request_concurrency: int = Field(default=5, ge=1, le=10)
     trial_job_lock_seconds: int = Field(default=900, ge=60)
@@ -116,6 +118,11 @@ class Settings(BaseSettings):
     photo_guard_max_edge: int = Field(default=1280, ge=256, le=4096)
     photo_guard_jpeg_quality: int = Field(default=82, ge=50, le=95)
     photo_guard_fail_open: bool = False
+
+    # Web JS key is disclosed only to authenticated SDK clients; jscode stays server-side.
+    amap_js_api_key: str = Field(default="", repr=False)
+    amap_security_js_code: str = Field(default="", repr=False)
+    amap_rate_limit_per_user: int = Field(default=60, ge=1)
 
     weather_rate_limit_per_user: int = Field(default=20, ge=1)
     weather_rate_window_seconds: int = Field(default=60, ge=1)

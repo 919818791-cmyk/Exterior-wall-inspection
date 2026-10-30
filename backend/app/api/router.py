@@ -8,7 +8,7 @@ from app.api import (
     detection_tasks,
     detection_strategies,
     health,
-    object_storage,
+    maps,    object_storage,
     photo_library,
     photos,
     projects,
@@ -38,3 +38,4 @@ api_router.include_router(yolo_models.router)
 api_router.include_router(vision_models.router)
 api_router.include_router(detection_strategies.router)
 api_router.include_router(weather.router)
+api_router.include_router(maps.router)

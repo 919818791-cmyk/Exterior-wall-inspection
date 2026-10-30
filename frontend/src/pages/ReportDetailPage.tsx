@@ -409,8 +409,8 @@ function TrialResultDetail({
         </section>
         {isTrialResult ? (
           <p className="trial-result-report-hint">
-            如需更详细的检测报告，可使用{" "}
-            <RouterLink to="/detections/new"><strong>专业检测</strong></RouterLink>
+            需要更详细的检测报告？
+            <RouterLink to="/detections/new"><strong>体验专业检测</strong></RouterLink>
           </p>
         ) : null}
       </div>

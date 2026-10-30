@@ -1,4 +1,4 @@
-import { Modal, ModalBody, ModalContent, ModalFooter, ModalHeader } from "@heroui/react";
+import { Modal, ModalBody, ModalContent, ModalFooter, ModalHeader } from "@/components/Modal";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Box, CheckCircle2, Pencil, Plus, Trash2, Upload, X } from "lucide-react";
 import { useEffect, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";

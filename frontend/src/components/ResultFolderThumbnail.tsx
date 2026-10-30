@@ -3,13 +3,11 @@ import { useEffect, useState } from "react";
 
 interface ResultFolderThumbnailProps {
   firstPhotoUrl: string | null;
-  photoCount: number;
   title: string;
 }
 
 export function ResultFolderThumbnail({
   firstPhotoUrl,
-  photoCount,
   title
 }: ResultFolderThumbnailProps) {
   const [imageFailed, setImageFailed] = useState(false);
@@ -36,7 +34,6 @@ export function ResultFolderThumbnail({
           <ImageIcon aria-hidden="true" />
         </span>
       )}
-      <span className="result-folder-thumbnail-count">{Math.max(0, photoCount)}</span>
     </span>
   );
 }

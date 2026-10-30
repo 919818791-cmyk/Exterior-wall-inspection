@@ -4,8 +4,12 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "postinstall": "node scripts/normalize-lockfile.mjs",
+    "lockfile:normalize": "node scripts/normalize-lockfile.mjs",
+    "lockfile:check": "node scripts/normalize-lockfile.mjs --check",
+    "prebuild": "npm run lockfile:check",
     "dev": "vite --host 0.0.0.0",
-    "build": "tsc --noEmit -p tsconfig.json && vite build && node scripts/prepare-static-files.mjs",
+    "build": "tsc --noEmit -p tsconfig.json && node scripts/build-static.mjs",
     "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {

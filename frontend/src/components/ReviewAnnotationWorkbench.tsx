@@ -14,7 +14,7 @@ import {
   Save,
   Trash2
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Group, Image as KonvaImage, Layer, Rect, Stage, Text, Transformer } from "react-konva";
 import {
   Link as RouterLink,
@@ -31,6 +31,7 @@ import {
 } from "@/api/review";
 import { ErrorNoticeModal } from "@/components/project/PhotoLimitModal";
 import { TilePreviewDialog, type TilePreviewSource } from "@/components/TilePreviewDialog";
+import { WorkbenchDefectSummary } from "@/components/WorkbenchResultTable";
 import type {
   AnnotationBBox,
   AnnotationPhotoEdit,
@@ -38,6 +39,7 @@ import type {
 } from "@/types/reviewAnnotations";
 import type { ReportDefectSnapshot, ReportDetail, ReportPhotoSnapshot } from "@/types/reports";
 import { createAsyncLimiter } from "@/utils/asyncLimiter";
+import { createCanvasImageCache, type CanvasImageCache } from "@/utils/canvasImageCache";
 import { saveBlobAsFile } from "@/utils/download";
 import { createClientId } from "@/utils/id";
 import {
@@ -66,6 +68,7 @@ interface AnnotationPhotoRowData {
   key: string;
   filename: string;
   imageUrl: string;
+  thumbnailUrl: string;
   imageWidth: number | null;
   imageHeight: number | null;
   tileWidth?: number | string | null;
@@ -127,23 +130,28 @@ function clampCanvasPosition(position: { x: number; y: number }, zoom: number, w
   };
 }
 
-function useCanvasImage(src: string) {
-  const [image, setImage] = useState<HTMLImageElement | null>(null);
-  const [failed, setFailed] = useState(false);
+function useCanvasImage(src: string, active: boolean, cache: CanvasImageCache) {
+  const [state, setState] = useState<{
+    image: HTMLImageElement | null;
+    failed: boolean;
+    width?: number;
+    height?: number;
+  }>({ image: null, failed: false });
 
   useEffect(() => {
-    setImage(null);
-    setFailed(false);
-    if (!src) return;
+    // Preserve natural dimensions for draft annotations when releasing a photo.
+    setState((current) => ({ ...current, image: null, failed: false }));
+    if (!src || !active) return;
     let cancelled = false;
-    const next = new window.Image();
-    next.onload = () => { if (!cancelled) setImage(next); };
-    next.onerror = () => { if (!cancelled) setFailed(true); };
-    next.src = src;
+    void cache.load(src).then((image) => {
+      if (!cancelled) setState({ image, failed: false, width: image.naturalWidth, height: image.naturalHeight });
+    }, () => {
+      if (!cancelled) setState((current) => ({ ...current, failed: true }));
+    });
     return () => { cancelled = true; };
-  }, [src]);
+  }, [active, cache, src]);
 
-  return { image, failed };
+  return state;
 }
 
 function useElementWidth<T extends HTMLElement>() {
@@ -172,6 +180,7 @@ export function ReviewAnnotationWorkbench({
 }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const imageCache = useMemo(() => createCanvasImageCache(), [reviewTaskId]);
   const detailQuery = useQuery(reviewDetectionAnnotationsQueryOptions(reviewTaskId));
   const rows = useMemo(
     () => detailQuery.data ? buildAnnotationPhotoRows(detailQuery.data.result) : [],
@@ -225,10 +234,25 @@ export function ReviewAnnotationWorkbench({
     : rows[0]?.key ?? null;
   const selectedPhotoIndex = Math.max(0, rows.findIndex((row) => row.key === activePhotoKey));
 
-  function selectPhoto(index: number) {
+  useEffect(() => {
+    const current = rows[selectedPhotoIndex];
+    if (!current?.imageUrl) return;
+    let cancelled = false;
+    // Give the selected photo priority; warm only the two neighbouring photos.
+    void imageCache.load(current.imageUrl).then(() => {
+      if (cancelled) return;
+      for (const index of [selectedPhotoIndex - 1, selectedPhotoIndex + 1]) {
+        const src = rows[index]?.imageUrl;
+        if (src) void imageCache.load(src).catch(() => undefined);
+      }
+    }, () => undefined);
+    return () => { cancelled = true; };
+  }, [imageCache, rows, selectedPhotoIndex]);
+
+  const selectPhoto = useCallback((index: number) => {
     const nextRow = rows[index];
     if (nextRow) setSelectedPhotoKey(nextRow.key);
-  }
+  }, [rows]);
 
   const registerEditorSaveHandler = useCallback((
     photoKey: string,
@@ -631,7 +655,7 @@ export function ReviewAnnotationWorkbench({
                     onClick={() => selectPhoto(index)}
                   >
                     <span className="annotation-photo-thumbnail-image">
-                      {row.imageUrl ? <img alt="" src={row.imageUrl} /> : <FileImage aria-hidden="true" />}
+                      {row.thumbnailUrl ? <img alt="" decoding="async" loading="lazy" src={row.thumbnailUrl} /> : <FileImage aria-hidden="true" />}
                       <span className="annotation-photo-thumbnail-index">{String(index + 1).padStart(2, "0")}</span>
                     </span>
                     <span className="annotation-photo-thumbnail-name" title={row.filename}>{row.filename}</span>
@@ -650,7 +674,9 @@ export function ReviewAnnotationWorkbench({
                   aria-hidden={row.key === activePhotoKey ? undefined : "true"}
                 >
                   <AnnotationPhotoEditor
+                    active={row.key === activePhotoKey}
                     edit={editsByPhoto.get(row.key)}
+                    imageCache={imageCache}
                     photoCount={rows.length}
                     photoIndex={index}
                     readOnly={readOnly}
@@ -686,8 +712,10 @@ export function ReviewAnnotationWorkbench({
   );
 }
 
-function AnnotationPhotoEditor({
+const AnnotationPhotoEditor = memo(function AnnotationPhotoEditor({
+  active,
   edit,
+  imageCache,
   photoCount,
   photoIndex,
   readOnly,
@@ -698,7 +726,9 @@ function AnnotationPhotoEditor({
   onSaveStatusChange,
   onSelectPhoto
 }: {
+  active: boolean;
   edit?: AnnotationPhotoEdit;
+  imageCache: CanvasImageCache;
   photoCount: number;
   photoIndex: number;
   readOnly: boolean;
@@ -710,9 +740,9 @@ function AnnotationPhotoEditor({
   onSelectPhoto: (index: number) => void;
 }) {
   const queryClient = useQueryClient();
-  const { image, failed } = useCanvasImage(row.imageUrl);
-  const imageWidth = Math.max(1, row.imageWidth ?? image?.naturalWidth ?? 1200);
-  const imageHeight = Math.max(1, row.imageHeight ?? image?.naturalHeight ?? 800);
+  const { image, failed, width, height } = useCanvasImage(row.imageUrl, active, imageCache);
+  const imageWidth = Math.max(1, row.imageWidth ?? width ?? 1200);
+  const imageHeight = Math.max(1, row.imageHeight ?? height ?? 800);
   const originalAnnotations = useMemo(
     () => annotationsFromDefects(row.defects, imageWidth, imageHeight),
     [imageHeight, imageWidth, row.defects]
@@ -734,13 +764,26 @@ function AnnotationPhotoEditor({
   }, [savedAnnotations, touched]);
 
   useEffect(() => {
+    if (!active) {
+      setIsDrawing(false);
+      setTilePreviewOpen(false);
+      return;
+    }
     if (!isDrawing) return;
     const cancelDrawing = (event: KeyboardEvent) => {
       if (event.key === "Escape") setIsDrawing(false);
     };
     window.addEventListener("keydown", cancelDrawing);
     return () => window.removeEventListener("keydown", cancelDrawing);
-  }, [isDrawing]);
+  }, [active, isDrawing]);
+
+  const annotationCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    annotations.forEach((annotation) => {
+      counts[annotation.defect_type] = (counts[annotation.defect_type] ?? 0) + 1;
+    });
+    return counts;
+  }, [annotations]);
 
   const selected = annotations.find((annotation) => annotation.id === selectedId) ?? null;
   const selectedIndex = selected
@@ -756,7 +799,10 @@ function AnnotationPhotoEditor({
     tileOverlapRatio: row.tileOverlapRatio,
     detections: row.detections
   }), [imageHeight, imageWidth, row.detections, row.filename, row.imageUrl, row.tileHeight, row.tileOverlapRatio, row.tileWidth]);
-  const dirty = JSON.stringify(cleanAnnotations(annotations)) !== JSON.stringify(cleanAnnotations(savedAnnotations));
+  const dirty = useMemo(
+    () => JSON.stringify(cleanAnnotations(annotations)) !== JSON.stringify(cleanAnnotations(savedAnnotations)),
+    [annotations, savedAnnotations]
+  );
   const defectOptions = DEFECT_OPTIONS.filter((option) => ["crack", "spalling", "peeling", "damage", "hollow"].includes(option.value));
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["review", "detections"] });
@@ -838,6 +884,8 @@ function AnnotationPhotoEditor({
   }
 
   const activeError = saveMutation.error;
+  // Keep per-photo drafts and save handlers mounted, but release hidden UI/canvases.
+  if (!active) return null;
   return (
     <div className="annotation-photo-editor-module">
       {activeError ? <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-normal text-red-700">{errorMessage(activeError)}</p> : null}
@@ -885,7 +933,7 @@ function AnnotationPhotoEditor({
             )}
           </p>
           {selected ? (
-            <label className="ml-auto flex items-center gap-2 text-sm font-medium text-slate-500">
+            <label className="flex items-center gap-2 text-sm font-medium text-slate-500">
               类型
               <select
                 className="h-10 w-[98px] rounded-lg border border-slate-300 bg-white px-3 text-base font-bold text-slate-700 outline-none focus:border-action"
@@ -898,6 +946,9 @@ function AnnotationPhotoEditor({
               </select>
             </label>
           ) : null}
+          <div aria-label="当前照片标注统计" aria-live="polite" className="annotation-editor-defect-summary">
+            <WorkbenchDefectSummary counts={annotationCounts} />
+          </div>
         </div>
         <AnnotationCanvas
           annotations={annotations}
@@ -942,7 +993,7 @@ function AnnotationPhotoEditor({
         ) : null}
       </div>
   );
-}
+});
 
 function AnnotationIconButton({
   children,
@@ -1030,6 +1081,10 @@ function AnnotationCanvas({
   const renderedHeight = Math.max(1, imageHeight * scale);
   const offsetX = Math.max(12, (stageWidth - renderedWidth) / 2);
   const offsetY = Math.max(12, (stageHeight - renderedHeight) / 2);
+  const boundCanvasDrag = useCallback(
+    (position: { x: number; y: number }) => clampCanvasPosition(position, zoom, stageWidth, stageHeight),
+    [stageHeight, stageWidth, zoom]
+  );
 
   useEffect(() => {
     setZoom(MIN_CANVAS_ZOOM);
@@ -1162,7 +1217,7 @@ function AnnotationCanvas({
             width={stageWidth}
             x={canvasPosition.x}
             y={canvasPosition.y}
-            dragBoundFunc={(position) => clampCanvasPosition(position, zoom, stageWidth, stageHeight)}
+            dragBoundFunc={boundCanvasDrag}
             onDragEnd={(event) => {
               if (event.target === stageRef.current) {
                 setCanvasPosition(clampCanvasPosition(event.target.position(), zoom, stageWidth, stageHeight));
@@ -1176,9 +1231,11 @@ function AnnotationCanvas({
             onTouchStart={handleDrawStart}
             onWheel={handleWheel}
           >
-          <Layer>
+          <Layer listening={false}>
             <Rect fill="#e2e8f0" height={stageHeight} width={stageWidth} x={0} y={0} />
             {image ? <KonvaImage image={image} x={offsetX} y={offsetY} width={renderedWidth} height={renderedHeight} /> : <Rect fill="#e2e8f0" x={offsetX} y={offsetY} width={renderedWidth} height={renderedHeight} />}
+          </Layer>
+          <Layer>
             {annotations.map((annotation) => {
               const rect = stageRect(annotation.bbox);
               const selected = annotation.id === selectedId;
@@ -1324,6 +1381,7 @@ function buildAnnotationPhotoRows(report: ReportDetail): AnnotationPhotoRowData[
         || photo.thumbnail_url
         || defectImageUrl(defects)
         || "",
+      thumbnailUrl: photo.thumbnail_url || photo.preview_url || defectImageUrl(defects) || "",
       imageWidth: finiteNumber(photo.image_width ?? modelOutput?.image_width ?? firstFinding?.image_width),
       imageHeight: finiteNumber(photo.image_height ?? modelOutput?.image_height ?? firstFinding?.image_height),
       tileWidth: modelOutput?.tile_width,
@@ -1344,6 +1402,7 @@ function buildAnnotationPhotoRows(report: ReportDetail): AnnotationPhotoRowData[
       key,
       filename: defects[0]?.photo_filename || "检测结果照片",
       imageUrl: defectImageUrl(defects),
+      thumbnailUrl: defects.find((defect) => defect.photo_thumbnail_url)?.photo_thumbnail_url || defectImageUrl(defects),
       imageWidth: finiteNumber(finding?.image_width),
       imageHeight: finiteNumber(finding?.image_height),
       tileWidth: modelOutput?.tile_width,

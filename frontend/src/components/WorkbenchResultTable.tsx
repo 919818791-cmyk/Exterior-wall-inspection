@@ -114,7 +114,6 @@ export function WorkbenchResultTable<T extends WorkbenchResultListItem>({
               <td className="result-folder-column">
                 <ResultFolderThumbnail
                   firstPhotoUrl={item.first_photo_url}
-                  photoCount={item.photo_count}
                   title={item.title}
                 />
               </td>
@@ -129,6 +128,7 @@ export function WorkbenchResultTable<T extends WorkbenchResultListItem>({
                 <span className="project-name-line workbench-list-title-line">
                   <strong className="project-name workbench-list-title">{item.title}</strong>
                 </span>
+                {showThumbnail ? <span className="workbench-list-photo-count">{Math.max(0, item.photo_count)} 张照片</span> : null}
               </span>
             </td>
             {renderTitleAccessory ? (
@@ -163,20 +163,16 @@ export function WorkbenchResultTable<T extends WorkbenchResultListItem>({
   );
 }
 
-type WorkbenchDefectSummaryVariant = "stacked" | "compact";
-
 interface WorkbenchDefectSummaryProps {
   counts: Record<string, number>;
   placeholder?: string;
-  variant?: WorkbenchDefectSummaryVariant;
 }
 
 const MAX_VISIBLE_DEFECT_TYPES = 3;
 
 export function WorkbenchDefectSummary({
   counts,
-  placeholder,
-  variant = "stacked"
+  placeholder
 }: WorkbenchDefectSummaryProps) {
   if (placeholder) return <p className="workbench-defect-summary is-placeholder">{placeholder}</p>;
 
@@ -202,15 +198,13 @@ export function WorkbenchDefectSummary({
   const details = visibleEntries.map((entry) => `${entry.label}${entry.count}`).join("、");
   const accessibleSummary = details || "无缺陷";
 
-  return <p
-    aria-label={accessibleSummary}
-    className={`workbench-defect-summary is-${variant}`}
-  >
-    {variant === "compact" && visibleEntries.length
-      ? visibleEntries.map((entry) => `${entry.label}·${entry.count}`).join("、")
-      : variant === "compact" ? <span className="workbench-defect-summary-empty">--</span>
-      : details ? <span className="workbench-defect-summary-details">{details}</span> : null}
-  </p>;
+  return <div aria-label={accessibleSummary} className="workbench-defect-summary">
+    {visibleEntries.length ? visibleEntries.map((entry) => (
+      <span className="workbench-defect-badge" data-defect={entry.label} key={entry.label}>
+        {entry.label}<strong>{entry.count}</strong>
+      </span>
+    )) : <span className="workbench-defect-summary-empty">--</span>}
+  </div>;
 }
 
 const detectionTypeLabels: Record<string, string> = {

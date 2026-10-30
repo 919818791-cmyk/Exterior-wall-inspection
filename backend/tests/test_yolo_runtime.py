@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from hashlib import sha256
 from io import BytesIO
+from ipaddress import IPv4Address
 import json
 from types import SimpleNamespace
 from uuid import uuid4
@@ -9,11 +10,12 @@ from fastapi import HTTPException
 import pytest
 
 from app.services import yolo_runtime
+from yolo_weights_helpers import TEST_WEIGHTS
 
 
 @pytest.fixture
 def version():
-    content = b"uploaded-weights"
+    content = TEST_WEIGHTS
     return SimpleNamespace(id=uuid4(), model_id=uuid4(), version="V1", file_size=len(content),
                            sha256=sha256(content).hexdigest(), storage_bucket="models", storage_object_key="weights.pt")
 
@@ -29,6 +31,8 @@ def enabled(monkeypatch, tmp_path):
 
 def container(version, running=True, exit_code=0):
     return {"Config": {"Labels": {f"{yolo_runtime.LABEL_PREFIX}.version-id": str(version.id),
+                                  f"{yolo_runtime.LABEL_PREFIX}.binding": yolo_runtime.BINDING_VERSION,
+                                  f"{yolo_runtime.LABEL_PREFIX}.weight-policy": yolo_runtime.POLICY_VERSION,
                                   f"{yolo_runtime.LABEL_PREFIX}.sha256": version.sha256}},
             "State": {"Running": running, "ExitCode": exit_code,
                       "StartedAt": datetime.now(timezone.utc).isoformat()},
@@ -50,7 +54,7 @@ def test_other_version_container_cannot_be_controlled(version, enabled, monkeypa
 
 
 def test_weights_are_verified_and_cached(version, monkeypatch, tmp_path):
-    response = BytesIO(b"uploaded-weights")
+    response = BytesIO(TEST_WEIGHTS)
     response.release_conn = lambda: None
     calls = []
     def get(*args):
@@ -60,7 +64,7 @@ def test_weights_are_verified_and_cached(version, monkeypatch, tmp_path):
     yolo_runtime._weights(version, tmp_path)
     yolo_runtime._weights(version, tmp_path)
     assert len(calls) == 1
-    assert (tmp_path / "weights.pt").read_bytes() == b"uploaded-weights"
+    assert (tmp_path / "weights.pt").read_bytes() == TEST_WEIGHTS
 
 
 def test_corrupt_weights_never_replace_cache(version, monkeypatch, tmp_path):
@@ -89,6 +93,12 @@ def test_start_creates_only_requested_version_on_loopback(version, enabled, monk
     assert f"YOLO_VERSION_ID={version.id}" in command
     assert f"YOLO_WEIGHTS_SHA256={version.sha256}" in command
     assert "--gpus" in command
+    assert command[-2:] == ("python", "/runtime/serve_version.py")
+    assert f"{yolo_runtime.LABEL_PREFIX}.binding={yolo_runtime.BINDING_VERSION}" in command
+    assert f"type=bind,src={yolo_runtime.LAUNCHER},dst=/runtime/serve_version.py,readonly" in command
+    assert f"type=bind,src={yolo_runtime.WEIGHT_LOADER},dst=/runtime/yolo_weights.py,readonly" in command
+    assert f"{yolo_runtime.LABEL_PREFIX}.weight-policy={yolo_runtime.POLICY_VERSION}" in command
+    assert "TORCH_FORCE_WEIGHTS_ONLY_LOAD=1" in command
 
 
 def test_stop_targets_only_requested_container(version, enabled, monkeypatch):
@@ -132,7 +142,7 @@ def test_ready_response_must_match_weight_identity(version, enabled, monkeypatch
 
 def test_public_model_port_is_rejected(version):
     value = container(version)
-    value["NetworkSettings"]["Ports"]["9002/tcp"][0]["HostIp"] = "0.0.0.0"
+    value["NetworkSettings"]["Ports"]["9002/tcp"][0]["HostIp"] = str(IPv4Address(0))
     with pytest.raises(RuntimeError, match="回环"):
         yolo_runtime._url(value)
 

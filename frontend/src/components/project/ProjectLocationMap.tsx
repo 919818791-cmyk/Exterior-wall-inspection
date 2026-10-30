@@ -1,3 +1,4 @@
+import { ApiError, apiRequest } from "@/api/client";
 import { Crosshair, LoaderCircle, MapPin, RotateCcw, Search } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -62,17 +63,12 @@ type MapStatus = "loading" | "ready" | "error" | "unconfigured";
 
 let amapLoader: Promise<AMapNamespace> | null = null;
 
-function cleanAmapCredential(value: string | undefined) {
-  const credential = value?.trim();
-  return !credential || credential.startsWith("your-") ? "" : credential;
-}
+const AMAP_SDK_URL = "https://webapi.amap.com/maps";
+const AMAP_SERVICE_HOST = `${window.location.origin}/_AMapService`;
 
-const AMAP_KEY = cleanAmapCredential(import.meta.env.VITE_AMAP_KEY);
-const AMAP_SDK_URL = cleanAmapCredential(import.meta.env.VITE_AMAP_SDK_URL);
-const AMAP_SERVICE_HOST = new URL(
-  cleanAmapCredential(import.meta.env.VITE_AMAP_SERVICE_HOST) || "/_AMapService",
-  window.location.origin
-).toString().replace(/\/$/, "");
+async function prepareMapSession() {
+  return apiRequest<{ key: string }>("/maps/session", { method: "POST", credentials: "same-origin" });
+}
 
 function ensureAmapSearchPlugins(AMap: AMapNamespace) {
   return new Promise<AMapNamespace>((resolve, reject) => {
@@ -83,13 +79,13 @@ function ensureAmapSearchPlugins(AMap: AMapNamespace) {
   });
 }
 
-function loadAmap(key: string, serviceHost: string) {
+async function loadAmap() {
+  const { key } = await prepareMapSession();
   if (window.AMap) return ensureAmapSearchPlugins(window.AMap);
   if (amapLoader) return amapLoader;
 
   window._AMapSecurityConfig = {
-    ...window._AMapSecurityConfig,
-    serviceHost
+    serviceHost: AMAP_SERVICE_HOST
   };
 
   let script: HTMLScriptElement | null = null;
@@ -198,13 +194,10 @@ export function ProjectLocationMap({
   const markerRef = useRef<AMapMarker | null>(null);
   const lastLocateSignalRef = useRef(0);
   const initialMapPosition = initialPosition ?? DEFAULT_POSITION;
-  const hasMapCredentials = Boolean(AMAP_KEY && AMAP_SERVICE_HOST && AMAP_SDK_URL);
-  const [mapStatus, setMapStatus] = useState<MapStatus>(hasMapCredentials ? "loading" : "unconfigured");
+  const [mapStatus, setMapStatus] = useState<MapStatus>("loading");
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [isLocating, setIsLocating] = useState(false);
-  const [statusText, setStatusText] = useState(
-    hasMapCredentials ? "正在连接在线地图" : "地图服务暂未配置，请联系管理员"
-  );
+  const [statusText, setStatusText] = useState("正在连接在线地图");
   const [selectedPosition, setSelectedPosition] = useState(initialMapPosition);
 
   const setPosition = useCallback((
@@ -299,15 +292,15 @@ export function ProjectLocationMap({
   useEffect(() => {
     const element = mapElementRef.current;
     if (!element) return;
-    if (!AMAP_KEY || !AMAP_SERVICE_HOST || !AMAP_SDK_URL) {
-      setMapStatus("unconfigured");
-      setStatusText("地图服务暂未配置，请联系管理员");
-      return;
-    }
     let disposed = false;
+    const refreshSession = window.setInterval(() => {
+      void prepareMapSession().catch(() => {
+        if (!disposed) setStatusText("地图登录状态已失效，请重新加载地图");
+      });
+    }, 20 * 60 * 1000);
     setMapStatus("loading");
 
-    void loadAmap(AMAP_KEY, AMAP_SERVICE_HOST)
+    void loadAmap()
       .then((AMap) => {
         if (disposed || !mapElementRef.current) return;
         const map = new AMap.Map(mapElementRef.current, {
@@ -347,15 +340,16 @@ export function ProjectLocationMap({
         );
         setMapStatus("ready");
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (!disposed) {
-          setMapStatus("error");
+          setMapStatus(error instanceof ApiError && error.status === 503 ? "unconfigured" : "error");
           setStatusText("地图暂时无法加载，可重新加载或继续填写地址");
         }
       });
 
     return () => {
       disposed = true;
+      window.clearInterval(refreshSession);
       markerRef.current = null;
       mapRef.current?.destroy();
       mapRef.current = null;

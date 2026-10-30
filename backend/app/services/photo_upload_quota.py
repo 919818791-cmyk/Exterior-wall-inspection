@@ -23,6 +23,7 @@ from app.services.usage_control import (
 PhotoDetectionSource = Literal["trial", "formal"]
 TRIAL_LIFETIME_SCOPE = "photo-detection:trial:lifetime"
 FORMAL_LIFETIME_SCOPE = "photo-detection:formal:lifetime"
+PHOTO_QUOTA_ADD_EVENT = "photo_quota_add"
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,6 +46,8 @@ def _photo_detection_count(
     db: Session | None,
     actor_id: UUID,
     source: PhotoDetectionSource,
+    *,
+    event_type: str = "photo_detection",
 ) -> int:
     if db is None or not hasattr(db, "get") or not hasattr(db, "scalar"):
         return 0
@@ -53,7 +56,7 @@ def _photo_detection_count(
         quota_reset_at = getattr(account, "quota_reset_at", None)
         criteria = [
             UsageEvent.actor_id == actor_id,
-            UsageEvent.event_type == "photo_detection",
+            UsageEvent.event_type == event_type,
             UsageEvent.source_type == source,
         ]
         if quota_reset_at is not None:
@@ -79,7 +82,10 @@ def _quota_limit_and_baseline(
         else scheduling.formal_photo_detection_limit
     )
     limit = max(1, int(account_quota)) if account_quota is not None else default_limit
-    return limit, _photo_detection_count(db, actor_id, source)
+    added = _photo_detection_count(db, actor_id, source, event_type=PHOTO_QUOTA_ADD_EVENT)
+    # Keep the counter and baseline as gross detections so existing reservations
+    # remain valid. Credits expand only the internal allowance, never the saved cap.
+    return limit + added, _photo_detection_count(db, actor_id, source)
 
 
 def _pending_photo_count(

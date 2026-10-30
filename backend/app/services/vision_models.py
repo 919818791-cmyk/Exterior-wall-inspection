@@ -124,18 +124,21 @@ def _verified_managed_service(service: str) -> str:
 
 
 def _systemd_user_env() -> dict[str, str]:
-    # A system service running as the app user does not inherit their login bus.
-    env = dict(os.environ)
-    runtime_dir = env.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
-    env["XDG_RUNTIME_DIR"] = runtime_dir
-    env["DBUS_SESSION_BUS_ADDRESS"] = env.get("DBUS_SESSION_BUS_ADDRESS") or f"unix:path={runtime_dir}/bus"
-    return env
+    # Select only the OS-authenticated caller's bus. Do not inherit PATH,
+    # library injection variables or an externally supplied D-Bus address.
+    runtime_dir = f"/run/user/{os.getuid()}"
+    return {
+        "XDG_RUNTIME_DIR": runtime_dir,
+        "DBUS_SESSION_BUS_ADDRESS": f"unix:path={runtime_dir}/bus",
+        "LANG": "C.UTF-8",
+    }
 
 
 def managed_photo_guard_status(service: str, config: VisionModelEdit) -> LocalQwenStatus:
     unit = _verified_managed_service(service)
     try:
-        result = subprocess.run(["systemctl", "--user", "show", "--property=ActiveState,SubState,MainPID", "--", unit],
+        # No request/config-derived text enters the executable or its arguments.
+        result = subprocess.run(["/usr/bin/systemctl", "--user", "show", "--property=ActiveState,SubState,MainPID", "--", "building-photo-guard.service"],
             shell=False, capture_output=True, text=True, timeout=5, check=True, env=_systemd_user_env())
         values = {}
         for line in result.stdout.splitlines():
@@ -163,7 +166,10 @@ def control_managed_photo_guard(service: str, config: VisionModelEdit, action: s
         raise LocalQwenLifecycleError("未知模型管理操作。")
     unit = _verified_managed_service(service)
     try:
-        subprocess.run(["systemctl", "--user", action, "--", unit], shell=False, capture_output=True, text=True, timeout=50, check=True, env=_systemd_user_env())
+        if action == "start":
+            subprocess.run(["/usr/bin/systemctl", "--user", "start", "--", "building-photo-guard.service"], shell=False, capture_output=True, text=True, timeout=50, check=True, env=_systemd_user_env())
+        else:
+            subprocess.run(["/usr/bin/systemctl", "--user", "stop", "--", "building-photo-guard.service"], shell=False, capture_output=True, text=True, timeout=50, check=True, env=_systemd_user_env())
     except (OSError, subprocess.SubprocessError) as error:
         logger.warning("photo_guard_control_failed unit=%s action=%s error_type=%s", unit, action, type(error).__name__)
         raise LocalQwenLifecycleError("照片预检服务启停失败，请检查服务端日志。") from error

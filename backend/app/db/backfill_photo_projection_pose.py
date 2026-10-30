@@ -57,11 +57,12 @@ def main() -> None:
             except Exception as exc:
                 db.rollback()
                 failed += 1
-                print(f"Photo pose backfill failed: {photo.id} ({type(exc).__name__})")
+                print("Photo pose backfill failed: ", photo.id, " (", type(exc).__name__, ")", sep="")
 
     print(
         "Photo pose backfill complete: "
-        f"completed={completed}, skipped={skipped}, unavailable={unavailable}, failed={failed}"
+        "completed=", completed, ", skipped=", skipped, ", unavailable=", unavailable, ", failed=", failed,
+        sep="",
     )
 
 

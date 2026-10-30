@@ -32,6 +32,7 @@ export interface FormalDetectionPromptSettings {
 export interface TrialInferenceSetting {
   provider: TrialInferenceProvider;
   global_job_concurrency: number;
+  user_job_concurrency: number;
   request_concurrency: number;
   trial_photo_detection_limit: number;
   formal_photo_detection_limit: number;
@@ -65,6 +66,7 @@ export type DetectionPromptSettings = Pick<TrialInferenceSetting,
 interface TrialInferenceSettingUpdateFields {
   provider: TrialInferenceProvider;
   global_job_concurrency: number;
+  user_job_concurrency: number;
   request_concurrency: number;
   trial_photo_detection_limit: number;
   formal_photo_detection_limit: number;

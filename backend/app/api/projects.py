@@ -14,7 +14,6 @@ from app.api.dependencies import (
     ensure_project_access,
     ensure_project_write_access,
     get_current_user,
-    get_optional_current_user,
 )
 from app.core.config import get_settings
 from app.db.session import get_db
@@ -39,7 +38,7 @@ from app.schemas.projects import (
 )
 from app.services.object_storage import remove_object, signed_object_url
 
-router = APIRouter(tags=["projects"])
+router = APIRouter(tags=["projects"], dependencies=[Depends(get_current_user)])
 
 PROJECT_NO_TIMEZONE = ZoneInfo("Asia/Shanghai")
 PROJECT_NO_DAILY_LIMIT = 999
@@ -279,15 +278,13 @@ def _find_project_by_draft_key(
 def list_projects(
     request: Request,
     db: Session = Depends(get_db),
-    current_user: AuthenticatedUser | None = Depends(get_optional_current_user),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> list[ProjectListItem]:
     criteria = [
         Project.deleted_at.is_(None),
         Project.setup_completed_at.is_not(None),
     ]
-    if current_user is None:
-        criteria.append(Project.is_example.is_(True))
-    elif current_user.role == "customer":
+    if current_user.role == "customer":
         criteria.append(or_(Project.created_by == current_user.id, Project.is_example.is_(True)))
     projects = list(
         db.scalars(
@@ -542,7 +539,7 @@ def finalize_project(
 def get_project(
     project_id: UUID,
     db: Session = Depends(get_db),
-    current_user: AuthenticatedUser | None = Depends(get_optional_current_user),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> ProjectDetailRead:
     project = _get_project_or_404(db, project_id)
     ensure_project_access(project, current_user)

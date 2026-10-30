@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.router import api_router
+from app.api.maps import proxy_router, protect_map_requests
 from app.core.config import get_settings
 from app.core.exceptions import register_exception_handlers
 from app.core.upload_temp import configure_upload_temp_directory
@@ -49,8 +50,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.middleware("http")(protect_map_requests)
+
 register_exception_handlers(app)
 app.include_router(api_router, prefix=settings.api_prefix)
+app.include_router(proxy_router)
 
 
 @app.get("/", include_in_schema=False)

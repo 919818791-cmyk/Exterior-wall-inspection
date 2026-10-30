@@ -428,6 +428,10 @@ export function AuthPanel({ initialMode = "login", onAuthenticated }: AuthPanelP
       ? `验证码已发送至 ${maskPhone(loginSentSmsPhone)}。`
       : "";
   const loginSmsFeedbackTone = loginSmsMutation.isError ? "error" : "success";
+  const loginFeedback = loginInlineMessage || (loginMethod === "phone" ? loginSmsFeedback : "");
+  const loginFeedbackTone = loginInlineMessage
+    ? loginMutation.isError ? "error" : "success"
+    : loginSmsFeedbackTone;
   const usernameFormatError = registrationFieldTouched.username
     ? getUsernameFormatError(trialApplicationForm.username)
     : "";
@@ -546,64 +550,49 @@ export function AuthPanel({ initialMode = "login", onAuthenticated }: AuthPanelP
                 />
               )}
             </label>
-            {loginMethod === "phone" ? (
-              <div className="auth-field auth-login-verification-field">
-                <label className="auth-field-label" htmlFor="login-verification-code">短信验证码</label>
-                <div className="auth-verification-code-row">
-                  <input
-                    ref={loginVerificationCodeInputRef}
-                    aria-describedby={loginSmsFeedback ? "login-verification-code-feedback" : undefined}
-                    autoComplete="one-time-code"
-                    id="login-verification-code"
-                    inputMode="numeric"
-                    maxLength={8}
-                    minLength={4}
-                    pattern="[0-9]{4,8}"
-                    placeholder="请输入验证码"
-                    required
-                    value={loginVerificationCode}
-                    onChange={(event) => {
-                      setLoginVerificationCode(event.target.value.replace(/\D/g, "").slice(0, 8));
-                      if (loginMutation.isError) loginMutation.reset();
-                    }}
-                  />
-                  <button
-                    className="auth-verification-code-button"
-                    disabled={
-                      loginSmsMutation.isPending
-                      || loginSmsCountdown > 0
-                      || Boolean(getPhoneFormatError(identity))
-                    }
-                    type="button"
-                    onClick={handleSendLoginSmsCode}
-                  >
-                    {loginSmsMutation.isPending
-                      ? "发送中…"
-                      : loginSmsCountdown > 0
-                        ? formatSmsCountdown(loginSmsCountdown)
-                        : "获取验证码"}
-                  </button>
+            <div className="auth-login-credential-field">
+              {loginMethod === "phone" ? (
+                <div className="auth-field">
+                  <label className="auth-field-label" htmlFor="login-verification-code">短信验证码</label>
+                  <div className="auth-verification-code-row">
+                    <input
+                      ref={loginVerificationCodeInputRef}
+                      aria-describedby={loginFeedback ? "login-feedback" : undefined}
+                      autoComplete="one-time-code"
+                      id="login-verification-code"
+                      inputMode="numeric"
+                      maxLength={8}
+                      minLength={4}
+                      pattern="[0-9]{4,8}"
+                      placeholder="请输入验证码"
+                      required
+                      value={loginVerificationCode}
+                      onChange={(event) => {
+                        setLoginVerificationCode(event.target.value.replace(/\D/g, "").slice(0, 8));
+                        if (loginMutation.isError) loginMutation.reset();
+                      }}
+                    />
+                    <button
+                      className="auth-verification-code-button"
+                      disabled={
+                        loginSmsMutation.isPending
+                        || loginSmsCountdown > 0
+                        || Boolean(getPhoneFormatError(identity))
+                      }
+                      type="button"
+                      onClick={handleSendLoginSmsCode}
+                    >
+                      {loginSmsMutation.isPending
+                        ? "发送中…"
+                        : loginSmsCountdown > 0
+                          ? formatSmsCountdown(loginSmsCountdown)
+                          : "获取验证码"}
+                    </button>
+                  </div>
                 </div>
-                <small
-                  aria-hidden={loginSmsFeedback ? undefined : true}
-                  className={`auth-field-feedback is-${loginSmsFeedbackTone} ${loginSmsFeedback ? "" : "is-empty"}`}
-                  id="login-verification-code-feedback"
-                  role={loginSmsFeedback ? (loginSmsFeedbackTone === "error" ? "alert" : "status") : undefined}
-                >
-                  {loginSmsFeedback || "\u00a0"}
-                </small>
-                {loginInlineMessage ? (
-                  <span
-                    className={`auth-login-inline-message ${loginMutation.isError ? "is-error" : loginHelp ? "is-success" : "is-info"}`}
-                    role={loginMutation.isError ? "alert" : "status"}
-                  >
-                    {loginInlineMessage}
-                  </span>
-                ) : null}
-              </div>
-            ) : (
-              <div className="auth-password-field">
+              ) : (
                 <PasswordInput
+                  aria-describedby={loginFeedback ? "login-feedback" : undefined}
                   aria-label="密码"
                   autoComplete="current-password"
                   label="密码"
@@ -615,15 +604,19 @@ export function AuthPanel({ initialMode = "login", onAuthenticated }: AuthPanelP
                     if (loginMutation.isError) loginMutation.reset();
                   }}
                 />
-                <div className="auth-login-assistance-row">
-                  {loginInlineMessage ? (
-                    <span
-                      className={`auth-login-inline-message ${loginMutation.isError ? "is-error" : loginHelp ? "is-success" : "is-info"}`}
-                      role={loginMutation.isError ? "alert" : "status"}
-                    >
-                      {loginInlineMessage}
-                    </span>
-                  ) : null}
+              )}
+              <div className="auth-login-assistance-row">
+                {loginFeedback ? (
+                  <span
+                    className={`auth-login-inline-message is-${loginFeedbackTone}`}
+                    id="login-feedback"
+                    role={loginFeedbackTone === "error" ? "alert" : "status"}
+                    title={loginFeedback}
+                  >
+                    {loginFeedback}
+                  </span>
+                ) : null}
+                {loginMethod === "username" ? (
                   <button
                     className="auth-link-button auth-forgot-password"
                     type="button"
@@ -635,9 +628,9 @@ export function AuthPanel({ initialMode = "login", onAuthenticated }: AuthPanelP
                   >
                     忘记密码
                   </button>
-                </div>
+                ) : null}
               </div>
-            )}
+            </div>
             <button className="auth-submit" disabled={loginMutation.isPending} type="submit">
               {loginMutation.isPending ? "正在登录…" : "登录"}
             </button>

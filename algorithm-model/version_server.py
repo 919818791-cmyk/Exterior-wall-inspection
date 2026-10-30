@@ -1,6 +1,5 @@
 """One uploaded YOLO weight version per process/container."""
 from contextlib import asynccontextmanager
-import hashlib
 from io import BytesIO
 import json
 import os
@@ -10,7 +9,7 @@ from threading import Lock
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from PIL import Image, UnidentifiedImageError
 import torch
-from ultralytics import YOLO
+from yolo_weights import load_safe_yolo
 
 
 WEIGHTS = Path("/weights/weights.pt")
@@ -56,15 +55,9 @@ def selected_types(raw):
 @asynccontextmanager
 async def lifespan(app):
     global model
-    digest = hashlib.sha256()
-    with WEIGHTS.open("rb") as source:
-        while chunk := source.read(1024 * 1024):
-            digest.update(chunk)
-    if digest.hexdigest() != SHA256:
-        raise RuntimeError("YOLO weight checksum does not match the registered version")
     if DEVICE.startswith("cuda") and not torch.cuda.is_available():
         raise RuntimeError("CUDA is unavailable; refusing to silently switch to CPU")
-    model = YOLO(str(WEIGHTS))
+    model = load_safe_yolo(WEIGHTS, SHA256)
     model.predict(Image.new("RGB", (640, 640)), imgsz=640, device=DEVICE, verbose=False)
     yield
     model = None

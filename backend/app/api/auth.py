@@ -246,15 +246,16 @@ def login(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="手机号不能为空。")
     if not using_sms_code and payload.password is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="密码不能为空。")
-    normalized_identity = (login_identity or login_phone or legacy_username or "").lower()
-    enforce_limit(
-        store,
-        "login:identity",
-        normalized_identity,
-        limit=settings.login_rate_limit_per_identity,
-        ttl_seconds=settings.login_rate_window_seconds,
-        detail="该账号登录尝试过于频繁，请稍后重试。",
-    )
+    if settings.login_rate_limit_enabled:
+        normalized_identity = (login_identity or login_phone or legacy_username or "").lower()
+        enforce_limit(
+            store,
+            "login:identity",
+            normalized_identity,
+            limit=settings.login_rate_limit_per_identity,
+            ttl_seconds=settings.login_rate_window_seconds,
+            detail="该账号登录尝试过于频繁，请稍后重试。",
+        )
     ensure_demo_users(db)
     db.flush()
     if using_sms_code:
@@ -345,6 +346,10 @@ def login(
     if user.status != UserStatus.ACTIVE.value:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="账号尚未开通，请等待管理员审核。")
 
+    if settings.login_rate_limit_enabled:
+        # Reserve before checking credentials to bound concurrent attempts, but
+        # successful logins must not accumulate toward the account's limit.
+        store.refund("login:identity", normalized_identity, amount=1)
     user.last_login_at = datetime.now(UTC)
     db.commit()
     current_user = AuthenticatedUser.from_model(user)

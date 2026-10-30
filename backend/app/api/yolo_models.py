@@ -22,6 +22,7 @@ from app.schemas.yolo_models import (
 )
 from app.schemas.vision_models import ModelRuntimeRead
 from app.services import object_storage, yolo_runtime
+from app.services.yolo_weights import UnsafeYoloWeights, validate_yolo_weights
 
 logger = logging.getLogger(__name__)
 admin = require_roles(UserRole.ADMIN)
@@ -145,6 +146,10 @@ def upload_version(
     if size == 0:
         raise HTTPException(422, "模型文件不能为空。")
     file.file.seek(0)
+    try:
+        validate_yolo_weights(file.file)
+    except UnsafeYoloWeights as error:
+        raise HTTPException(422, str(error)) from error
     model = _lock_model(db, model_id)
     if db.scalar(select(YoloModelVersion.id).where(
         YoloModelVersion.model_id == model_id, YoloModelVersion.version == version,

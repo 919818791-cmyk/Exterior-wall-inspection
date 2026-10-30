@@ -41,7 +41,7 @@ def main() -> None:
         db.commit()
 
     print("Admin accounts were left unchanged.")
-    print(f"Disabled documented non-admin demo accounts: {disabled}")
+    print("Disabled documented non-admin demo accounts:", disabled)
 
 
 if __name__ == "__main__":

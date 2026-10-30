@@ -18,11 +18,31 @@ CAMERA_DIAGONAL_FOV_DEGREES = {
     ("djimatrice4e", "widecamera"): 84.0,
 }
 
+# Explicit field readers preserve ORM descriptors/lazy loading and support
+# named data objects without allowing arbitrary reflective attribute access.
+MEASUREMENT_READERS = {
+    "calibrated_focal_length": lambda photo: photo.calibrated_focal_length,
+    "image_width": lambda photo: photo.image_width,
+    "image_height": lambda photo: photo.image_height,
+    "focal_length_35mm": lambda photo: photo.focal_length_35mm,
+    "camera_image_source": lambda photo: photo.camera_image_source,
+    "camera_model": lambda photo: photo.camera_model,
+    "drone_model": lambda photo: photo.drone_model,
+    "camera_product_name": lambda photo: photo.camera_product_name,
+    "lrf_target_distance": lambda photo: photo.lrf_target_distance,
+}
+
 
 def _value(source: object, key: str) -> Any:
+    reader = MEASUREMENT_READERS.get(key)
+    if reader is None:
+        return None
     if isinstance(source, Mapping):
         return source.get(key)
-    return getattr(source, key, None)
+    try:
+        return reader(source)
+    except AttributeError:
+        return None
 
 
 def _positive_decimal(value: Any) -> Decimal | None:

@@ -8,6 +8,7 @@ import type { TrialInferenceSetting } from "@/types/systemSettings";
 
 type SettingsForm = Pick<TrialInferenceSetting,
   | "global_job_concurrency"
+  | "user_job_concurrency"
   | "request_concurrency"
   | "generate_limit_per_user"
   | "trial_photo_detection_limit"
@@ -21,6 +22,7 @@ function errorMessage(error: unknown) {
 function formFromSetting(setting: TrialInferenceSetting): SettingsForm {
   return {
     global_job_concurrency: setting.global_job_concurrency,
+    user_job_concurrency: setting.user_job_concurrency ?? 1,
     request_concurrency: setting.request_concurrency,
     generate_limit_per_user: setting.generate_limit_per_user ?? 5,
     trial_photo_detection_limit: setting.trial_photo_detection_limit ?? 1000,
@@ -31,6 +33,7 @@ function formFromSetting(setting: TrialInferenceSetting): SettingsForm {
 function updatePayload(form: SettingsForm): SettingsForm {
   return {
     global_job_concurrency: Number(form.global_job_concurrency),
+    user_job_concurrency: Number(form.user_job_concurrency),
     request_concurrency: Number(form.request_concurrency),
     generate_limit_per_user: Number(form.generate_limit_per_user),
     trial_photo_detection_limit: Number(form.trial_photo_detection_limit),
@@ -112,6 +115,7 @@ export function SystemSettingsPage() {
                 <h3>任务调度</h3>
                 <div className="scheduler-setting-grid">
                   <label className="system-setting-field"><span>全局并发任务数<small>所有账号同时执行的检测任务上限，范围 1–10。</small></span><input min="1" max="10" type="number" value={form.global_job_concurrency} onChange={(event) => setForm({ ...form, global_job_concurrency: Number(event.target.value) })} /></label>
+                  <label className="system-setting-field"><span>每账号并发任务数<small>同一账号同时执行的检测任务上限，基础版和专业版共用，范围 1–10；仍受全局并发任务数限制。保存后对新发起的任务生效。</small></span><input min="1" max="10" step="1" required type="number" value={form.user_job_concurrency} onChange={(event) => setForm({ ...form, user_job_concurrency: Number(event.target.value) })} /></label>
                   <label className="system-setting-field"><span>单任务并发请求数<small>一个检测任务同时发往模型服务的请求数，范围 1–10；本地模型还会受服务端显存安全上限约束。</small></span><input min="1" max="10" type="number" value={form.request_concurrency} onChange={(event) => setForm({ ...form, request_concurrency: Number(event.target.value) })} /></label>
                   <label className="system-setting-field"><span>每账号检测次数上限<small>每 10 分钟允许发起的检测任务数。</small></span><input min="1" max="10000" type="number" value={form.generate_limit_per_user} onChange={(event) => setForm({ ...form, generate_limit_per_user: Number(event.target.value) })} /></label>
                 </div>
@@ -120,8 +124,8 @@ export function SystemSettingsPage() {
               <div className="system-setting-block">
                 <h3>检测额度</h3>
                 <div className="scheduler-setting-grid">
-                  <label className="system-setting-field"><span>基础版额度<small>快速体验的默认照片检测额度，账号单独设置优先。</small></span><input min="1" max="100000" step="1" required type="number" value={form.trial_photo_detection_limit} onChange={(event) => setForm({ ...form, trial_photo_detection_limit: Number(event.target.value) })} /></label>
-                  <label className="system-setting-field"><span>专业版额度<small>专业检测的默认照片检测额度，账号单独设置优先。</small></span><input min="1" max="100000" step="1" required type="number" value={form.formal_photo_detection_limit} onChange={(event) => setForm({ ...form, formal_photo_detection_limit: Number(event.target.value) })} /></label>
+                  <label className="system-setting-field"><span>快速体验额度<small>快速体验的默认照片检测额度，账号单独设置优先。</small></span><input min="1" max="100000" step="1" required type="number" value={form.trial_photo_detection_limit} onChange={(event) => setForm({ ...form, trial_photo_detection_limit: Number(event.target.value) })} /></label>
+                  <label className="system-setting-field"><span>专业检测额度<small>专业检测的默认照片检测额度，账号单独设置优先。</small></span><input min="1" max="100000" step="1" required type="number" value={form.formal_photo_detection_limit} onChange={(event) => setForm({ ...form, formal_photo_detection_limit: Number(event.target.value) })} /></label>
                 </div>
               </div>
 

@@ -1,4 +1,4 @@
-import { ArrowLeft, Plus, Sparkles } from "lucide-react";
+import { ArrowLeft, Plus } from "lucide-react";
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 
@@ -16,8 +16,7 @@ export function getListPageHeader(pathname: string): ListPageHeaderConfig | null
   switch (pathname) {
     case "/photos":
       return {
-        title: "照片管理",
-        subtitle: "集中检索检测照片，按墙面与缺陷分类管理"
+        title: "照片管理"
       };
     case "/system-settings":
       return { title: "推理设置" };
@@ -31,16 +30,7 @@ export function getListPageHeader(pathname: string): ListPageHeaderConfig | null
         actionIcon: <Plus aria-hidden="true" />,
         actionLabel: "开始检测",
         actionTo: "/detections/new",
-        icon: (
-          <img
-            alt=""
-            aria-hidden="true"
-            className="list-page-header-icon list-page-header-icon-image"
-            src="/icons/detections.png"
-          />
-        ),
-        title: "专业检测",
-        subtitle: "更准确的检测结果，更全面的数据分析"
+        title: "专业检测"
       };
     case "/trials":
       return {
@@ -48,9 +38,7 @@ export function getListPageHeader(pathname: string): ListPageHeaderConfig | null
         actionIcon: <Plus aria-hidden="true" />,
         actionLabel: "开始体验",
         actionTo: "/trials/new",
-        icon: <Sparkles aria-hidden="true" className="list-page-header-icon" />,
-        title: "快速体验",
-        subtitle: "上传照片即可体验 AI 外墙缺陷检测"
+        title: "快速体验"
       };
     case "/review":
       return {

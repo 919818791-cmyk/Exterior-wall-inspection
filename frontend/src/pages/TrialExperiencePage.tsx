@@ -4,7 +4,7 @@
   ModalContent,
   ModalFooter,
   ModalHeader
-} from "@heroui/react";
+} from "@/components/Modal";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowRight,
@@ -743,8 +743,14 @@ export function TrialExperiencePage() {
         setDetectionDialogMessage(message);
       } else {
         clearActiveTrialRequest(requestId);
-        setDetectionDialogMessage(message);
-        setDetectionDialogStage("error");
+        if (generateError instanceof ApiError && generateError.status === 429) {
+          setDetectionDialogMessage("");
+          setDetectionDialogStage(null);
+          setError(message);
+        } else {
+          setDetectionDialogMessage(message);
+          setDetectionDialogStage("error");
+        }
       }
     } finally {
       void queryClient.invalidateQueries({ queryKey: ["current-account-usage"] });
@@ -1252,7 +1258,6 @@ export function TrialExperiencePage() {
           base: "trial-version-modal-content",
           wrapper: "trial-version-modal-wrapper"
         }}
-        disableAnimation
         hideCloseButton
         isDismissable={false}
         isKeyboardDismissDisabled

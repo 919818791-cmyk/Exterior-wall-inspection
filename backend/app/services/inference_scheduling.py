@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+import asyncio
+import logging
+from dataclasses import dataclass, field
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -15,14 +17,60 @@ from app.services.usage_control import (
     get_usage_store,
 )
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass(slots=True)
 class InferenceUsageReservation:
     store: UsageControlStore
     user_identity: str
-    user_lock_token: str
+    user_slot_token: str
     global_slot_token: str
     released: bool = False
+    lease_seconds: int = 900
+    _heartbeat_task: asyncio.Task[None] | None = field(default=None, init=False, repr=False)
+
+    @property
+    def user_semaphore_scope(self) -> str:
+        return f"trial:user-jobs:{self.user_identity}"
+
+    def start_heartbeat(self, ttl_seconds: int) -> None:
+        if self.released:
+            raise RuntimeError("Cannot attach a released inference reservation.")
+        self.lease_seconds = ttl_seconds
+        if self._heartbeat_task is not None:
+            self._heartbeat_task.cancel()
+        try:
+            job_task = asyncio.current_task()
+        except RuntimeError:
+            # Synchronous callers have no running inference coroutine.
+            return
+        if job_task is None:
+            return
+
+        async def heartbeat() -> None:
+            while not self.released:
+                await asyncio.sleep(min(30.0, ttl_seconds / 3))
+                if self.released:
+                    return
+                try:
+                    renewed = await asyncio.to_thread(
+                        self.store.renew_job_reservation,
+                        user_semaphore_scope=self.user_semaphore_scope,
+                        user_semaphore_token=self.user_slot_token,
+                        semaphore_scope="trial:inference-jobs",
+                        semaphore_token=self.global_slot_token,
+                        ttl_seconds=ttl_seconds,
+                    )
+                except Exception:
+                    logger.exception("inference_job_lease_renewal_failed")
+                    renewed = False
+                if not renewed and not self.released:
+                    logger.error("inference_job_lease_lost user_id=%s", self.user_identity)
+                    job_task.cancel("检测任务调度锁续期失败，请稍后重试。")
+                    return
+
+        self._heartbeat_task = asyncio.create_task(heartbeat())
 
     def release(
         self,
@@ -33,14 +81,15 @@ class InferenceUsageReservation:
         if self.released:
             return
         self.released = True
+        if self._heartbeat_task is not None:
+            self._heartbeat_task.cancel()
         self.store.release_semaphore(
             "trial:inference-jobs",
             self.global_slot_token,
         )
-        self.store.release_lock(
-            "trial:user-job",
-            self.user_identity,
-            self.user_lock_token,
+        self.store.release_semaphore(
+            self.user_semaphore_scope,
+            self.user_slot_token,
         )
 
 
@@ -57,6 +106,7 @@ def reserve_inference_usage(
     scheduling = trial_scheduling_settings(db, settings)
     store = get_usage_store()
     user_identity = str(actor_id)
+    user_semaphore_scope = f"trial:user-jobs:{user_identity}"
     enforce_limit(
         store,
         "trial:generate:user",
@@ -66,9 +116,9 @@ def reserve_inference_usage(
         detail=generate_limit_detail,
     )
     try:
-        user_lock_token = store.acquire_lock(
-            "trial:user-job",
-            user_identity,
+        user_slot_token = store.acquire_semaphore(
+            user_semaphore_scope,
+            limit=scheduling.user_job_concurrency,
             ttl_seconds=scheduling.job_lock_seconds,
         )
     except SecurityStoreUnavailable as exc:
@@ -76,10 +126,10 @@ def reserve_inference_usage(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(exc),
         ) from exc
-    if user_lock_token is None:
+    if user_slot_token is None:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="同一账号只能同时执行一个检测任务。",
+            detail=f"同一账号最多可同时执行 {scheduling.user_job_concurrency} 个检测任务，请稍后重试。",
             headers={"Retry-After": "30"},
         )
 
@@ -90,22 +140,25 @@ def reserve_inference_usage(
             ttl_seconds=scheduling.job_lock_seconds,
         )
     except SecurityStoreUnavailable as exc:
-        store.release_lock("trial:user-job", user_identity, user_lock_token)
+        store.release_semaphore(user_semaphore_scope, user_slot_token)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(exc),
         ) from exc
     if global_slot_token is None:
-        store.release_lock("trial:user-job", user_identity, user_lock_token)
+        store.release_semaphore(user_semaphore_scope, user_slot_token)
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="当前检测任务较多，请稍后重试。",
             headers={"Retry-After": "30"},
         )
 
-    return InferenceUsageReservation(
+    reservation = InferenceUsageReservation(
         store=store,
         user_identity=user_identity,
-        user_lock_token=user_lock_token,
+        user_slot_token=user_slot_token,
         global_slot_token=global_slot_token,
+        lease_seconds=scheduling.job_lock_seconds,
     )
+    reservation.start_heartbeat(scheduling.job_lock_seconds)
+    return reservation

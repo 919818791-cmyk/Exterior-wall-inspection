@@ -68,7 +68,7 @@ export function ReportListPage() {
             renderCompletionTime={(report) => (
               <time dateTime={report.created_at}>{formatDateTime(report.created_at)}</time>
             )}
-            renderDetectionDescription={(report) => <WorkbenchDefectSummary counts={report.by_defect_type} variant="compact" />}
+            renderDetectionDescription={(report) => <WorkbenchDefectSummary counts={report.by_defect_type} />}
           /> : reports.length ? <div className="project-empty project-search-empty-state">
             <strong>未找到匹配的快速体验项目</strong>
             <span>请尝试其他项目名称。</span>

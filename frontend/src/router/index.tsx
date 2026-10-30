@@ -40,26 +40,39 @@ function LegacyReviewDetectionRedirect() {
   return <Navigate replace to={`/review/detections/${id}`} />;
 }
 
+function RouteLoadError() {
+  return (
+    <main className="app-startup-error" role="alert">
+      <section>
+        <h1>页面加载失败</h1>
+        <p>请检查网络连接，然后刷新页面重试。</p>
+        <button type="button" onClick={() => window.location.reload()}>刷新页面</button>
+      </section>
+    </main>
+  );
+}
+
 export const router = createBrowserRouter([
-  { path: "/login", element: deferred(<LoginPage />) },
-  { path: "/privacy", element: deferred(<PrivacyPolicyPage />) },
-  { path: "/terms", element: deferred(<TermsPage />) },
+  { path: "/login", element: deferred(<LoginPage />), errorElement: <RouteLoadError /> },
+  { path: "/privacy", element: deferred(<PrivacyPolicyPage />), errorElement: <RouteLoadError /> },
+  { path: "/terms", element: deferred(<TermsPage />), errorElement: <RouteLoadError /> },
   {
     path: "/",
     element: <AppLayout />,
+    errorElement: <RouteLoadError />,
     children: [
       { index: true, element: deferred(<DashboardPage />) },
       { path: "capabilities/*", element: <Navigate replace to="/#ai" /> },
-      { path: "trials", element: deferred(<ReportListPage />) },
       { path: "reports", element: <Navigate replace to="/trials" /> },
       { path: "projects", element: <Navigate replace to="/detections" /> },
-      { path: "detections", element: deferred(<ProjectListPage />) },
-      { path: "trials/:id", element: deferred(<ReportDetailPage />) },
-      { path: "detections/results/:id", element: deferred(<ReportDetailPage />) },
-      { path: "detections/:id/model", element: deferred(<BuildingModelPage mode="professional" />) },
       {
         element: <RequireAuth />,
         children: [
+          { path: "trials", element: deferred(<ReportListPage />) },
+          { path: "detections", element: deferred(<ProjectListPage />) },
+          { path: "trials/:id", element: deferred(<ReportDetailPage />) },
+          { path: "detections/results/:id", element: deferred(<ReportDetailPage />) },
+          { path: "detections/:id/model", element: deferred(<BuildingModelPage mode="professional" />) },
           { path: "photos", element: deferred(<PhotoManagementPage />) },
           { path: "trials/new", element: deferred(<TrialExperiencePage />) },
           { path: "detections/new", element: deferred(<NewProjectPage />) },

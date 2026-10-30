@@ -492,7 +492,7 @@ export function NewProjectPage() {
   const canContinueFromDetails = !projectNameMissing && !facadeTypeMissing;
   const detailsChanged = Boolean(project && hasProjectDetailChanges(project, form));
   const furthestAccessibleStep: WizardStep = project
-    ? (project.setup_step === 3 ? 3 : 2)
+    ? (project.setup_step === 3 || isDetectionLocked ? 3 : 2)
     : 1;
 
   const persistProjectDetails = async () => {
@@ -642,7 +642,7 @@ export function NewProjectPage() {
     targetStep !== step
     && targetStep <= furthestAccessibleStep
     && !busy
-    && (isEditable || (hasResult && targetStep >= 2))
+    && (isEditable || isDetectionLocked || (hasResult && targetStep >= 2))
   );
   const navigateToWizardStep = async (targetStep: WizardStep) => {
     if (!canNavigateToWizardStep(targetStep)) return;
@@ -754,7 +754,7 @@ export function NewProjectPage() {
 
         {step === 1 || step === 3 ? (
           <h2 className="professional-create-content-heading">
-            {step === 1 ? "填写项目信息" : "确认项目信息"}
+            {step === 1 ? (isEditable ? "填写项目信息" : "查看项目信息") : "确认项目信息"}
           </h2>
         ) : null}
 

@@ -51,7 +51,7 @@ class FakePhotoUploadDb:
     def add(self, item: object) -> None:
         if isinstance(item, Photo):
             now = datetime.now(UTC)
-            if getattr(item, "id", None) is None:
+            if item.id is None:
                 item.id = uuid4()
             item.created_at = now
             item.updated_at = now

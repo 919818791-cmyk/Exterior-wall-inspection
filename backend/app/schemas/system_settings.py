@@ -70,6 +70,7 @@ class FormalDetectionPromptSettingUpdate(BaseModel):
 class TrialInferenceSettingRead(BaseModel):
     provider: TrialInferenceProvider
     global_job_concurrency: int
+    user_job_concurrency: int
     request_concurrency: int
     trial_photo_detection_limit: int
     formal_photo_detection_limit: int
@@ -89,6 +90,7 @@ class TrialInferenceSettingUpdate(BaseModel):
 
     provider: TrialInferenceProvider | None = None
     global_job_concurrency: int | None = Field(default=None, ge=1, le=10)
+    user_job_concurrency: int | None = Field(default=None, ge=1, le=10)
     request_concurrency: int | None = Field(default=None, ge=1, le=10)
     trial_photo_detection_limit: int | None = Field(default=None, ge=1, le=100_000)
     formal_photo_detection_limit: int | None = Field(default=None, ge=1, le=100_000)

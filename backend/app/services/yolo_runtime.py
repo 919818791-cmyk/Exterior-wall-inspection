@@ -16,6 +16,7 @@ from minio.error import S3Error
 
 from app.core.config import get_settings
 from app.services import object_storage
+from app.services.yolo_weights import POLICY_VERSION, UnsafeYoloWeights, validate_yolo_weights
 
 try:
     import fcntl
@@ -26,7 +27,10 @@ logger = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parents[3]
 RUNTIME_ROOT = ROOT / ".runtime" / "yolo"
 SERVER = ROOT / "algorithm-model" / "version_server.py"
+LAUNCHER = ROOT / "algorithm-model" / "serve_version.py"
+WEIGHT_LOADER = Path(__file__).with_name("yolo_weights.py")
 LABEL_PREFIX = "building-exterior.yolo"
+BINDING_VERSION = "container-ip-v1"
 
 
 @dataclass(frozen=True)
@@ -69,6 +73,14 @@ def _url(container):
     return f"http://127.0.0.1:{int(ports[0]['HostPort'])}"
 
 
+def _uses_interface_binding(container):
+    return (container["Config"].get("Labels") or {}).get(f"{LABEL_PREFIX}.binding") == BINDING_VERSION
+
+
+def _uses_safe_loader(container):
+    return (container["Config"].get("Labels") or {}).get(f"{LABEL_PREFIX}.weight-policy") == POLICY_VERSION
+
+
 def _status(version):
     container = _inspect(version)
     if container is None:
@@ -82,6 +94,10 @@ def _status(version):
                 return YoloVersionStatus("failed", "NVIDIA 驱动未加载，GPU 模型无法启动，请为当前内核安装驱动后重新启动该版本。", True)
             return YoloVersionStatus("failed", f"模型进程异常退出，请查看容器 {_name(version)} 的日志。", True)
         return YoloVersionStatus("stopped", "该权重版本已停止。", True)
+    if not _uses_interface_binding(container):
+        return YoloVersionStatus("failed", "旧模型容器使用全接口监听，请先停止该版本，再启动以重建安全运行容器。", True)
+    if not _uses_safe_loader(container):
+        return YoloVersionStatus("failed", "旧模型容器未启用安全权重加载，请先停止该版本，再启动以重建容器。", True)
     try:
         with httpx.Client(timeout=1, trust_env=False) as client:
             response = client.get(_url(container) + "/health")
@@ -127,6 +143,8 @@ def _weights(version, folder):
         with path.open("rb") as source:
             return hashlib.file_digest(source, "sha256").hexdigest() == version.sha256
     if matches(target):
+        with target.open("rb") as source:
+            validate_yolo_weights(source)
         return
     temporary = folder / "weights.pt.part"
     response = object_storage.open_object(version.storage_bucket, version.storage_object_key)
@@ -136,6 +154,8 @@ def _weights(version, folder):
                 output.write(chunk)
         if not matches(temporary):
             raise RuntimeError("模型权重大小或 SHA256 校验失败，已拒绝启动。")
+        with temporary.open("rb") as source:
+            validate_yolo_weights(source)
         temporary.replace(target)
     finally:
         response.close()
@@ -158,9 +178,19 @@ def control_version(version, action):
                     if result.returncode:
                         raise RuntimeError("停止模型容器失败，请查看 Docker 日志。")
                 return _status(version)
-            if container is not None and container["State"]["Running"]:
-                return _status(version)
+            if container is not None:
+                if container["State"]["Running"]:
+                    if not _uses_interface_binding(container) or not _uses_safe_loader(container):
+                        raise RuntimeError("请先停止旧模型容器，再启动以重建安全运行容器。")
+                    _weights(version, folder)
+                    return _status(version)
             _weights(version, folder)
+            if container is not None:
+                if not _uses_interface_binding(container) or not _uses_safe_loader(container):
+                    result = _docker("rm", _name(version), timeout=40)
+                    if result.returncode:
+                        raise RuntimeError("重建旧模型容器失败，请检查 Docker 服务。")
+                    container = None
             if container is not None:
                 result = _docker("start", _name(version), timeout=40)
             else:
@@ -168,20 +198,26 @@ def control_version(version, action):
                 args = ["run", "-d", "--name", _name(version), "--restart", "unless-stopped",
                         "--publish", "127.0.0.1::9002", "--label", f"{LABEL_PREFIX}.version-id={version.id}",
                         "--label", f"{LABEL_PREFIX}.sha256={version.sha256}",
+                        "--label", f"{LABEL_PREFIX}.binding={BINDING_VERSION}",
+                        "--label", f"{LABEL_PREFIX}.weight-policy={POLICY_VERSION}",
                         "--mount", f"type=bind,src={folder},dst=/weights,readonly",
                         "--mount", f"type=bind,src={SERVER},dst=/runtime/version_server.py,readonly",
+                        "--mount", f"type=bind,src={LAUNCHER},dst=/runtime/serve_version.py,readonly",
+                        "--mount", f"type=bind,src={WEIGHT_LOADER},dst=/runtime/yolo_weights.py,readonly",
                         "--env", f"YOLO_VERSION_ID={version.id}", "--env", f"YOLO_MODEL_ID={version.model_id}",
                         "--env", f"YOLO_VERSION={version.version}", "--env", f"YOLO_WEIGHTS_SHA256={version.sha256}",
                         "--env", f"YOLO_DEVICE={settings.yolo_runtime_device}", "--env", "ULTRALYTICS_SETTINGS_DIR=/tmp/ultralytics"]
+                args += ["--env", "TORCH_FORCE_WEIGHTS_ONLY_LOAD=1", "--security-opt", "no-new-privileges:true"]
                 if settings.yolo_runtime_device.startswith("cuda"):
                     args += ["--gpus", "all"]
-                args += [settings.yolo_runtime_image, "python", "-m", "uvicorn", "version_server:app",
-                         "--app-dir", "/runtime", "--host", "0.0.0.0", "--port", "9002"]
+                args += [settings.yolo_runtime_image, "python", "/runtime/serve_version.py"]
                 result = _docker(*args, timeout=60)
             if result.returncode:
                 logger.error("yolo_runtime_start_failed: %s", result.stderr)
                 raise RuntimeError("启动模型容器失败，请检查 GPU、运行镜像和 Docker 服务。")
             return _status(version)
+    except UnsafeYoloWeights as error:
+        raise HTTPException(422, str(error)) from error
     except (OSError, subprocess.SubprocessError, RuntimeError, ValueError, KeyError, S3Error) as error:
         raise HTTPException(502, str(error)) from error
 
