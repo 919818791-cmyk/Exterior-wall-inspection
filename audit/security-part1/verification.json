@@ -1,0 +1,92 @@
+{
+  "full": {
+    "command": "PYTHONPATH=. .venv/bin/pytest -q",
+    "working_directory": "backend",
+    "exit_code": 1,
+    "summary": "6 failed, 658 passed, 6 skipped, 6 warnings in 16.26s",
+    "failed_tests": [
+      "tests/test_phase3_routes.py::test_phase3_project_routes_are_registered",
+      "tests/test_phase7_routes.py::test_trial_generate_endpoint_returns_preview_payload",
+      "tests/test_phase7_routes.py::test_trial_generate_endpoint_preserves_legacy_corrosion_label",
+      "tests/test_phase7_routes.py::test_trial_generate_endpoint_hides_findings_at_point_six",
+      "tests/test_phase7_routes.py::test_trial_generate_endpoint_accepts_uploaded_photo_ids",
+      "tests/test_phase7_routes.py::test_trial_generate_endpoint_appends_to_archived_result"
+    ]
+  },
+  "security": {
+    "command": "PYTHONPATH=. .venv/bin/pytest -q tests/test_security_part1.py tests/test_detection_strategies.py tests/test_system_settings.py tests/test_config.py tests/test_defect_area.py tests/test_yolo_runtime.py tests/test_phase4_routes.py tests/test_local_qwen_lifecycle.py tests/test_fault_tolerance.py",
+    "working_directory": "backend",
+    "exit_code": 0,
+    "summary": "179 passed, 4 warnings in 4.25s",
+    "failed_tests": []
+  },
+  "baseline": {
+    "summary": "6 failed, 563 passed, 6 skipped, 2 warnings in 16.04s",
+    "failed_tests": [
+      "tests/test_phase3_routes.py::test_phase3_project_routes_are_registered",
+      "tests/test_phase7_routes.py::test_trial_generate_endpoint_returns_preview_payload",
+      "tests/test_phase7_routes.py::test_trial_generate_endpoint_preserves_legacy_corrosion_label",
+      "tests/test_phase7_routes.py::test_trial_generate_endpoint_hides_findings_at_point_six",
+      "tests/test_phase7_routes.py::test_trial_generate_endpoint_accepts_uploaded_photo_ids",
+      "tests/test_phase7_routes.py::test_trial_generate_endpoint_appends_to_archived_result"
+    ]
+  },
+  "new_failures": [],
+  "compile": {
+    "command": ".venv/bin/python -m compileall -q app scripts tests",
+    "exit_code": 0,
+    "output": ""
+  },
+  "diff_check": {
+    "command": "git diff --check",
+    "exit_code": 0,
+    "output": ""
+  },
+  "deployment_checks": {
+    "configured_unit": "building-photo-guard.service",
+    "systemd_version": "255",
+    "systemctl_option_separator_read_only_query": "passed",
+    "live_start_stop": "not performed; mocked regression passed",
+    "app_env": "production",
+    "production_settings_validation": "passed",
+    "resource_limits": {
+      "trial_max_image_pixels": 64000000,
+      "trial_inference_max_image_pixels": 64000000,
+      "trial_max_tiles_per_image": 100,
+      "trial_max_tiles_per_request": 1000
+    },
+    "saved_vision_model_identifiers": {
+      "total": 3,
+      "invalid": 0
+    },
+    "runtime_root": {
+      "path": ".runtime",
+      "permissions": "0700",
+      "uid": 1000,
+      "symlink": false
+    },
+    "running_backend_uid": 1000,
+    "model_unit_observed_state": {
+      "ActiveState": "activating",
+      "SubState": "auto-restart",
+      "MainPID": 0
+    },
+    "docker_model_containers_running": 0,
+    "yolo_live_network_and_external_probe": "pending; no running YOLO version container or external probe node",
+    "scan_rescan": "pending; original assessment scanner not available",
+    "services_restarted": false,
+    "production_database_writes_performed": false
+  },
+  "scope": {
+    "plan": "代码漏洞Part1_逐项修复方案.docx",
+    "findings": 34,
+    "code_hardened": 19,
+    "retained_for_false_positive_review": 14,
+    "deployment_pending": 1
+  },
+  "notes": [
+    "Full regression failures match the six failures observed before edits.",
+    "An existing local_qwen unexpected-exit test failed once during concurrent runs, then passed in full and sequential reruns; source unchanged.",
+    "Original workspace edits were preserved."
+  ]
+}

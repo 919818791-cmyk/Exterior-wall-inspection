@@ -1,0 +1,63 @@
+{
+  "results": [
+    {
+      "width": 1440,
+      "path": "/privacy",
+      "configured": true,
+      "contactsMatch": true
+    },
+    {
+      "width": 1440,
+      "path": "/terms",
+      "configured": true,
+      "contactsMatch": true
+    },
+    {
+      "width": 1440,
+      "path": "/privacy",
+      "configured": false,
+      "contactsMatch": true
+    },
+    {
+      "width": 1440,
+      "path": "/terms",
+      "configured": false,
+      "contactsMatch": true
+    },
+    {
+      "width": 390,
+      "path": "/privacy",
+      "configured": true,
+      "contactsMatch": true
+    },
+    {
+      "width": 390,
+      "path": "/terms",
+      "configured": true,
+      "contactsMatch": true
+    },
+    {
+      "width": 390,
+      "path": "/privacy",
+      "configured": false,
+      "contactsMatch": true
+    },
+    {
+      "width": 390,
+      "path": "/terms",
+      "configured": false,
+      "contactsMatch": true
+    },
+    {
+      "map": "configured",
+      "sdkLoadedFromEnvironment": true,
+      "rendered": true
+    },
+    {
+      "map": "unconfigured",
+      "rendered": false,
+      "fallbackShown": true
+    }
+  ],
+  "pageErrors": []
+}

@@ -1,0 +1,17 @@
+{
+  "preset": "h264-1080p-30fps-crf23-max4m-v1",
+  "videos": {
+    "N1": {
+      "source": "34d7e7fd9348ec10f9febb228320c58380d22e9d30b70198f1f9efc9d938643b",
+      "output": "7e670e22ebe041ce4d433c7788ae0dd71081768019151aa9e56bb832cc1357e4"
+    },
+    "N2": {
+      "source": "6c0c8ab852f8f3e45e96b33830a4a24428de42bfba941d6c71cd32e6b3ca9778",
+      "output": "9ac90ba66e9c2f665e4409805b4f2d9c52e9fd7c7ff6e0ca0a62f8d22de19cae"
+    }
+  },
+  "poster": {
+    "source": "34d7e7fd9348ec10f9febb228320c58380d22e9d30b70198f1f9efc9d938643b",
+    "output": "0dee2de700f1dbdb96f818a7e38699ebd501c66e1fd6fbbdc40f01da1cf150a0"
+  }
+}

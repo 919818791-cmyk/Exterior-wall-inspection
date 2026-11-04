@@ -1,0 +1,166 @@
+{
+  "time": "2026-10-10T16:49:23.555849+08:00",
+  "checks": [
+    {
+      "check": "api",
+      "path": "/api/health",
+      "status": 200
+    },
+    {
+      "check": "api",
+      "path": "/api/auth/me",
+      "status": 200
+    },
+    {
+      "check": "api",
+      "path": "/api/yolo-models",
+      "status": 200
+    },
+    {
+      "check": "api",
+      "path": "/api/vision-models",
+      "status": 200
+    },
+    {
+      "check": "api",
+      "path": "/api/detection-strategies",
+      "status": 200
+    },
+    {
+      "check": "api",
+      "path": "/api/projects",
+      "status": 200
+    },
+    {
+      "check": "api",
+      "path": "/api/reports",
+      "status": 200
+    },
+    {
+      "check": "unknown_api_is_json_404",
+      "status": 404
+    },
+    {
+      "check": "strategy_save_unchanged",
+      "bytes": 30215,
+      "items": 21,
+      "status": 200
+    },
+    {
+      "check": "original_image_full",
+      "bytes": 12749273,
+      "sha256": "6be87b375ff5d5e3e3d062fed5c2ef3a6e7c058a864fec7120de6ac159636524",
+      "status": 200
+    },
+    {
+      "check": "range_download",
+      "status": 206,
+      "content_range": "bytes 0-65535/12749273"
+    },
+    {
+      "check": "expired_signed_url",
+      "status": 403
+    },
+    {
+      "check": "report_pdf_download",
+      "bytes": 1177444,
+      "status": 200
+    },
+    {
+      "check": "large_upload_reaches_auth",
+      "path": "/api/projects/00000000-0000-0000-0000-000000000000/building-model",
+      "bytes": 115343360,
+      "status": 401
+    },
+    {
+      "check": "large_upload_reaches_auth",
+      "path": "/api/projects/00000000-0000-0000-0000-000000000000/building-model-images",
+      "bytes": 115343360,
+      "status": 401
+    },
+    {
+      "check": "amap_proxy",
+      "status": 200,
+      "upstream_status": "1",
+      "upstream_info": "OK"
+    },
+    {
+      "check": "browser",
+      "routes": 9,
+      "server_errors": 0,
+      "page_errors": 0
+    }
+  ],
+  "browser": {
+    "routes": [
+      {
+        "path": "/",
+        "status": 200,
+        "finalPath": "/"
+      },
+      {
+        "path": "/model-management",
+        "status": 200,
+        "finalPath": "/model-management"
+      },
+      {
+        "path": "/detection-prompts",
+        "status": 200,
+        "finalPath": "/detection-prompts"
+      },
+      {
+        "path": "/system-settings",
+        "status": 200,
+        "finalPath": "/system-settings"
+      },
+      {
+        "path": "/detections",
+        "status": 200,
+        "finalPath": "/detections"
+      },
+      {
+        "path": "/trials",
+        "status": 200,
+        "finalPath": "/trials"
+      },
+      {
+        "path": "/photos",
+        "status": 200,
+        "finalPath": "/photos"
+      },
+      {
+        "path": "/trials/new",
+        "status": 200,
+        "finalPath": "/trials/new"
+      },
+      {
+        "path": "/detections/new",
+        "status": 200,
+        "finalPath": "/detections/new"
+      }
+    ],
+    "failures": [],
+    "pageErrors": [],
+    "failedRequests": [],
+    "mapResponses": [
+      {
+        "path": "/_AMapService/v3/log/init",
+        "status": 200
+      },
+      {
+        "path": "/_AMapService/v3/geocode/geo",
+        "status": 200
+      }
+    ],
+    "mapCheck": {
+      "rendered": true,
+      "geocodeStatus": 200,
+      "upstreamStatus": "1",
+      "upstreamInfo": "OK"
+    }
+  },
+  "nginx_log": {
+    "errors_since_temp_fix": 0,
+    "temp_fix_time": "2026-10-10T16:32:47+08:00"
+  }
+}

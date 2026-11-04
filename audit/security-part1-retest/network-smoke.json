@@ -1,0 +1,35 @@
+{
+  "container_name": "security-part1-smoke-7e35a211cc7a485e9de377c66a530e20",
+  "gpu_used": false,
+  "host_mapping": [
+    {
+      "HostIp": "127.0.0.1",
+      "HostPort": "32773"
+    }
+  ],
+  "container_ip": "172.18.0.3",
+  "loopback_health": "passed",
+  "explicit_interface_listener": "passed",
+  "host_non_loopback_probes": [
+    {
+      "host_interface": "172.17.31.111",
+      "result": "connection rejected"
+    },
+    {
+      "host_interface": "172.18.0.1",
+      "result": "connection rejected"
+    },
+    {
+      "host_interface": "172.19.0.1",
+      "result": "connection rejected"
+    },
+    {
+      "host_interface": "198.18.0.1",
+      "result": "connection rejected"
+    }
+  ],
+  "docker_server_version": "29.6.1",
+  "independent_external_node_probe": "not performed",
+  "result": "passed",
+  "temporary_container_removed": true
+}

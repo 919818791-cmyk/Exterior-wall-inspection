@@ -1,0 +1,48 @@
+FFFFFF                                                                   [100%]
+=================================== FAILURES ===================================
+__________________ test_phase3_project_routes_are_registered ___________________
+tests/test_phase3_routes.py:35: in test_phase3_project_routes_are_registered
+    assert all("facade" not in path for path in paths)
+E   assert False
+E    +  where False = all(<generator object test_phase3_project_routes_are_registered.<locals>.<genexpr> at 0x768b0805d970>)
+_____________ test_trial_generate_endpoint_returns_preview_payload _____________
+tests/test_phase7_routes.py:906: in test_trial_generate_endpoint_returns_preview_payload
+    assert payload["findings"] == [
+E   AssertionError: assert [] == [{'bbox': {'h...01.jpg', ...}]
+E
+E     Right contains one more item: {'bbox': {'height': 80, 'width': 240, 'x': 100, 'y': 50}, 'confidence': 0.67, 'detection_id': 'det-1', 'filename': 'trial-001.jpg', ...}
+E     Use -v to get more diff
+________ test_trial_generate_endpoint_preserves_legacy_corrosion_label _________
+tests/test_phase7_routes.py:1019: in test_trial_generate_endpoint_preserves_legacy_corrosion_label
+    assert payload["findings"] == [
+E   AssertionError: assert [] == [{'bbox': {'h...sion-1', ...}]
+E
+E     Right contains one more item: {'bbox': {'height': 160, 'width': 80, 'x': 120, 'y': 60}, 'confidence': 0.81, 'description': '金属连接件明显锈蚀', 'detection_id': 'corrosion-1', ...}
+E     Use -v to get more diff
+___________ test_trial_generate_endpoint_hides_findings_at_point_six ___________
+tests/test_phase7_routes.py:1061: in test_trial_generate_endpoint_hides_findings_at_point_six
+    assert payload["raw_model_outputs"][0]["detections"] == [
+E   AssertionError: assert [] == [{'bbox': {'h...et-low', ...}]
+E
+E     Right contains one more item: {'bbox': {'height': 80, 'width': 240, 'x': 100, 'y': 50}, 'confidence': 0.6, 'description': None, 'detection_id': 'det-low', ...}
+E     Use -v to get more diff
+___________ test_trial_generate_endpoint_accepts_uploaded_photo_ids ____________
+tests/test_phase7_routes.py:1112: in test_trial_generate_endpoint_accepts_uploaded_photo_ids
+    assert payload["findings"] == [
+E   AssertionError: assert [] == [{'bbox': {'h...01.jpg', ...}]
+E
+E     Right contains one more item: {'bbox': {'height': 80, 'width': 240, 'x': 100, 'y': 50}, 'confidence': 0.67, 'detection_id': 'det-1', 'filename': 'quick-001.jpg', ...}
+E     Use -v to get more diff
+___________ test_trial_generate_endpoint_appends_to_archived_result ____________
+tests/test_phase7_routes.py:1182: in test_trial_generate_endpoint_appends_to_archived_result
+    assert result.finding_count == 1
+E   assert 0 == 1
+E    +  where 0 = <app.models.tables.TrialDetectionResult object at 0x768b05ceae40>.finding_count
+=========================== short test summary info ============================
+FAILED tests/test_phase3_routes.py::test_phase3_project_routes_are_registered
+FAILED tests/test_phase7_routes.py::test_trial_generate_endpoint_returns_preview_payload
+FAILED tests/test_phase7_routes.py::test_trial_generate_endpoint_preserves_legacy_corrosion_label
+FAILED tests/test_phase7_routes.py::test_trial_generate_endpoint_hides_findings_at_point_six
+FAILED tests/test_phase7_routes.py::test_trial_generate_endpoint_accepts_uploaded_photo_ids
+FAILED tests/test_phase7_routes.py::test_trial_generate_endpoint_appends_to_archived_result
+6 failed in 1.32s

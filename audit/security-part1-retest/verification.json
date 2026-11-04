@@ -1,0 +1,226 @@
+{
+  "baseline": {
+    "summary": "6 failed, 693 passed, 6 skipped, 6 warnings in 15.19s",
+    "failed_tests": [
+      "tests/test_phase3_routes.py::test_phase3_project_routes_are_registered",
+      "tests/test_phase7_routes.py::test_trial_generate_endpoint_returns_preview_payload",
+      "tests/test_phase7_routes.py::test_trial_generate_endpoint_preserves_legacy_corrosion_label",
+      "tests/test_phase7_routes.py::test_trial_generate_endpoint_hides_findings_at_point_six",
+      "tests/test_phase7_routes.py::test_trial_generate_endpoint_accepts_uploaded_photo_ids",
+      "tests/test_phase7_routes.py::test_trial_generate_endpoint_appends_to_archived_result"
+    ]
+  },
+  "targeted": {
+    "summary": "180 passed, 4 warnings in 2.73s",
+    "failed_tests": [],
+    "command": "PYTHONPATH=. .venv/bin/pytest -q tests/test_security_part1_retest.py tests/test_security_part1.py tests/test_detection_strategies.py tests/test_yolo_runtime.py tests/test_phase4_routes.py tests/test_defect_area.py"
+  },
+  "full": {
+    "summary": "6 failed, 712 passed, 6 skipped, 6 warnings in 15.36s",
+    "failed_tests": [
+      "tests/test_phase3_routes.py::test_phase3_project_routes_are_registered",
+      "tests/test_phase7_routes.py::test_trial_generate_endpoint_returns_preview_payload",
+      "tests/test_phase7_routes.py::test_trial_generate_endpoint_preserves_legacy_corrosion_label",
+      "tests/test_phase7_routes.py::test_trial_generate_endpoint_hides_findings_at_point_six",
+      "tests/test_phase7_routes.py::test_trial_generate_endpoint_accepts_uploaded_photo_ids",
+      "tests/test_phase7_routes.py::test_trial_generate_endpoint_appends_to_archived_result"
+    ],
+    "command": "PYTHONPATH=. .venv/bin/pytest -q"
+  },
+  "new_failures": [],
+  "commands_working_directory": "backend",
+  "source_checks": {
+    "command": "python3 audit/security-part1-retest/verify-findings.py",
+    "exit_code": 0,
+    "output": "{\"total\": 19, \"counts\": {\"命令注入\": 2, \"未受控格式字符串\": 6, \"硬编码的绑定所有网络接口\": 4, \"对象访问违规\": 6, \"硬编码tmp目录\": 1}, \"source_check_result\": \"passed\"}\n"
+  },
+  "compile": {
+    "command": "backend/.venv/bin/python -m compileall -q backend/app algorithm-model/serve_version.py backend/tests/test_security_part1_retest.py audit/security-part1-retest",
+    "exit_code": 0,
+    "output": ""
+  },
+  "diff_check": {
+    "command": "git diff --check",
+    "exit_code": 0,
+    "output": ""
+  },
+  "systemctl_query": {
+    "exit_code": 0,
+    "environment": "only UID-derived XDG_RUNTIME_DIR and DBUS_SESSION_BUS_ADDRESS, LANG=C.UTF-8",
+    "result": "active/running read-only query passed"
+  },
+  "network_smoke": {
+    "container_name": "security-part1-smoke-7e35a211cc7a485e9de377c66a530e20",
+    "gpu_used": false,
+    "host_mapping": [
+      {
+        "HostIp": "127.0.0.1",
+        "HostPort": "32773"
+      }
+    ],
+    "container_ip": "172.18.0.3",
+    "loopback_health": "passed",
+    "explicit_interface_listener": "passed",
+    "host_non_loopback_probes": [
+      {
+        "host_interface": "172.17.31.111",
+        "result": "connection rejected"
+      },
+      {
+        "host_interface": "172.18.0.1",
+        "result": "connection rejected"
+      },
+      {
+        "host_interface": "172.19.0.1",
+        "result": "connection rejected"
+      },
+      {
+        "host_interface": "198.18.0.1",
+        "result": "connection rejected"
+      }
+    ],
+    "docker_server_version": "29.6.1",
+    "independent_external_node_probe": "not performed",
+    "result": "passed",
+    "temporary_container_removed": true
+  },
+  "findings": {
+    "report": "第二次漏洞part1.docx",
+    "total": 19,
+    "counts": {
+      "命令注入": 2,
+      "未受控格式字符串": 6,
+      "硬编码的绑定所有网络接口": 4,
+      "对象访问违规": 6,
+      "硬编码tmp目录": 1
+    },
+    "findings": [
+      {
+        "category": "命令注入",
+        "ordinal": 1,
+        "file": "backend/app/services/vision_models.py",
+        "original_line": 139
+      },
+      {
+        "category": "命令注入",
+        "ordinal": 2,
+        "file": "backend/app/services/vision_models.py",
+        "original_line": 166
+      },
+      {
+        "category": "未受控格式字符串",
+        "ordinal": 1,
+        "file": "backend/app/db/check_connection.py",
+        "original_line": 11
+      },
+      {
+        "category": "未受控格式字符串",
+        "ordinal": 2,
+        "file": "backend/app/db/backfill_photo_projection_pose.py",
+        "original_line": 60
+      },
+      {
+        "category": "未受控格式字符串",
+        "ordinal": 3,
+        "file": "backend/app/db/backfill_photo_thumbnails.py",
+        "original_line": 102
+      },
+      {
+        "category": "未受控格式字符串",
+        "ordinal": 4,
+        "file": "backend/app/db/backfill_photo_projection_pose.py",
+        "original_line": 62
+      },
+      {
+        "category": "未受控格式字符串",
+        "ordinal": 5,
+        "file": "backend/app/db/harden_production_accounts.py",
+        "original_line": 44
+      },
+      {
+        "category": "未受控格式字符串",
+        "ordinal": 6,
+        "file": "backend/app/db/backfill_photo_thumbnails.py",
+        "original_line": 38
+      },
+      {
+        "category": "硬编码的绑定所有网络接口",
+        "ordinal": 1,
+        "file": "backend/app/services/yolo_runtime.py",
+        "original_line": 177
+      },
+      {
+        "category": "硬编码的绑定所有网络接口",
+        "ordinal": 2,
+        "file": "backend/tests/test_yolo_runtime.py",
+        "original_line": 135
+      },
+      {
+        "category": "硬编码的绑定所有网络接口",
+        "ordinal": 3,
+        "file": "backend/tests/test_security_part1.py",
+        "original_line": 238
+      },
+      {
+        "category": "硬编码的绑定所有网络接口",
+        "ordinal": 4,
+        "file": "backend/tests/test_security_part1.py",
+        "original_line": 239
+      },
+      {
+        "category": "对象访问违规",
+        "ordinal": 1,
+        "file": "backend/app/services/defect_area.py",
+        "original_line": 25
+      },
+      {
+        "category": "对象访问违规",
+        "ordinal": 2,
+        "file": "backend/tests/test_phase4_routes.py",
+        "original_line": 54
+      },
+      {
+        "category": "对象访问违规",
+        "ordinal": 3,
+        "file": "backend/tests/test_phase4_routes.py",
+        "original_line": 54
+      },
+      {
+        "category": "对象访问违规",
+        "ordinal": 4,
+        "file": "backend/app/services/defect_area.py",
+        "original_line": 25
+      },
+      {
+        "category": "对象访问违规",
+        "ordinal": 5,
+        "file": "backend/tests/test_phase4_routes.py",
+        "original_line": 54
+      },
+      {
+        "category": "对象访问违规",
+        "ordinal": 6,
+        "file": "backend/app/services/defect_area.py",
+        "original_line": 25
+      },
+      {
+        "category": "硬编码tmp目录",
+        "ordinal": 1,
+        "file": "backend/tests/test_security_part1.py",
+        "original_line": 28
+      }
+    ],
+    "source_checks": {
+      "command_inputs": "all three argv arrays are literal; inherited environment removed",
+      "format_templates": "no f-string nodes in the four reported scripts; output compatibility tested",
+      "listener_literals": "reported files have no wildcard address literals; explicit container interface tested",
+      "attribute_access": "whitelisted explicit measurement readers and direct Photo.id access",
+      "temporary_directory": "absolute-path rejection remains; no fixed temporary directory in test inputs"
+    },
+    "source_check_result": "passed",
+    "official_rescan": "pending"
+  },
+  "production_service_restart_performed": false,
+  "production_database_writes_performed": false,
+  "running_legacy_model_container_migration": "Stop then start the version after deploying backend code; old running container left intact."
+}

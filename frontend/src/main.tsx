@@ -8,6 +8,7 @@ import { AppErrorBoundary } from "@/components/AppErrorBoundary";
 import { AuthBootstrap } from "@/components/auth/AuthBootstrap";
 import { router } from "@/router";
 import "@/styles.css";
+import "@/utils/chunkRecovery";
 
 const queryClient = new QueryClient({
   defaultOptions: {

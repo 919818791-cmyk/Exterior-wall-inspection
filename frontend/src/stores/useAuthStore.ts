@@ -12,6 +12,7 @@ interface AuthState {
   restoring: boolean;
   restoreSession: () => Promise<void>;
   setAuthenticated: (user: AuthUser, token: string) => void;
+  updateUser: (user: AuthUser) => void;
   clearSession: () => void;
 }
 
@@ -44,6 +45,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   setAuthenticated: (user, token) => {
     setAuthToken(token);
     set({ status: "authenticated", user, restoring: false });
+  },
+  updateUser: (user) => {
+    set({ user });
   },
   clearSession: () => {
     clearAuthToken();

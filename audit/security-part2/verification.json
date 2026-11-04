@@ -1,0 +1,4234 @@
+{
+  "reported_findings": {
+    "phone": 49,
+    "url": 553
+  },
+  "classification_counts": {
+    "parameterized_test_data": 80,
+    "configured": 11,
+    "registry_resolved_from_configuration": 510,
+    "xmp_binary_fixture": 1
+  },
+  "remaining_phone_literals_in_reported_sources": [],
+  "remaining_http_destinations_in_reported_sources": [],
+  "current_lock_metadata_url_fields": {},
+  "lockfile_dependency_graph_and_integrity_preserved": true,
+  "second_scan_findings": 511,
+  "second_scan_remaining_url_literals": 0,
+  "findings": [
+    {
+      "kind": "phone",
+      "number": 1,
+      "file": "backend/tests/test_phase8_auth.py",
+      "original_line": 389,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "phone",
+      "number": 2,
+      "file": "backend/tests/test_phase8_auth.py",
+      "original_line": 126,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "phone",
+      "number": 3,
+      "file": "backend/tests/test_account_deletion.py",
+      "original_line": 22,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "phone",
+      "number": 4,
+      "file": "backend/tests/test_phase8_auth.py",
+      "original_line": 439,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "phone",
+      "number": 5,
+      "file": "backend/tests/test_phase8_auth.py",
+      "original_line": 114,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "phone",
+      "number": 6,
+      "file": "frontend/src/pages/LegalDocumentPage.tsx",
+      "original_line": 6,
+      "classification": "configured"
+    },
+    {
+      "kind": "phone",
+      "number": 7,
+      "file": "backend/tests/test_phase8_auth.py",
+      "original_line": 207,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "phone",
+      "number": 8,
+      "file": "backend/tests/test_phase8_auth.py",
+      "original_line": 317,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "phone",
+      "number": 9,
+      "file": "backend/tests/test_phase8_auth.py",
+      "original_line": 789,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "phone",
+      "number": 10,
+      "file": "backend/tests/test_phase8_auth.py",
+      "original_line": 807,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "phone",
+      "number": 11,
+      "file": "backend/tests/test_phase8_auth.py",
+      "original_line": 886,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "phone",
+      "number": 12,
+      "file": "backend/tests/test_fault_tolerance.py",
+      "original_line": 53,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "phone",
+      "number": 13,
+      "file": "backend/tests/test_phase8_auth.py",
+      "original_line": 281,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "phone",
+      "number": 14,
+      "file": "backend/tests/test_phase8_auth.py",
+      "original_line": 336,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "phone",
+      "number": 15,
+      "file": "backend/tests/test_sms_verification.py",
+      "original_line": 72,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "phone",
+      "number": 16,
+      "file": "backend/tests/test_sms_verification.py",
+      "original_line": 93,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "phone",
+      "number": 17,
+      "file": "backend/tests/test_phase8_auth.py",
+      "original_line": 502,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "phone",
+      "number": 18,
+      "file": "backend/app/api/dependencies.py",
+      "original_line": 43,
+      "classification": "configured"
+    },
+    {
+      "kind": "phone",
+      "number": 19,
+      "file": "backend/tests/test_phase8_auth.py",
+      "original_line": 340,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "phone",
+      "number": 20,
+      "file": "backend/tests/test_phase8_auth.py",
+      "original_line": 359,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "phone",
+      "number": 21,
+      "file": "backend/tests/test_phase8_auth.py",
+      "original_line": 297,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "phone",
+      "number": 22,
+      "file": "backend/app/api/dependencies.py",
+      "original_line": 25,
+      "classification": "configured"
+    },
+    {
+      "kind": "phone",
+      "number": 23,
+      "file": "backend/tests/test_phase8_auth.py",
+      "original_line": 539,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "phone",
+      "number": 24,
+      "file": "backend/tests/test_phase8_auth.py",
+      "original_line": 349,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "phone",
+      "number": 25,
+      "file": "backend/tests/test_fault_tolerance.py",
+      "original_line": 20,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "phone",
+      "number": 26,
+      "file": "backend/tests/test_phase8_auth.py",
+      "original_line": 396,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "phone",
+      "number": 27,
+      "file": "backend/tests/test_phase8_auth.py",
+      "original_line": 799,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "phone",
+      "number": 28,
+      "file": "backend/tests/test_phase8_auth.py",
+      "original_line": 566,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "phone",
+      "number": 29,
+      "file": "frontend/src/pages/DashboardPage.tsx",
+      "original_line": 441,
+      "classification": "configured"
+    },
+    {
+      "kind": "phone",
+      "number": 30,
+      "file": "backend/tests/test_phase8_auth.py",
+      "original_line": 492,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "phone",
+      "number": 31,
+      "file": "backend/tests/test_sms_verification.py",
+      "original_line": 77,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "phone",
+      "number": 32,
+      "file": "backend/tests/test_phase8_auth.py",
+      "original_line": 850,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "phone",
+      "number": 33,
+      "file": "backend/tests/test_phase8_auth.py",
+      "original_line": 458,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "phone",
+      "number": 34,
+      "file": "backend/tests/test_phase8_auth.py",
+      "original_line": 301,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "phone",
+      "number": 35,
+      "file": "backend/tests/test_phase8_auth.py",
+      "original_line": 408,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "phone",
+      "number": 36,
+      "file": "backend/tests/test_phase8_auth.py",
+      "original_line": 895,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "phone",
+      "number": 37,
+      "file": "backend/tests/test_phase8_auth.py",
+      "original_line": 512,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "phone",
+      "number": 38,
+      "file": "backend/tests/test_phase8_auth.py",
+      "original_line": 395,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "phone",
+      "number": 39,
+      "file": "frontend/src/pages/DashboardPage.tsx",
+      "original_line": 448,
+      "classification": "configured"
+    },
+    {
+      "kind": "phone",
+      "number": 40,
+      "file": "backend/tests/test_phase8_auth.py",
+      "original_line": 443,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "phone",
+      "number": 41,
+      "file": "backend/tests/test_phase8_auth.py",
+      "original_line": 181,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "phone",
+      "number": 42,
+      "file": "backend/tests/test_phase8_auth.py",
+      "original_line": 274,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "phone",
+      "number": 43,
+      "file": "backend/tests/test_sms_verification.py",
+      "original_line": 39,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "phone",
+      "number": 44,
+      "file": "backend/tests/test_phase8_auth.py",
+      "original_line": 880,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "phone",
+      "number": 45,
+      "file": "backend/tests/test_sms_verification.py",
+      "original_line": 71,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "phone",
+      "number": 46,
+      "file": "backend/app/api/dependencies.py",
+      "original_line": 34,
+      "classification": "configured"
+    },
+    {
+      "kind": "phone",
+      "number": 47,
+      "file": "backend/tests/test_phase8_auth.py",
+      "original_line": 309,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "phone",
+      "number": 48,
+      "file": "backend/tests/test_sms_verification.py",
+      "original_line": 36,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "phone",
+      "number": 49,
+      "file": "backend/tests/test_phase8_auth.py",
+      "original_line": 460,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "url",
+      "number": 1,
+      "file": "frontend/package-lock.json",
+      "original_line": 3985,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 2,
+      "file": "frontend/package-lock.json",
+      "original_line": 5964,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 3,
+      "file": "frontend/package-lock.json",
+      "original_line": 4350,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 4,
+      "file": "frontend/package-lock.json",
+      "original_line": 3165,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 5,
+      "file": "frontend/package-lock.json",
+      "original_line": 3131,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 6,
+      "file": "frontend/package-lock.json",
+      "original_line": 4875,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 7,
+      "file": "frontend/package-lock.json",
+      "original_line": 4268,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 8,
+      "file": "frontend/package-lock.json",
+      "original_line": 5686,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 9,
+      "file": "frontend/package-lock.json",
+      "original_line": 2292,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 10,
+      "file": "frontend/package-lock.json",
+      "original_line": 4319,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 11,
+      "file": "frontend/package-lock.json",
+      "original_line": 6059,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 12,
+      "file": "frontend/package-lock.json",
+      "original_line": 2350,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 13,
+      "file": "frontend/package-lock.json",
+      "original_line": 879,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 14,
+      "file": "frontend/package-lock.json",
+      "original_line": 4132,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 15,
+      "file": "frontend/package-lock.json",
+      "original_line": 504,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 16,
+      "file": "frontend/package-lock.json",
+      "original_line": 5229,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 17,
+      "file": "frontend/package-lock.json",
+      "original_line": 5525,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 18,
+      "file": "frontend/package-lock.json",
+      "original_line": 2511,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 19,
+      "file": "frontend/package-lock.json",
+      "original_line": 5285,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 20,
+      "file": "frontend/package-lock.json",
+      "original_line": 6022,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 21,
+      "file": "frontend/package-lock.json",
+      "original_line": 859,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 22,
+      "file": "frontend/package-lock.json",
+      "original_line": 2984,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 23,
+      "file": "frontend/package-lock.json",
+      "original_line": 6514,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 24,
+      "file": "frontend/package-lock.json",
+      "original_line": 2072,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 25,
+      "file": "frontend/package-lock.json",
+      "original_line": 5135,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 26,
+      "file": "frontend/package-lock.json",
+      "original_line": 1177,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 27,
+      "file": "frontend/package-lock.json",
+      "original_line": 2341,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 28,
+      "file": "frontend/package-lock.json",
+      "original_line": 985,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 29,
+      "file": "frontend/package-lock.json",
+      "original_line": 6538,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 30,
+      "file": "frontend/package-lock.json",
+      "original_line": 2967,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 31,
+      "file": "frontend/package-lock.json",
+      "original_line": 4285,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 32,
+      "file": "frontend/package-lock.json",
+      "original_line": 6283,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 33,
+      "file": "frontend/package-lock.json",
+      "original_line": 2310,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 34,
+      "file": "backend/app/api/system_settings.py",
+      "original_line": 50,
+      "classification": "configured"
+    },
+    {
+      "kind": "url",
+      "number": 35,
+      "file": "frontend/package-lock.json",
+      "original_line": 664,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 36,
+      "file": "frontend/package-lock.json",
+      "original_line": 4166,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 37,
+      "file": "frontend/package-lock.json",
+      "original_line": 4675,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 38,
+      "file": "frontend/package-lock.json",
+      "original_line": 4487,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 39,
+      "file": "frontend/package-lock.json",
+      "original_line": 2495,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 40,
+      "file": "frontend/package-lock.json",
+      "original_line": 1269,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 41,
+      "file": "frontend/package-lock.json",
+      "original_line": 4479,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 42,
+      "file": "frontend/package-lock.json",
+      "original_line": 2543,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 43,
+      "file": "frontend/package-lock.json",
+      "original_line": 5278,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 44,
+      "file": "frontend/package-lock.json",
+      "original_line": 793,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 45,
+      "file": "frontend/package-lock.json",
+      "original_line": 4799,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 46,
+      "file": "frontend/package-lock.json",
+      "original_line": 6138,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 47,
+      "file": "frontend/package-lock.json",
+      "original_line": 2027,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 48,
+      "file": "frontend/package-lock.json",
+      "original_line": 4788,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 49,
+      "file": "frontend/package-lock.json",
+      "original_line": 3265,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 50,
+      "file": "frontend/package-lock.json",
+      "original_line": 1373,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 51,
+      "file": "frontend/package-lock.json",
+      "original_line": 2332,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 52,
+      "file": "frontend/package-lock.json",
+      "original_line": 4823,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 53,
+      "file": "frontend/package-lock.json",
+      "original_line": 1192,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 54,
+      "file": "frontend/package-lock.json",
+      "original_line": 4183,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 55,
+      "file": "frontend/package-lock.json",
+      "original_line": 4000,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 56,
+      "file": "frontend/package-lock.json",
+      "original_line": 4429,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 57,
+      "file": "backend/tests/test_config.py",
+      "original_line": 7,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "url",
+      "number": 58,
+      "file": "frontend/package-lock.json",
+      "original_line": 4792,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 59,
+      "file": "frontend/package-lock.json",
+      "original_line": 4058,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 60,
+      "file": "frontend/package-lock.json",
+      "original_line": 5934,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 61,
+      "file": "frontend/package-lock.json",
+      "original_line": 2689,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 62,
+      "file": "frontend/package-lock.json",
+      "original_line": 1679,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 63,
+      "file": "frontend/package-lock.json",
+      "original_line": 3931,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 64,
+      "file": "backend/tests/test_qweather.py",
+      "original_line": 225,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "url",
+      "number": 65,
+      "file": "frontend/package-lock.json",
+      "original_line": 4906,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 66,
+      "file": "frontend/package-lock.json",
+      "original_line": 6031,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 67,
+      "file": "frontend/package-lock.json",
+      "original_line": 6181,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 68,
+      "file": "frontend/package-lock.json",
+      "original_line": 2112,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 69,
+      "file": "backend/tests/test_qweather.py",
+      "original_line": 257,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "url",
+      "number": 70,
+      "file": "frontend/package-lock.json",
+      "original_line": 3452,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 71,
+      "file": "frontend/package-lock.json",
+      "original_line": 1840,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 72,
+      "file": "frontend/package-lock.json",
+      "original_line": 170,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 73,
+      "file": "frontend/package-lock.json",
+      "original_line": 2256,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 74,
+      "file": "frontend/package-lock.json",
+      "original_line": 4093,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 75,
+      "file": "backend/tests/test_system_settings.py",
+      "original_line": 61,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "url",
+      "number": 76,
+      "file": "frontend/package-lock.json",
+      "original_line": 4930,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 77,
+      "file": "frontend/package-lock.json",
+      "original_line": 5462,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 78,
+      "file": "frontend/package-lock.json",
+      "original_line": 438,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 79,
+      "file": "frontend/package-lock.json",
+      "original_line": 2323,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 80,
+      "file": "frontend/package-lock.json",
+      "original_line": 1304,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 81,
+      "file": "frontend/package-lock.json",
+      "original_line": 3325,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 82,
+      "file": "frontend/package-lock.json",
+      "original_line": 3096,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 83,
+      "file": "backend/tests/test_qweather.py",
+      "original_line": 193,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "url",
+      "number": 84,
+      "file": "frontend/package-lock.json",
+      "original_line": 3646,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 85,
+      "file": "frontend/package-lock.json",
+      "original_line": 2472,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 86,
+      "file": "frontend/package-lock.json",
+      "original_line": 5658,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 87,
+      "file": "frontend/package-lock.json",
+      "original_line": 1885,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 88,
+      "file": "frontend/package-lock.json",
+      "original_line": 2265,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 89,
+      "file": "frontend/package-lock.json",
+      "original_line": 2738,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 90,
+      "file": "frontend/package-lock.json",
+      "original_line": 5859,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 91,
+      "file": "frontend/package-lock.json",
+      "original_line": 2205,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 92,
+      "file": "frontend/package-lock.json",
+      "original_line": 843,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 93,
+      "file": "backend/tests/test_detection_strategies.py",
+      "original_line": 56,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "url",
+      "number": 94,
+      "file": "frontend/package-lock.json",
+      "original_line": 6106,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 95,
+      "file": "frontend/package-lock.json",
+      "original_line": 6292,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 96,
+      "file": "backend/tests/test_detection_strategies.py",
+      "original_line": 169,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "url",
+      "number": 97,
+      "file": "frontend/package-lock.json",
+      "original_line": 179,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 98,
+      "file": "frontend/package-lock.json",
+      "original_line": 6573,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 99,
+      "file": "frontend/package-lock.json",
+      "original_line": 3296,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 100,
+      "file": "frontend/package-lock.json",
+      "original_line": 4444,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 101,
+      "file": "frontend/package-lock.json",
+      "original_line": 134,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 102,
+      "file": "frontend/package-lock.json",
+      "original_line": 1663,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 103,
+      "file": "frontend/package-lock.json",
+      "original_line": 2421,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 104,
+      "file": "frontend/package-lock.json",
+      "original_line": 2378,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 105,
+      "file": "frontend/package-lock.json",
+      "original_line": 4912,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 106,
+      "file": "frontend/package-lock.json",
+      "original_line": 4850,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 107,
+      "file": "frontend/package-lock.json",
+      "original_line": 1991,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 108,
+      "file": "frontend/package-lock.json",
+      "original_line": 2789,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 109,
+      "file": "frontend/package-lock.json",
+      "original_line": 5956,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 110,
+      "file": "frontend/package-lock.json",
+      "original_line": 5951,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 111,
+      "file": "backend/tests/test_phase7_routes.py",
+      "original_line": 1330,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "url",
+      "number": 112,
+      "file": "frontend/vite.config.ts",
+      "original_line": 38,
+      "classification": "configured"
+    },
+    {
+      "kind": "url",
+      "number": 113,
+      "file": "frontend/package-lock.json",
+      "original_line": 100,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 114,
+      "file": "frontend/package-lock.json",
+      "original_line": 3947,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 115,
+      "file": "frontend/package-lock.json",
+      "original_line": 6371,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 116,
+      "file": "frontend/package-lock.json",
+      "original_line": 6552,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 117,
+      "file": "frontend/package-lock.json",
+      "original_line": 5668,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 118,
+      "file": "frontend/package-lock.json",
+      "original_line": 1215,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 119,
+      "file": "frontend/package-lock.json",
+      "original_line": 3686,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 120,
+      "file": "frontend/package-lock.json",
+      "original_line": 5068,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 121,
+      "file": "frontend/package-lock.json",
+      "original_line": 3976,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 122,
+      "file": "frontend/package-lock.json",
+      "original_line": 2831,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 123,
+      "file": "frontend/package-lock.json",
+      "original_line": 6590,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 124,
+      "file": "frontend/package-lock.json",
+      "original_line": 3588,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 125,
+      "file": "backend/tests/test_object_storage.py",
+      "original_line": 50,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "url",
+      "number": 126,
+      "file": "frontend/package-lock.json",
+      "original_line": 4698,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 127,
+      "file": "frontend/package-lock.json",
+      "original_line": 4784,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 128,
+      "file": "frontend/package-lock.json",
+      "original_line": 5163,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 129,
+      "file": "frontend/package-lock.json",
+      "original_line": 3922,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 130,
+      "file": "frontend/package-lock.json",
+      "original_line": 5153,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 131,
+      "file": "frontend/package-lock.json",
+      "original_line": 5793,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 132,
+      "file": "frontend/package-lock.json",
+      "original_line": 648,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 133,
+      "file": "frontend/package-lock.json",
+      "original_line": 2158,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 134,
+      "file": "frontend/package-lock.json",
+      "original_line": 306,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 135,
+      "file": "frontend/package-lock.json",
+      "original_line": 5960,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 136,
+      "file": "frontend/package-lock.json",
+      "original_line": 4671,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 137,
+      "file": "frontend/package-lock.json",
+      "original_line": 5457,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 138,
+      "file": "frontend/package-lock.json",
+      "original_line": 5175,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 139,
+      "file": "frontend/package-lock.json",
+      "original_line": 4496,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 140,
+      "file": "frontend/package-lock.json",
+      "original_line": 687,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 141,
+      "file": "frontend/package-lock.json",
+      "original_line": 3715,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 142,
+      "file": "frontend/package-lock.json",
+      "original_line": 4458,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 143,
+      "file": "frontend/package-lock.json",
+      "original_line": 1331,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 144,
+      "file": "frontend/package-lock.json",
+      "original_line": 3752,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 145,
+      "file": "frontend/package-lock.json",
+      "original_line": 1085,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 146,
+      "file": "frontend/package-lock.json",
+      "original_line": 581,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 147,
+      "file": "frontend/package-lock.json",
+      "original_line": 3421,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 148,
+      "file": "frontend/package-lock.json",
+      "original_line": 3560,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 149,
+      "file": "frontend/package-lock.json",
+      "original_line": 2406,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 150,
+      "file": "frontend/package-lock.json",
+      "original_line": 2761,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 151,
+      "file": "frontend/package-lock.json",
+      "original_line": 6206,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 152,
+      "file": "backend/tests/test_detection_strategies.py",
+      "original_line": 275,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "url",
+      "number": 153,
+      "file": "frontend/package-lock.json",
+      "original_line": 4897,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 154,
+      "file": "backend/tests/test_detection_strategies.py",
+      "original_line": 476,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "url",
+      "number": 155,
+      "file": "frontend/package-lock.json",
+      "original_line": 5141,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 156,
+      "file": "frontend/package-lock.json",
+      "original_line": 4251,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 157,
+      "file": "frontend/package-lock.json",
+      "original_line": 2146,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 158,
+      "file": "frontend/package-lock.json",
+      "original_line": 2193,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 159,
+      "file": "frontend/package-lock.json",
+      "original_line": 5357,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 160,
+      "file": "backend/tests/test_detection_strategies.py",
+      "original_line": 497,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "url",
+      "number": 161,
+      "file": "frontend/package-lock.json",
+      "original_line": 5789,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 162,
+      "file": "frontend/package-lock.json",
+      "original_line": 2387,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 163,
+      "file": "backend/tests/test_photo_guard.py",
+      "original_line": 137,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "url",
+      "number": 164,
+      "file": "backend/tests/test_photo_precheck.py",
+      "original_line": 42,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "url",
+      "number": 165,
+      "file": "frontend/package-lock.json",
+      "original_line": 1487,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 166,
+      "file": "frontend/package-lock.json",
+      "original_line": 4463,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 167,
+      "file": "frontend/package-lock.json",
+      "original_line": 74,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 168,
+      "file": "frontend/package-lock.json",
+      "original_line": 6004,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 169,
+      "file": "frontend/package-lock.json",
+      "original_line": 3436,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 170,
+      "file": "frontend/package-lock.json",
+      "original_line": 3602,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 171,
+      "file": "backend/tests/test_detection_strategies.py",
+      "original_line": 487,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "url",
+      "number": 172,
+      "file": "frontend/package-lock.json",
+      "original_line": 2441,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 173,
+      "file": "frontend/package-lock.json",
+      "original_line": 6728,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 174,
+      "file": "frontend/package-lock.json",
+      "original_line": 1728,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 175,
+      "file": "frontend/package-lock.json",
+      "original_line": 4014,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 176,
+      "file": "frontend/package-lock.json",
+      "original_line": 84,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 177,
+      "file": "frontend/package-lock.json",
+      "original_line": 4534,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 178,
+      "file": "frontend/package-lock.json",
+      "original_line": 3573,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 179,
+      "file": "frontend/package-lock.json",
+      "original_line": 1538,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 180,
+      "file": "frontend/package-lock.json",
+      "original_line": 5203,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 181,
+      "file": "frontend/package-lock.json",
+      "original_line": 2167,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 182,
+      "file": "frontend/package-lock.json",
+      "original_line": 1919,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 183,
+      "file": "frontend/package-lock.json",
+      "original_line": 1656,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 184,
+      "file": "frontend/package-lock.json",
+      "original_line": 3466,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 185,
+      "file": "frontend/package-lock.json",
+      "original_line": 958,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 186,
+      "file": "frontend/package-lock.json",
+      "original_line": 4661,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 187,
+      "file": "frontend/package-lock.json",
+      "original_line": 1632,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 188,
+      "file": "frontend/package-lock.json",
+      "original_line": 3632,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 189,
+      "file": "frontend/package-lock.json",
+      "original_line": 5971,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 190,
+      "file": "backend/tests/test_formal_inference_streaming.py",
+      "original_line": 62,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "url",
+      "number": 191,
+      "file": "frontend/package-lock.json",
+      "original_line": 6741,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 192,
+      "file": "frontend/package-lock.json",
+      "original_line": 1644,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 193,
+      "file": "frontend/package-lock.json",
+      "original_line": 4667,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 194,
+      "file": "frontend/package-lock.json",
+      "original_line": 5073,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 195,
+      "file": "frontend/package-lock.json",
+      "original_line": 3222,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 196,
+      "file": "frontend/package-lock.json",
+      "original_line": 5940,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 197,
+      "file": "frontend/package-lock.json",
+      "original_line": 3875,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 198,
+      "file": "frontend/package-lock.json",
+      "original_line": 2647,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 199,
+      "file": "frontend/package-lock.json",
+      "original_line": 200,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 200,
+      "file": "backend/tests/test_config.py",
+      "original_line": 12,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "url",
+      "number": 201,
+      "file": "frontend/package-lock.json",
+      "original_line": 391,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 202,
+      "file": "frontend/package-lock.json",
+      "original_line": 3028,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 203,
+      "file": "frontend/package-lock.json",
+      "original_line": 64,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 204,
+      "file": "frontend/package-lock.json",
+      "original_line": 4413,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 205,
+      "file": "frontend/package-lock.json",
+      "original_line": 904,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 206,
+      "file": "frontend/package-lock.json",
+      "original_line": 190,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 207,
+      "file": "frontend/package-lock.json",
+      "original_line": 4072,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 208,
+      "file": "frontend/package-lock.json",
+      "original_line": 5193,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 209,
+      "file": "frontend/package-lock.json",
+      "original_line": 3482,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 210,
+      "file": "frontend/package-lock.json",
+      "original_line": 5553,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 211,
+      "file": "frontend/package-lock.json",
+      "original_line": 4643,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 212,
+      "file": "frontend/package-lock.json",
+      "original_line": 3531,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 213,
+      "file": "frontend/package-lock.json",
+      "original_line": 718,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 214,
+      "file": "frontend/package-lock.json",
+      "original_line": 5420,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 215,
+      "file": "frontend/package-lock.json",
+      "original_line": 5901,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 216,
+      "file": "frontend/package-lock.json",
+      "original_line": 5784,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 217,
+      "file": "frontend/package-lock.json",
+      "original_line": 5399,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 218,
+      "file": "backend/tests/test_detection_strategies.py",
+      "original_line": 481,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "url",
+      "number": 219,
+      "file": "frontend/package-lock.json",
+      "original_line": 4501,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 220,
+      "file": "frontend/package-lock.json",
+      "original_line": 5181,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 221,
+      "file": "frontend/package-lock.json",
+      "original_line": 3545,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 222,
+      "file": "frontend/package-lock.json",
+      "original_line": 1356,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 223,
+      "file": "frontend/package-lock.json",
+      "original_line": 4961,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 224,
+      "file": "frontend/package-lock.json",
+      "original_line": 4576,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 225,
+      "file": "frontend/package-lock.json",
+      "original_line": 378,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 226,
+      "file": "frontend/package-lock.json",
+      "original_line": 2217,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 227,
+      "file": "frontend/package-lock.json",
+      "original_line": 4718,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 228,
+      "file": "frontend/package-lock.json",
+      "original_line": 5896,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 229,
+      "file": "frontend/package-lock.json",
+      "original_line": 5483,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 230,
+      "file": "frontend/package-lock.json",
+      "original_line": 1672,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 231,
+      "file": "frontend/package-lock.json",
+      "original_line": 3658,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 232,
+      "file": "frontend/package-lock.json",
+      "original_line": 5921,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 233,
+      "file": "frontend/package-lock.json",
+      "original_line": 1752,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 234,
+      "file": "frontend/package-lock.json",
+      "original_line": 2368,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 235,
+      "file": "frontend/package-lock.json",
+      "original_line": 3962,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 236,
+      "file": "frontend/package-lock.json",
+      "original_line": 5265,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 237,
+      "file": "frontend/package-lock.json",
+      "original_line": 5040,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 238,
+      "file": "frontend/package-lock.json",
+      "original_line": 5331,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 239,
+      "file": "frontend/package-lock.json",
+      "original_line": 5250,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 240,
+      "file": "frontend/package-lock.json",
+      "original_line": 5238,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 241,
+      "file": "frontend/package-lock.json",
+      "original_line": 5336,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 242,
+      "file": "frontend/package-lock.json",
+      "original_line": 5541,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 243,
+      "file": "backend/tests/test_config.py",
+      "original_line": 11,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "url",
+      "number": 244,
+      "file": "frontend/package-lock.json",
+      "original_line": 2775,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 245,
+      "file": "frontend/package-lock.json",
+      "original_line": 6644,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 246,
+      "file": "frontend/package-lock.json",
+      "original_line": 5714,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 247,
+      "file": "frontend/package-lock.json",
+      "original_line": 629,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 248,
+      "file": "frontend/package-lock.json",
+      "original_line": 4967,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 249,
+      "file": "frontend/package-lock.json",
+      "original_line": 5640,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 250,
+      "file": "frontend/package-lock.json",
+      "original_line": 4936,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 251,
+      "file": "frontend/package-lock.json",
+      "original_line": 5504,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 252,
+      "file": "frontend/package-lock.json",
+      "original_line": 3740,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 253,
+      "file": "frontend/package-lock.json",
+      "original_line": 6509,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 254,
+      "file": "backend/tests/test_phase7_routes.py",
+      "original_line": 1767,
+      "classification": "xmp_binary_fixture"
+    },
+    {
+      "kind": "url",
+      "number": 255,
+      "file": "frontend/package-lock.json",
+      "original_line": 5812,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 256,
+      "file": "frontend/package-lock.json",
+      "original_line": 5217,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 257,
+      "file": "frontend/package-lock.json",
+      "original_line": 4863,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 258,
+      "file": "frontend/package-lock.json",
+      "original_line": 6668,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 259,
+      "file": "frontend/package-lock.json",
+      "original_line": 4598,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 260,
+      "file": "frontend/package-lock.json",
+      "original_line": 5728,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 261,
+      "file": "frontend/package-lock.json",
+      "original_line": 1037,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 262,
+      "file": "frontend/package-lock.json",
+      "original_line": 4749,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 263,
+      "file": "frontend/package-lock.json",
+      "original_line": 2415,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 264,
+      "file": "backend/tests/test_detection_strategies.py",
+      "original_line": 347,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "url",
+      "number": 265,
+      "file": "frontend/package-lock.json",
+      "original_line": 2359,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 266,
+      "file": "frontend/package-lock.json",
+      "original_line": 6463,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 267,
+      "file": "frontend/package-lock.json",
+      "original_line": 3910,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 268,
+      "file": "frontend/package-lock.json",
+      "original_line": 1469,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 269,
+      "file": "frontend/package-lock.json",
+      "original_line": 5677,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 270,
+      "file": "backend/tests/test_qweather.py",
+      "original_line": 310,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "url",
+      "number": 271,
+      "file": "frontend/package-lock.json",
+      "original_line": 5315,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 272,
+      "file": "frontend/package-lock.json",
+      "original_line": 4984,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 273,
+      "file": "frontend/package-lock.json",
+      "original_line": 5478,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 274,
+      "file": "frontend/package-lock.json",
+      "original_line": 5297,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 275,
+      "file": "frontend/package-lock.json",
+      "original_line": 4591,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 276,
+      "file": "frontend/package-lock.json",
+      "original_line": 3358,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 277,
+      "file": "frontend/package-lock.json",
+      "original_line": 1735,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 278,
+      "file": "backend/tests/test_object_storage.py",
+      "original_line": 21,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "url",
+      "number": 279,
+      "file": "frontend/package-lock.json",
+      "original_line": 1143,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 280,
+      "file": "frontend/package-lock.json",
+      "original_line": 1935,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 281,
+      "file": "frontend/package-lock.json",
+      "original_line": 4624,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 282,
+      "file": "frontend/package-lock.json",
+      "original_line": 267,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 283,
+      "file": "frontend/package-lock.json",
+      "original_line": 6376,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 284,
+      "file": "frontend/package-lock.json",
+      "original_line": 3048,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 285,
+      "file": "frontend/package-lock.json",
+      "original_line": 4835,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 286,
+      "file": "frontend/package-lock.json",
+      "original_line": 1126,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 287,
+      "file": "frontend/package-lock.json",
+      "original_line": 3618,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 288,
+      "file": "frontend/package-lock.json",
+      "original_line": 4945,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 289,
+      "file": "frontend/package-lock.json",
+      "original_line": 1869,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 290,
+      "file": "frontend/package-lock.json",
+      "original_line": 2463,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 291,
+      "file": "frontend/package-lock.json",
+      "original_line": 1857,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 292,
+      "file": "frontend/package-lock.json",
+      "original_line": 5838,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 293,
+      "file": "frontend/package-lock.json",
+      "original_line": 6064,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 294,
+      "file": "frontend/package-lock.json",
+      "original_line": 1559,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 295,
+      "file": "frontend/package-lock.json",
+      "original_line": 4815,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 296,
+      "file": "frontend/package-lock.json",
+      "original_line": 4778,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 297,
+      "file": "frontend/package-lock.json",
+      "original_line": 6635,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 298,
+      "file": "frontend/package-lock.json",
+      "original_line": 4106,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 299,
+      "file": "frontend/package-lock.json",
+      "original_line": 5719,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 300,
+      "file": "frontend/package-lock.json",
+      "original_line": 469,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 301,
+      "file": "frontend/package-lock.json",
+      "original_line": 5259,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 302,
+      "file": "frontend/package-lock.json",
+      "original_line": 2588,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 303,
+      "file": "frontend/package-lock.json",
+      "original_line": 146,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 304,
+      "file": "frontend/package-lock.json",
+      "original_line": 4338,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 305,
+      "file": "frontend/package-lock.json",
+      "original_line": 4406,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 306,
+      "file": "frontend/package-lock.json",
+      "original_line": 3405,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 307,
+      "file": "frontend/package-lock.json",
+      "original_line": 4560,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 308,
+      "file": "frontend/package-lock.json",
+      "original_line": 2129,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 309,
+      "file": "frontend/package-lock.json",
+      "original_line": 5378,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 310,
+      "file": "frontend/package-lock.json",
+      "original_line": 1253,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 311,
+      "file": "frontend/package-lock.json",
+      "original_line": 2006,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 312,
+      "file": "frontend/package-lock.json",
+      "original_line": 3280,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 313,
+      "file": "frontend/package-lock.json",
+      "original_line": 291,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 314,
+      "file": "frontend/package-lock.json",
+      "original_line": 247,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 315,
+      "file": "frontend/package-lock.json",
+      "original_line": 1396,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 316,
+      "file": "frontend/package-lock.json",
+      "original_line": 5114,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 317,
+      "file": "frontend/package-lock.json",
+      "original_line": 1771,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 318,
+      "file": "backend/tests/test_qweather.py",
+      "original_line": 331,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "url",
+      "number": 319,
+      "file": "frontend/package-lock.json",
+      "original_line": 4115,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 320,
+      "file": "frontend/package-lock.json",
+      "original_line": 5270,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 321,
+      "file": "frontend/package-lock.json",
+      "original_line": 1823,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 322,
+      "file": "frontend/package-lock.json",
+      "original_line": 4723,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 323,
+      "file": "frontend/package-lock.json",
+      "original_line": 3251,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 324,
+      "file": "frontend/package-lock.json",
+      "original_line": 2879,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 325,
+      "file": "frontend/package-lock.json",
+      "original_line": 5352,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 326,
+      "file": "frontend/package-lock.json",
+      "original_line": 6381,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 327,
+      "file": "frontend/package-lock.json",
+      "original_line": 6532,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 328,
+      "file": "frontend/package-lock.json",
+      "original_line": 2485,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 329,
+      "file": "frontend/package-lock.json",
+      "original_line": 6239,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 330,
+      "file": "frontend/package-lock.json",
+      "original_line": 2234,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 331,
+      "file": "frontend/package-lock.json",
+      "original_line": 5123,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 332,
+      "file": "frontend/package-lock.json",
+      "original_line": 603,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 333,
+      "file": "frontend/package-lock.json",
+      "original_line": 2675,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 334,
+      "file": "frontend/package-lock.json",
+      "original_line": 3833,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 335,
+      "file": "frontend/package-lock.json",
+      "original_line": 4302,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 336,
+      "file": "frontend/package-lock.json",
+      "original_line": 2723,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 337,
+      "file": "backend/tests/test_trial_qwen_inference.py",
+      "original_line": 101,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "url",
+      "number": 338,
+      "file": "frontend/package-lock.json",
+      "original_line": 3208,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 339,
+      "file": "backend/tests/test_phase7_routes.py",
+      "original_line": 315,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "url",
+      "number": 340,
+      "file": "frontend/package-lock.json",
+      "original_line": 284,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 341,
+      "file": "frontend/package-lock.json",
+      "original_line": 2529,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 342,
+      "file": "frontend/package-lock.json",
+      "original_line": 6121,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 343,
+      "file": "frontend/package-lock.json",
+      "original_line": 5905,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 344,
+      "file": "frontend/package-lock.json",
+      "original_line": 6090,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 345,
+      "file": "frontend/package-lock.json",
+      "original_line": 4550,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 346,
+      "file": "frontend/package-lock.json",
+      "original_line": 2179,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 347,
+      "file": "backend/tests/test_detection_strategies.py",
+      "original_line": 286,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "url",
+      "number": 348,
+      "file": "frontend/package-lock.json",
+      "original_line": 6569,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 349,
+      "file": "frontend/package-lock.json",
+      "original_line": 6053,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 350,
+      "file": "frontend/package-lock.json",
+      "original_line": 6068,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 351,
+      "file": "frontend/package-lock.json",
+      "original_line": 4453,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 352,
+      "file": "frontend/package-lock.json",
+      "original_line": 6315,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 353,
+      "file": "frontend/package-lock.json",
+      "original_line": 6451,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 354,
+      "file": "backend/tests/test_detection_strategies.py",
+      "original_line": 491,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "url",
+      "number": 355,
+      "file": "backend/tests/test_qweather.py",
+      "original_line": 133,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "url",
+      "number": 356,
+      "file": "frontend/package-lock.json",
+      "original_line": 5983,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 357,
+      "file": "frontend/package-lock.json",
+      "original_line": 6364,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 358,
+      "file": "frontend/package-lock.json",
+      "original_line": 6324,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 359,
+      "file": "frontend/package-lock.json",
+      "original_line": 5863,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 360,
+      "file": "frontend/package-lock.json",
+      "original_line": 6306,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 361,
+      "file": "frontend/package-lock.json",
+      "original_line": 5059,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 362,
+      "file": "frontend/package-lock.json",
+      "original_line": 1237,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 363,
+      "file": "backend/tests/test_object_storage.py",
+      "original_line": 62,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "url",
+      "number": 364,
+      "file": "frontend/package-lock.json",
+      "original_line": 5645,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 365,
+      "file": "frontend/package-lock.json",
+      "original_line": 5373,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 366,
+      "file": "frontend/package-lock.json",
+      "original_line": 5623,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 367,
+      "file": "frontend/package-lock.json",
+      "original_line": 2565,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 368,
+      "file": "frontend/package-lock.json",
+      "original_line": 3392,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 369,
+      "file": "frontend/package-lock.json",
+      "original_line": 4027,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 370,
+      "file": "frontend/package-lock.json",
+      "original_line": 1788,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 371,
+      "file": "frontend/package-lock.json",
+      "original_line": 4506,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 372,
+      "file": "frontend/package-lock.json",
+      "original_line": 5614,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 373,
+      "file": "frontend/package-lock.json",
+      "original_line": 524,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 374,
+      "file": "frontend/package-lock.json",
+      "original_line": 3312,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 375,
+      "file": "frontend/package-lock.json",
+      "original_line": 6342,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 376,
+      "file": "frontend/package-lock.json",
+      "original_line": 6288,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 377,
+      "file": "frontend/package-lock.json",
+      "original_line": 5695,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 378,
+      "file": "backend/tests/test_object_storage.py",
+      "original_line": 44,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "url",
+      "number": 379,
+      "file": "frontend/package-lock.json",
+      "original_line": 2897,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 380,
+      "file": "frontend/package-lock.json",
+      "original_line": 6618,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 381,
+      "file": "frontend/package-lock.json",
+      "original_line": 6296,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 382,
+      "file": "frontend/package-lock.json",
+      "original_line": 1423,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 383,
+      "file": "frontend/package-lock.json",
+      "original_line": 5834,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 384,
+      "file": "frontend/package-lock.json",
+      "original_line": 1013,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 385,
+      "file": "frontend/package-lock.json",
+      "original_line": 114,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 386,
+      "file": "backend/tests/test_qweather.py",
+      "original_line": 267,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "url",
+      "number": 387,
+      "file": "frontend/package-lock.json",
+      "original_line": 547,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 388,
+      "file": "frontend/package-lock.json",
+      "original_line": 105,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 389,
+      "file": "frontend/package-lock.json",
+      "original_line": 4891,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 390,
+      "file": "frontend/package-lock.json",
+      "original_line": 6249,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 391,
+      "file": "frontend/package-lock.json",
+      "original_line": 3671,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 392,
+      "file": "frontend/package-lock.json",
+      "original_line": 2096,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 393,
+      "file": "frontend/package-lock.json",
+      "original_line": 4389,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 394,
+      "file": "frontend/package-lock.json",
+      "original_line": 369,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 395,
+      "file": "frontend/package-lock.json",
+      "original_line": 2747,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 396,
+      "file": "frontend/package-lock.json",
+      "original_line": 3001,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 397,
+      "file": "frontend/package-lock.json",
+      "original_line": 5756,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 398,
+      "file": "backend/tests/test_phase5_routes.py",
+      "original_line": 383,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "url",
+      "number": 399,
+      "file": "frontend/package-lock.json",
+      "original_line": 6526,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 400,
+      "file": "frontend/package-lock.json",
+      "original_line": 1450,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 401,
+      "file": "frontend/package-lock.json",
+      "original_line": 5394,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 402,
+      "file": "frontend/package-lock.json",
+      "original_line": 209,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 403,
+      "file": "frontend/package-lock.json",
+      "original_line": 2617,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 404,
+      "file": "frontend/package-lock.json",
+      "original_line": 929,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 405,
+      "file": "frontend/package-lock.json",
+      "original_line": 5594,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 406,
+      "file": "frontend/package-lock.json",
+      "original_line": 4769,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 407,
+      "file": "frontend/package-lock.json",
+      "original_line": 4977,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 408,
+      "file": "frontend/package-lock.json",
+      "original_line": 776,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 409,
+      "file": "frontend/package-lock.json",
+      "original_line": 4745,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 410,
+      "file": "frontend/package-lock.json",
+      "original_line": 6405,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 411,
+      "file": "frontend/package-lock.json",
+      "original_line": 4741,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 412,
+      "file": "frontend/package-lock.json",
+      "original_line": 6604,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 413,
+      "file": "frontend/package-lock.json",
+      "original_line": 2855,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 414,
+      "file": "frontend/package-lock.json",
+      "original_line": 5546,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 415,
+      "file": "frontend/package-lock.json",
+      "original_line": 4955,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 416,
+      "file": "frontend/package-lock.json",
+      "original_line": 3889,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 417,
+      "file": "frontend/package-lock.json",
+      "original_line": 2703,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 418,
+      "file": "frontend/package-lock.json",
+      "original_line": 2803,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 419,
+      "file": "frontend/package-lock.json",
+      "original_line": 4881,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 420,
+      "file": "frontend/package-lock.json",
+      "original_line": 4711,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 421,
+      "file": "frontend/package-lock.json",
+      "original_line": 6650,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 422,
+      "file": "frontend/package-lock.json",
+      "original_line": 3082,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 423,
+      "file": "frontend/package-lock.json",
+      "original_line": 121,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 424,
+      "file": "frontend/package-lock.json",
+      "original_line": 3193,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 425,
+      "file": "frontend/package-lock.json",
+      "original_line": 4841,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 426,
+      "file": "frontend/package-lock.json",
+      "original_line": 4540,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 427,
+      "file": "frontend/package-lock.json",
+      "original_line": 4735,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 428,
+      "file": "frontend/package-lock.json",
+      "original_line": 6164,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 429,
+      "file": "frontend/package-lock.json",
+      "original_line": 5601,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 430,
+      "file": "frontend/package-lock.json",
+      "original_line": 1807,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 431,
+      "file": "backend/tests/test_qweather.py",
+      "original_line": 300,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "url",
+      "number": 432,
+      "file": "frontend/src/components/project/ProjectLocationMap.tsx",
+      "original_line": 98,
+      "classification": "configured"
+    },
+    {
+      "kind": "url",
+      "number": 433,
+      "file": "frontend/package-lock.json",
+      "original_line": 5576,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 434,
+      "file": "frontend/package-lock.json",
+      "original_line": 3728,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 435,
+      "file": "frontend/package-lock.json",
+      "original_line": 2953,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 436,
+      "file": "frontend/package-lock.json",
+      "original_line": 3378,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 437,
+      "file": "frontend/package-lock.json",
+      "original_line": 1620,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 438,
+      "file": "frontend/package-lock.json",
+      "original_line": 5118,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 439,
+      "file": "frontend/package-lock.json",
+      "original_line": 4524,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 440,
+      "file": "frontend/package-lock.json",
+      "original_line": 4043,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 441,
+      "file": "frontend/package-lock.json",
+      "original_line": 3858,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 442,
+      "file": "frontend/package-lock.json",
+      "original_line": 3818,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 443,
+      "file": "frontend/package-lock.json",
+      "original_line": 4471,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 444,
+      "file": "frontend/package-lock.json",
+      "original_line": 3062,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 445,
+      "file": "frontend/package-lock.json",
+      "original_line": 5415,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 446,
+      "file": "frontend/package-lock.json",
+      "original_line": 2817,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 447,
+      "file": "frontend/package-lock.json",
+      "original_line": 5100,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 448,
+      "file": "frontend/package-lock.json",
+      "original_line": 4630,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 449,
+      "file": "frontend/package-lock.json",
+      "original_line": 5769,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 450,
+      "file": "frontend/package-lock.json",
+      "original_line": 5707,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 451,
+      "file": "frontend/package-lock.json",
+      "original_line": 2919,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 452,
+      "file": "frontend/package-lock.json",
+      "original_line": 3782,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 453,
+      "file": "frontend/package-lock.json",
+      "original_line": 4513,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 454,
+      "file": "frontend/package-lock.json",
+      "original_line": 6565,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 455,
+      "file": "frontend/package-lock.json",
+      "original_line": 2301,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 456,
+      "file": "frontend/package-lock.json",
+      "original_line": 5854,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 457,
+      "file": "frontend/package-lock.json",
+      "original_line": 5274,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 458,
+      "file": "frontend/package-lock.json",
+      "original_line": 5520,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 459,
+      "file": "frontend/package-lock.json",
+      "original_line": 6736,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 460,
+      "file": "frontend/package-lock.json",
+      "original_line": 4217,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 461,
+      "file": "frontend/package-lock.json",
+      "original_line": 6040,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 462,
+      "file": "frontend/package-lock.json",
+      "original_line": 6218,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 463,
+      "file": "frontend/package-lock.json",
+      "original_line": 93,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 464,
+      "file": "frontend/package-lock.json",
+      "original_line": 419,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 465,
+      "file": "frontend/package-lock.json",
+      "original_line": 5585,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 466,
+      "file": "frontend/package-lock.json",
+      "original_line": 1974,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 467,
+      "file": "frontend/package-lock.json",
+      "original_line": 6480,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 468,
+      "file": "frontend/package-lock.json",
+      "original_line": 4993,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 469,
+      "file": "frontend/package-lock.json",
+      "original_line": 5701,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 470,
+      "file": "frontend/package-lock.json",
+      "original_line": 1066,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 471,
+      "file": "frontend/package-lock.json",
+      "original_line": 5137,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 472,
+      "file": "frontend/package-lock.json",
+      "original_line": 734,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 473,
+      "file": "frontend/package-lock.json",
+      "original_line": 3113,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 474,
+      "file": "frontend/package-lock.json",
+      "original_line": 1504,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 475,
+      "file": "frontend/package-lock.json",
+      "original_line": 2490,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 476,
+      "file": "frontend/package-lock.json",
+      "original_line": 5499,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 477,
+      "file": "frontend/package-lock.json",
+      "original_line": 2243,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 478,
+      "file": "frontend/package-lock.json",
+      "original_line": 5031,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 479,
+      "file": "frontend/package-lock.json",
+      "original_line": 4149,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 480,
+      "file": "frontend/package-lock.json",
+      "original_line": 40,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 481,
+      "file": "frontend/package-lock.json",
+      "original_line": 4569,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 482,
+      "file": "frontend/package-lock.json",
+      "original_line": 2661,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 483,
+      "file": "frontend/package-lock.json",
+      "original_line": 5441,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 484,
+      "file": "frontend/package-lock.json",
+      "original_line": 3344,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 485,
+      "file": "backend/tests/test_detection_strategies.py",
+      "original_line": 171,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "url",
+      "number": 486,
+      "file": "frontend/package-lock.json",
+      "original_line": 6197,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 487,
+      "file": "frontend/package-lock.json",
+      "original_line": 6442,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 488,
+      "file": "frontend/package-lock.json",
+      "original_line": 4361,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 489,
+      "file": "frontend/package-lock.json",
+      "original_line": 6469,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 490,
+      "file": "frontend/package-lock.json",
+      "original_line": 1291,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 491,
+      "file": "frontend/package-lock.json",
+      "original_line": 5003,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 492,
+      "file": "frontend/package-lock.json",
+      "original_line": 6502,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 493,
+      "file": "frontend/package-lock.json",
+      "original_line": 238,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 494,
+      "file": "frontend/package-lock.json",
+      "original_line": 3179,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 495,
+      "file": "backend/tests/test_trial_qwen_inference.py",
+      "original_line": 252,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "url",
+      "number": 496,
+      "file": "frontend/package-lock.json",
+      "original_line": 5047,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 497,
+      "file": "frontend/package-lock.json",
+      "original_line": 5564,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 498,
+      "file": "frontend/package-lock.json",
+      "original_line": 226,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 499,
+      "file": "frontend/package-lock.json",
+      "original_line": 2277,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 500,
+      "file": "frontend/package-lock.json",
+      "original_line": 3846,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 501,
+      "file": "frontend/package-lock.json",
+      "original_line": 4372,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 502,
+      "file": "frontend/package-lock.json",
+      "original_line": 3511,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 503,
+      "file": "frontend/package-lock.json",
+      "original_line": 5558,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 504,
+      "file": "frontend/package-lock.json",
+      "original_line": 2431,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 505,
+      "file": "frontend/package-lock.json",
+      "original_line": 2053,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 506,
+      "file": "frontend/package-lock.json",
+      "original_line": 2084,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 507,
+      "file": "frontend/package-lock.json",
+      "original_line": 1441,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 508,
+      "file": "frontend/package-lock.json",
+      "original_line": 5208,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 509,
+      "file": "frontend/package-lock.json",
+      "original_line": 4649,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 510,
+      "file": "frontend/package-lock.json",
+      "original_line": 4924,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 511,
+      "file": "frontend/package-lock.json",
+      "original_line": 6072,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 512,
+      "file": "frontend/package-lock.json",
+      "original_line": 3806,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 513,
+      "file": "frontend/package-lock.json",
+      "original_line": 5629,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 514,
+      "file": "frontend/package-lock.json",
+      "original_line": 1109,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 515,
+      "file": "frontend/package-lock.json",
+      "original_line": 4234,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 516,
+      "file": "frontend/package-lock.json",
+      "original_line": 1949,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 517,
+      "file": "frontend/package-lock.json",
+      "original_line": 3237,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 518,
+      "file": "frontend/package-lock.json",
+      "original_line": 1585,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 519,
+      "file": "frontend/package-lock.json",
+      "original_line": 5737,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 520,
+      "file": "frontend/package-lock.json",
+      "original_line": 1606,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 521,
+      "file": "frontend/package-lock.json",
+      "original_line": 6234,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 522,
+      "file": "frontend/package-lock.json",
+      "original_line": 6155,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 523,
+      "file": "frontend/package-lock.json",
+      "original_line": 6559,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 524,
+      "file": "frontend/package-lock.json",
+      "original_line": 5019,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 525,
+      "file": "frontend/package-lock.json",
+      "original_line": 5829,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 526,
+      "file": "backend/tests/test_photo_guard.py",
+      "original_line": 153,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "url",
+      "number": 527,
+      "file": "frontend/package-lock.json",
+      "original_line": 819,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 528,
+      "file": "frontend/package-lock.json",
+      "original_line": 4200,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 529,
+      "file": "frontend/package-lock.json",
+      "original_line": 1697,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 530,
+      "file": "frontend/package-lock.json",
+      "original_line": 158,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 531,
+      "file": "frontend/package-lock.json",
+      "original_line": 5797,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 532,
+      "file": "frontend/vite.config.ts",
+      "original_line": 33,
+      "classification": "configured"
+    },
+    {
+      "kind": "url",
+      "number": 533,
+      "file": "frontend/package-lock.json",
+      "original_line": 3794,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 534,
+      "file": "frontend/package-lock.json",
+      "original_line": 2396,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 535,
+      "file": "frontend/package-lock.json",
+      "original_line": 2450,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 536,
+      "file": "backend/tests/test_qweather.py",
+      "original_line": 238,
+      "classification": "parameterized_test_data"
+    },
+    {
+      "kind": "url",
+      "number": 537,
+      "file": "frontend/package-lock.json",
+      "original_line": 1521,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 538,
+      "file": "frontend/package-lock.json",
+      "original_line": 1710,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 539,
+      "file": "frontend/package-lock.json",
+      "original_line": 488,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 540,
+      "file": "frontend/package-lock.json",
+      "original_line": 6386,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 541,
+      "file": "frontend/package-lock.json",
+      "original_line": 3149,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 542,
+      "file": "frontend/package-lock.json",
+      "original_line": 4081,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 543,
+      "file": "frontend/package-lock.json",
+      "original_line": 3700,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 544,
+      "file": "frontend/package-lock.json",
+      "original_line": 3767,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 545,
+      "file": "frontend/package-lock.json",
+      "original_line": 2933,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 546,
+      "file": "frontend/package-lock.json",
+      "original_line": 5436,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 547,
+      "file": "frontend/package-lock.json",
+      "original_line": 1902,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 548,
+      "file": "frontend/package-lock.json",
+      "original_line": 6333,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 549,
+      "file": "backend/app/core/config.py",
+      "original_line": 134,
+      "classification": "configured"
+    },
+    {
+      "kind": "url",
+      "number": 550,
+      "file": "frontend/package-lock.json",
+      "original_line": 6485,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 551,
+      "file": "frontend/package-lock.json",
+      "original_line": 3496,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 552,
+      "file": "frontend/package-lock.json",
+      "original_line": 752,
+      "classification": "registry_resolved_from_configuration"
+    },
+    {
+      "kind": "url",
+      "number": 553,
+      "file": "frontend/package-lock.json",
+      "original_line": 3898,
+      "classification": "registry_resolved_from_configuration"
+    }
+  ]
+}

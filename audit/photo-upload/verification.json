@@ -1,0 +1,21 @@
+{
+  "time": "2026-10-12T09:34:12.723113+08:00",
+  "observations": [
+    {
+      "kind": "trial",
+      "status": 201,
+      "bytes": 12749273,
+      "precheck": "passed",
+      "imageLoaded": true
+    },
+    {
+      "kind": "formal",
+      "status": 201,
+      "bytes": 12749273,
+      "precheck": "passed",
+      "imageLoaded": true
+    }
+  ],
+  "pageErrors": [],
+  "temporary_records_cleaned": true
+}

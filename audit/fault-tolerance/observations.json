@@ -1,0 +1,177 @@
+[
+  {
+    "step": "01-login.png",
+    "result": {
+      "title": "外墙巡检智能平台",
+      "url": "http://127.0.0.1:5175/",
+      "viewport": {
+        "height": 3333,
+        "width": 1425
+      }
+    }
+  },
+  {
+    "step": "02-register-unsaved.png",
+    "result": {
+      "title": "外墙巡检智能平台",
+      "url": "http://127.0.0.1:5175/",
+      "viewport": {
+        "height": 3333,
+        "width": 1425
+      }
+    }
+  },
+  {
+    "step": "register-close-recovery",
+    "result": {
+      "usernameAfterReopen": "",
+      "destructivePromptShown": false
+    }
+  },
+  {
+    "step": "03-account-unsaved-edit.png",
+    "result": {
+      "title": "外墙巡检智能平台",
+      "url": "http://127.0.0.1:5175/",
+      "viewport": {
+        "height": 3333,
+        "width": 1425
+      }
+    }
+  },
+  {
+    "step": "account-close-recovery",
+    "result": {
+      "destructivePromptShown": false,
+      "editingRestored": false
+    }
+  },
+  {
+    "step": "04-change-password.png",
+    "result": {
+      "title": "外墙巡检智能平台",
+      "url": "http://127.0.0.1:5175/",
+      "viewport": {
+        "height": 3333,
+        "width": 1425
+      }
+    }
+  },
+  {
+    "step": "05-time-recommendation-input.png",
+    "result": {
+      "title": "外墙巡检智能平台",
+      "url": "http://127.0.0.1:5175/capabilities/time",
+      "viewport": {
+        "height": 1444,
+        "width": 1425
+      }
+    }
+  },
+  {
+    "step": "time-address-coordinate-consistency",
+    "result": {
+      "mapReady": true,
+      "queryEnabledAfterAddressChangedWithoutSearch": true
+    }
+  },
+  {
+    "step": "06-time-recommendation-fallback.png",
+    "result": {
+      "title": "外墙巡检智能平台",
+      "url": "http://127.0.0.1:5175/capabilities/time",
+      "viewport": {
+        "height": 1444,
+        "width": 1425
+      }
+    }
+  },
+  {
+    "step": "07-trial-empty.png",
+    "result": {
+      "title": "外墙巡检智能平台",
+      "url": "http://127.0.0.1:5175/trial",
+      "viewport": {
+        "height": 1005,
+        "width": 1425
+      }
+    }
+  },
+  {
+    "step": "08-trial-uploaded.png",
+    "result": {
+      "title": "外墙巡检智能平台",
+      "url": "http://127.0.0.1:5175/trial",
+      "viewport": {
+        "height": 1005,
+        "width": 1425
+      }
+    }
+  },
+  {
+    "step": "trial-photo-delete",
+    "result": {
+      "deleteRequestSent": true,
+      "destructivePromptShown": false
+    }
+  },
+  {
+    "step": "09-trial-result.png",
+    "result": {
+      "title": "外墙巡检智能平台",
+      "url": "http://127.0.0.1:5175/trial",
+      "viewport": {
+        "height": 1005,
+        "width": 1425
+      }
+    }
+  },
+  {
+    "step": "trial-exit-with-dirty-title",
+    "result": {
+      "destructivePromptShown": false,
+      "generateCount": 1,
+      "titlePatchCount": 0,
+      "uploadCount": 2
+    }
+  },
+  {
+    "step": "10-results-list.png",
+    "result": {
+      "title": "外墙巡检智能平台",
+      "url": "http://127.0.0.1:5175/reports",
+      "viewport": {
+        "height": 1000,
+        "width": 1425
+      }
+    }
+  },
+  {
+    "step": "formal-report-delete-confirmation",
+    "result": {
+      "dialog": {
+        "message": "确认删除检测结果“已推送正式检测结果”？删除后将从检测结果列表移除。",
+        "type": "confirm",
+        "url": "http://127.0.0.1:5175/reports"
+      },
+      "dialogShown": true
+    }
+  },
+  {
+    "step": "11-result-detail.png",
+    "result": {
+      "title": "外墙巡检智能平台",
+      "url": "http://127.0.0.1:5175/reports/33333333-3333-4333-8333-333333333333",
+      "viewport": {
+        "height": 1000,
+        "width": 1425
+      }
+    }
+  },
+  {
+    "step": "console-errors",
+    "result": [
+      "Failed to load resource: the server responded with a status of 503 (Service Unavailable)"
+    ]
+  }
+]

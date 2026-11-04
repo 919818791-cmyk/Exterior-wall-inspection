@@ -8,7 +8,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-building_exterior}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-building_exterior_password}
     ports:
-      - "${POSTGRES_PORT:-5433}:5432"
+      - "${POSTGRES_BIND_HOST:-127.0.0.1}:${POSTGRES_PORT:-5433}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -26,12 +26,12 @@ services:
       MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-building_exterior_minio}
       MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-building_exterior_minio_secret}
     ports:
-      - "${MINIO_API_PORT:-9002}:9000"
-      - "${MINIO_CONSOLE_PORT:-9003}:9001"
+      - "${MINIO_BIND_HOST:-127.0.0.1}:${MINIO_API_PORT:-9002}:9000"
+      - "${MINIO_BIND_HOST:-127.0.0.1}:${MINIO_CONSOLE_PORT:-9003}:9001"
     volumes:
       - minio_data:/data
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:9000/minio/health/live"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -41,7 +41,7 @@ services:
     container_name: building-exterior-redis
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "${REDIS_BIND_HOST:-127.0.0.1}:${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
     command: redis-server --appendonly yes
@@ -59,9 +59,9 @@ services:
     ipc: host
     environment:
       MODEL_DEVICE: ${MODEL_DEVICE:-auto}
-      MODEL_VERSION: ${MODEL_VERSION:-trial-crack-missing-v1}
+      MODEL_VERSION: ${MODEL_VERSION:-trial-crack-spalling-v1}
       CRACK_MODEL_WEIGHTS_PATH: ${CRACK_MODEL_WEIGHTS_PATH:-/models/wall_crack_yolo11x.pt}
-      MISSING_MODEL_WEIGHTS_PATH: ${MISSING_MODEL_WEIGHTS_PATH:-/models/missing.pt}
+      SPALLING_MODEL_WEIGHTS_PATH: ${SPALLING_MODEL_WEIGHTS_PATH:-/models/missing.pt}
       MODEL_CONFIDENCE_THRESHOLD: ${MODEL_CONFIDENCE_THRESHOLD:-0.25}
       MODEL_IMAGE_SIZE: ${MODEL_IMAGE_SIZE:-1280}
       MODEL_HIGH_PRECISION_IMAGE_SIZE: ${MODEL_HIGH_PRECISION_IMAGE_SIZE:-1280}
@@ -74,7 +74,7 @@ services:
     volumes:
       - ${MODEL_DIR:-./models}:/models:ro
     ports:
-      - "${ALGORITHM_MODEL_PORT:-9004}:9002"
+      - "${ALGORITHM_MODEL_BIND_HOST:-127.0.0.1}:${ALGORITHM_MODEL_PORT:-9004}:9002"
     expose:
       - "9002"
     deploy:
@@ -94,7 +94,7 @@ services:
       WORKER_BACKEND_BASE_URL: ${WORKER_CONTAINER_BACKEND_BASE_URL:-http://host.docker.internal}
       WORKER_ID: ${WORKER_ID:-mock-worker-compose}
       WORKER_TOKEN: ${WORKER_TOKEN:-change-this-worker-token}
-      WORKER_MODEL_VERSION: ${WORKER_MODEL_VERSION:-trial-crack-missing-v1}
+      WORKER_MODEL_VERSION: ${WORKER_MODEL_VERSION:-trial-crack-spalling-v1}
       WORKER_MODE: ${WORKER_MODE:-mock}
       ALGORITHM_INFERENCE_URL: ${ALGORITHM_INFERENCE_URL:-http://algorithm-model:9002}
       ALGORITHM_INFERENCE_TIMEOUT_SECONDS: ${ALGORITHM_INFERENCE_TIMEOUT_SECONDS:-120}

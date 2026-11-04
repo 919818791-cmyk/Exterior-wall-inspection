@@ -19,7 +19,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 RUN python -m pip install --upgrade pip \
-    && python -m pip install torch torchvision --index-url "${PYTORCH_INDEX_URL}"
+    && python -m pip install 'torch>=2.10.0' torchvision --index-url "${PYTORCH_INDEX_URL}"
 
 COPY requirements.txt /model/requirements.txt
 RUN python -m pip install -r /model/requirements.txt
@@ -27,9 +27,9 @@ RUN python -m pip install -r /model/requirements.txt
 COPY server.py verify_environment.py /model/
 
 ENV MODEL_DEVICE=auto \
-    MODEL_VERSION=trial-crack-missing-v1 \
+    MODEL_VERSION=trial-crack-spalling-v1 \
     CRACK_MODEL_WEIGHTS_PATH=/models/wall_crack_yolo11x.pt \
-    MISSING_MODEL_WEIGHTS_PATH=/models/missing.pt \
+    SPALLING_MODEL_WEIGHTS_PATH=/models/missing.pt \
     MODEL_TILED_INFERENCE_ENABLED=true \
     MODEL_TILE_SIZE=1280 \
     MODEL_HIGH_PRECISION_TILE_SIZE=1280 \

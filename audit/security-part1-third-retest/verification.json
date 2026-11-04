@@ -1,0 +1,101 @@
+{
+  "baseline": {
+    "summary": "6 failed, 712 passed, 6 skipped, 6 warnings in 15.23s",
+    "failed_tests": [
+      "tests/test_phase3_routes.py::test_phase3_project_routes_are_registered",
+      "tests/test_phase7_routes.py::test_trial_generate_endpoint_returns_preview_payload",
+      "tests/test_phase7_routes.py::test_trial_generate_endpoint_preserves_legacy_corrosion_label",
+      "tests/test_phase7_routes.py::test_trial_generate_endpoint_hides_findings_at_point_six",
+      "tests/test_phase7_routes.py::test_trial_generate_endpoint_accepts_uploaded_photo_ids",
+      "tests/test_phase7_routes.py::test_trial_generate_endpoint_appends_to_archived_result"
+    ],
+    "log": "baseline-pytest.log",
+    "exit_code": 1
+  },
+  "targeted": {
+    "summary": "148 passed, 4 warnings in 2.70s",
+    "failed_tests": [],
+    "log": "targeted-pytest.log",
+    "exit_code": 0
+  },
+  "full": {
+    "summary": "6 failed, 712 passed, 6 skipped, 6 warnings in 15.26s",
+    "failed_tests": [
+      "tests/test_phase3_routes.py::test_phase3_project_routes_are_registered",
+      "tests/test_phase7_routes.py::test_trial_generate_endpoint_returns_preview_payload",
+      "tests/test_phase7_routes.py::test_trial_generate_endpoint_preserves_legacy_corrosion_label",
+      "tests/test_phase7_routes.py::test_trial_generate_endpoint_hides_findings_at_point_six",
+      "tests/test_phase7_routes.py::test_trial_generate_endpoint_accepts_uploaded_photo_ids",
+      "tests/test_phase7_routes.py::test_trial_generate_endpoint_appends_to_archived_result"
+    ],
+    "log": "full-pytest.log",
+    "exit_code": 1
+  },
+  "new_failures": [],
+  "test_working_directory": "backend",
+  "full_command": "PYTHONPATH=. .venv/bin/pytest -q",
+  "targeted_command": "PYTHONPATH=. .venv/bin/pytest -q tests/test_detection_strategies.py tests/test_security_part1.py tests/test_security_part1_retest.py",
+  "source_checks": {
+    "report": "第三次漏洞.docx",
+    "report_sha256": "3b40e26dd379734097322755a67a946dab36bbc70bbc8af1c3037243ca839585",
+    "source_sha256": "8b017ae7d43dc509c6fb616c9369fbdb2e7a3db4eb6d54fc3568f337a52881f3",
+    "total": 3,
+    "category": "对象访问违规",
+    "findings": [
+      {
+        "ordinal": 1,
+        "file": "backend/tests/test_detection_strategies.py",
+        "original_line": 264
+      },
+      {
+        "ordinal": 2,
+        "file": "backend/tests/test_detection_strategies.py",
+        "original_line": 265
+      },
+      {
+        "ordinal": 3,
+        "file": "backend/tests/test_detection_strategies.py",
+        "original_line": 267
+      }
+    ],
+    "source_check_result": "passed",
+    "replacement_keys": [
+      "local_model_settings",
+      "local_qwen_status",
+      "os"
+    ],
+    "preserved_cases": [
+      [
+        "running",
+        123,
+        true
+      ],
+      [
+        "starting",
+        123,
+        true
+      ],
+      [
+        "error",
+        123,
+        true
+      ],
+      [
+        "error",
+        null,
+        false
+      ],
+      [
+        "stopped",
+        null,
+        false
+      ]
+    ],
+    "official_rescan": "pending"
+  },
+  "second_report_source_check": "19 findings checked; passed",
+  "compile": "backend/.venv/bin/python -m py_compile backend/tests/test_detection_strategies.py audit/security-part1-third-retest/verify-findings.py; passed",
+  "diff_check": "git diff --check; passed",
+  "production_service_restart_performed": false,
+  "production_database_writes_performed": false
+}

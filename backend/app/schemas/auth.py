@@ -9,8 +9,12 @@ from app.enums.status import UserRole, UserStatus
 
 
 class LoginRequest(BaseModel):
-    username: str = Field(min_length=1, max_length=64)
-    password: str = Field(min_length=1, max_length=128)
+    identity: str | None = Field(default=None, min_length=1, max_length=64)
+    phone: str | None = Field(default=None, min_length=1, max_length=32)
+    # Keep both legacy fields while clients migrate to the unified identity field.
+    username: str | None = Field(default=None, min_length=1, max_length=64)
+    password: str | None = Field(default=None, min_length=1, max_length=128)
+    verification_code: str | None = Field(default=None, min_length=4, max_length=8, pattern=r"^[0-9]+$")
 
 
 class ChangePasswordRequest(BaseModel):
@@ -21,9 +25,38 @@ class ChangePasswordRequest(BaseModel):
 class TrialApplicationRequest(BaseModel):
     username: str = Field(min_length=1, max_length=64)
     password: str = Field(min_length=8, max_length=128)
-    real_name: str = Field(min_length=1, max_length=64)
+    real_name: str | None = Field(default=None, max_length=64)
     phone: str = Field(min_length=1, max_length=32)
-    organization: str = Field(min_length=1, max_length=128)
+    verification_code: str = Field(min_length=4, max_length=8, pattern=r"^[0-9]+$")
+    organization: str | None = Field(default=None, max_length=128)
+
+
+class RegistrationSmsCodeRequest(BaseModel):
+    phone: str = Field(min_length=1, max_length=32)
+
+
+class RegistrationSmsCodeResponse(BaseModel):
+    ok: bool = True
+    retry_after_seconds: int
+
+
+class PasswordResetSmsCodeRequest(BaseModel):
+    phone: str = Field(min_length=1, max_length=32)
+
+
+class PasswordResetVerifyRequest(BaseModel):
+    phone: str = Field(min_length=1, max_length=32)
+    verification_code: str = Field(min_length=4, max_length=8, pattern=r"^[0-9]+$")
+
+
+class PasswordResetVerifyResponse(BaseModel):
+    reset_token: str
+    expires_in_seconds: int
+
+
+class PasswordResetRequest(BaseModel):
+    reset_token: str = Field(min_length=1, max_length=128)
+    new_password: str = Field(min_length=8, max_length=128)
 
 
 class AuthUserRead(BaseModel):
@@ -32,8 +65,27 @@ class AuthUserRead(BaseModel):
     id: UUID
     username: str
     real_name: str | None
+    phone: str | None
     role: UserRole
     organization: str | None
+
+
+class CurrentUserUpdateRequest(BaseModel):
+    real_name: str | None = Field(default=None, max_length=64)
+    phone: str | None = Field(default=None, max_length=32)
+    organization: str | None = Field(default=None, max_length=128)
+
+
+class AccountDeletionRequest(BaseModel):
+    password: str = Field(min_length=1, max_length=128)
+
+
+class AccountDeletionResponse(BaseModel):
+    ok: bool = True
+    deleted_at: datetime
+    deleted_trial_photos: int
+    deleted_trial_results: int
+    retained_notice: str
 
 
 class AccountRead(BaseModel):
@@ -45,10 +97,22 @@ class AccountRead(BaseModel):
     phone: str | None
     role: UserRole
     organization: str | None
+    trial_detection_quota: int | None = None
+    formal_detection_quota: int | None = None
     status: UserStatus
     last_login_at: datetime | None
     created_at: datetime
     updated_at: datetime
+
+
+class AccountPasswordResetResponse(BaseModel):
+    account: AccountRead
+    temporary_password: str
+
+
+class AccountQuotaResetResponse(BaseModel):
+    ok: bool = True
+    reset_at: datetime
 
 
 class AccountCreateRequest(BaseModel):
@@ -58,6 +122,8 @@ class AccountCreateRequest(BaseModel):
     phone: str | None = Field(default=None, max_length=32)
     role: UserRole = UserRole.CUSTOMER
     organization: str | None = Field(default=None, max_length=128)
+    trial_detection_quota: int | None = Field(default=1000, ge=1, le=100_000)
+    formal_detection_quota: int | None = Field(default=1000, ge=1, le=100_000)
     status: UserStatus = UserStatus.ACTIVE
 
 
@@ -67,6 +133,8 @@ class AccountUpdateRequest(BaseModel):
     phone: str | None = Field(default=None, max_length=32)
     role: UserRole | None = None
     organization: str | None = Field(default=None, max_length=128)
+    trial_detection_quota: int | None = Field(default=None, ge=1, le=100_000)
+    formal_detection_quota: int | None = Field(default=None, ge=1, le=100_000)
     status: UserStatus | None = None
 
 
@@ -84,4 +152,9 @@ class LogoutResponse(BaseModel):
 class TrialApplicationResponse(BaseModel):
     ok: bool = True
     username: str
-    status: UserStatus = UserStatus.DISABLED
+    status: UserStatus = UserStatus.ACTIVE
+
+
+class UsernameAvailabilityResponse(BaseModel):
+    username: str
+    available: bool

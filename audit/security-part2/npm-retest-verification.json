@@ -1,0 +1,8 @@
+{
+  "clean_npm_ci_passed": true,
+  "clean_frontend_build_passed": true,
+  "npm_lockfile_refresh_passed": true,
+  "package_count": 443,
+  "normalized_lockfiles_equal_after_ci_and_refresh": true,
+  "pinned_versions_and_integrities_preserved": true
+}

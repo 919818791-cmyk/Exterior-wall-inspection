@@ -1,0 +1,136 @@
+{
+  "report": "第二次漏洞part1.docx",
+  "total": 19,
+  "counts": {
+    "命令注入": 2,
+    "未受控格式字符串": 6,
+    "硬编码的绑定所有网络接口": 4,
+    "对象访问违规": 6,
+    "硬编码tmp目录": 1
+  },
+  "findings": [
+    {
+      "category": "命令注入",
+      "ordinal": 1,
+      "file": "backend/app/services/vision_models.py",
+      "original_line": 139
+    },
+    {
+      "category": "命令注入",
+      "ordinal": 2,
+      "file": "backend/app/services/vision_models.py",
+      "original_line": 166
+    },
+    {
+      "category": "未受控格式字符串",
+      "ordinal": 1,
+      "file": "backend/app/db/check_connection.py",
+      "original_line": 11
+    },
+    {
+      "category": "未受控格式字符串",
+      "ordinal": 2,
+      "file": "backend/app/db/backfill_photo_projection_pose.py",
+      "original_line": 60
+    },
+    {
+      "category": "未受控格式字符串",
+      "ordinal": 3,
+      "file": "backend/app/db/backfill_photo_thumbnails.py",
+      "original_line": 102
+    },
+    {
+      "category": "未受控格式字符串",
+      "ordinal": 4,
+      "file": "backend/app/db/backfill_photo_projection_pose.py",
+      "original_line": 62
+    },
+    {
+      "category": "未受控格式字符串",
+      "ordinal": 5,
+      "file": "backend/app/db/harden_production_accounts.py",
+      "original_line": 44
+    },
+    {
+      "category": "未受控格式字符串",
+      "ordinal": 6,
+      "file": "backend/app/db/backfill_photo_thumbnails.py",
+      "original_line": 38
+    },
+    {
+      "category": "硬编码的绑定所有网络接口",
+      "ordinal": 1,
+      "file": "backend/app/services/yolo_runtime.py",
+      "original_line": 177
+    },
+    {
+      "category": "硬编码的绑定所有网络接口",
+      "ordinal": 2,
+      "file": "backend/tests/test_yolo_runtime.py",
+      "original_line": 135
+    },
+    {
+      "category": "硬编码的绑定所有网络接口",
+      "ordinal": 3,
+      "file": "backend/tests/test_security_part1.py",
+      "original_line": 238
+    },
+    {
+      "category": "硬编码的绑定所有网络接口",
+      "ordinal": 4,
+      "file": "backend/tests/test_security_part1.py",
+      "original_line": 239
+    },
+    {
+      "category": "对象访问违规",
+      "ordinal": 1,
+      "file": "backend/app/services/defect_area.py",
+      "original_line": 25
+    },
+    {
+      "category": "对象访问违规",
+      "ordinal": 2,
+      "file": "backend/tests/test_phase4_routes.py",
+      "original_line": 54
+    },
+    {
+      "category": "对象访问违规",
+      "ordinal": 3,
+      "file": "backend/tests/test_phase4_routes.py",
+      "original_line": 54
+    },
+    {
+      "category": "对象访问违规",
+      "ordinal": 4,
+      "file": "backend/app/services/defect_area.py",
+      "original_line": 25
+    },
+    {
+      "category": "对象访问违规",
+      "ordinal": 5,
+      "file": "backend/tests/test_phase4_routes.py",
+      "original_line": 54
+    },
+    {
+      "category": "对象访问违规",
+      "ordinal": 6,
+      "file": "backend/app/services/defect_area.py",
+      "original_line": 25
+    },
+    {
+      "category": "硬编码tmp目录",
+      "ordinal": 1,
+      "file": "backend/tests/test_security_part1.py",
+      "original_line": 28
+    }
+  ],
+  "source_checks": {
+    "command_inputs": "all three argv arrays are literal; inherited environment removed",
+    "format_templates": "no f-string nodes in the four reported scripts; output compatibility tested",
+    "listener_literals": "reported files have no wildcard address literals; explicit container interface tested",
+    "attribute_access": "whitelisted explicit measurement readers and direct Photo.id access",
+    "temporary_directory": "absolute-path rejection remains; no fixed temporary directory in test inputs"
+  },
+  "source_check_result": "passed",
+  "official_rescan": "pending"
+}

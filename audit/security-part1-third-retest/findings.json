@@ -1,0 +1,58 @@
+{
+  "report": "第三次漏洞.docx",
+  "report_sha256": "3b40e26dd379734097322755a67a946dab36bbc70bbc8af1c3037243ca839585",
+  "source_sha256": "8b017ae7d43dc509c6fb616c9369fbdb2e7a3db4eb6d54fc3568f337a52881f3",
+  "total": 3,
+  "category": "对象访问违规",
+  "findings": [
+    {
+      "ordinal": 1,
+      "file": "backend/tests/test_detection_strategies.py",
+      "original_line": 264
+    },
+    {
+      "ordinal": 2,
+      "file": "backend/tests/test_detection_strategies.py",
+      "original_line": 265
+    },
+    {
+      "ordinal": 3,
+      "file": "backend/tests/test_detection_strategies.py",
+      "original_line": 267
+    }
+  ],
+  "source_check_result": "passed",
+  "replacement_keys": [
+    "local_model_settings",
+    "local_qwen_status",
+    "os"
+  ],
+  "preserved_cases": [
+    [
+      "running",
+      123,
+      true
+    ],
+    [
+      "starting",
+      123,
+      true
+    ],
+    [
+      "error",
+      123,
+      true
+    ],
+    [
+      "error",
+      null,
+      false
+    ],
+    [
+      "stopped",
+      null,
+      false
+    ]
+  ],
+  "official_rescan": "pending"
+}

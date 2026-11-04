@@ -1,4 +1,7 @@
+from math import isfinite
+
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from starlette.responses import JSONResponse
 
@@ -6,6 +9,7 @@ from starlette.responses import JSONResponse
 async def http_exception_handler(_: Request, exc: HTTPException) -> JSONResponse:
     return JSONResponse(
         status_code=exc.status_code,
+        headers=exc.headers,
         content={
             "code": "http_error",
             "message": exc.detail,
@@ -21,7 +25,10 @@ async def validation_exception_handler(
         content={
             "code": "validation_error",
             "message": "Request validation failed.",
-            "errors": exc.errors(),
+            "errors": jsonable_encoder(exc.errors(), custom_encoder={
+                Exception: str,
+                float: lambda value: value if isfinite(value) else str(value),
+            }),
         },
     )
 
