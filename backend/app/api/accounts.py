@@ -369,7 +369,7 @@ def get_current_account_usage(
 @router.post("/me/add-quota", response_model=CurrentAccountUsageResponse)
 def add_current_account_quota(
     payload: AccountQuotaAddRequest,
-    current_user: AuthenticatedUser = Depends(require_roles(UserRole.CUSTOMER, UserRole.ADMIN)),
+    current_user: AuthenticatedUser = Depends(require_roles(UserRole.ADMIN)),
     db: Session = Depends(get_db),
 ) -> CurrentAccountUsageResponse:
     account = db.scalar(

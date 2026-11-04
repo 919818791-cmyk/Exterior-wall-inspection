@@ -49,6 +49,7 @@ export function getListPageHeader(pathname: string): ListPageHeaderConfig | null
         title: "工作台",
       };
     default:
+      if (pathname.startsWith("/recognition-quality")) return { title: "识别质量" };
       if (!pathname.startsWith("/accounts")) return null;
       return {
         actionClassName: "primary-action-button",

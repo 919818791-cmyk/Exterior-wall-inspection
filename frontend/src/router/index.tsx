@@ -19,6 +19,7 @@ const ReportDetailPage = lazy(() => import("@/pages/ReportDetailPage").then((mod
 const ReportListPage = lazy(() => import("@/pages/ReportListPage").then((module) => ({ default: module.ReportListPage })));
 const ReviewProjectDetailPage = lazy(() => import("@/pages/ReviewProjectDetailPage").then((module) => ({ default: module.ReviewProjectDetailPage })));
 const ReviewProjectListPage = lazy(() => import("@/pages/ReviewProjectListPage").then((module) => ({ default: module.ReviewProjectListPage })));
+const RecognitionQualityPage = lazy(() => import("@/pages/RecognitionQualityPage").then((module) => ({ default: module.RecognitionQualityPage })));
 const SystemSettingsPage = lazy(() => import("@/pages/SystemSettingsPage").then((module) => ({ default: module.SystemSettingsPage })));
 const TrialExperiencePage = lazy(() => import("@/pages/TrialExperiencePage").then((module) => ({ default: module.TrialExperiencePage })));
 
@@ -85,6 +86,8 @@ export const router = createBrowserRouter([
             element: <RequireRole roles={["admin"]} />,
             children: [
               { path: "accounts", element: deferred(<AccountManagementPage />) },
+              { path: "recognition-quality", element: deferred(<RecognitionQualityPage />) },
+              { path: "recognition-quality/:id", element: deferred(<RecognitionQualityPage />) },
               { path: "system-settings", element: deferred(<SystemSettingsPage />) },
               { path: "detection-prompts", element: deferred(<DetectionPromptsPage />) },
               { path: "model-management", element: deferred(<ModelManagementPage />) }

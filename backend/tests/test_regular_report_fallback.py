@@ -49,6 +49,7 @@ def fallback_context(monkeypatch):
                 "config_json": deepcopy(task.result_summary["detection_config"])},
         }, generated_by=uuid4(), generated_at=now, created_at=now, updated_at=now,
         docx_bucket="cached", docx_object_key="old-model.docx", pushed_at=None,
+        quality_revision=0, quality_completed_revision=None,
     )
     reviewer = AuthenticatedUser(
         id=uuid4(), username="reviewer", real_name="审核员", role="reviewer", organization=None,
@@ -66,6 +67,8 @@ def fallback_context(monkeypatch):
     monkeypatch.setattr(review, "_ensure_task_reviewable", lambda *_: review._ensure_report_reviewable(report))
     monkeypatch.setattr(review, "_building_model_exists", lambda *_: False)
     monkeypatch.setattr(review, "has_complete_building_model_images", lambda *_: False)
+    # Quality snapshots are covered by the database-backed quality lifecycle tests.
+    monkeypatch.setattr(review, "persist_evaluation", lambda *_: None)
     return SimpleNamespace(task=task, project=project, report=report, config=config, db=db, reviewer=reviewer)
 
 

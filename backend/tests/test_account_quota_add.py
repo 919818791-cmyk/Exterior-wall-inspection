@@ -39,10 +39,10 @@ def quota_case(monkeypatch):
     scheduling = SimpleNamespace(trial_photo_detection_limit=1500, formal_photo_detection_limit=2500)
     monkeypatch.setattr(accounts, "trial_scheduling_settings", lambda *_: scheduling)
     monkeypatch.setattr(photo_upload_quota, "trial_scheduling_settings", lambda *_: scheduling)
-    user = AuthenticatedUser(id=uuid4(), username="customer", real_name=None, role="customer", organization=None)
+    user = AuthenticatedUser(id=uuid4(), username="admin", real_name=None, role="admin", organization=None)
     with Session(engine) as db:
         db.add(UserAccount(
-            id=user.id, username=user.username, password_hash="test",
+            id=user.id, username=user.username, password_hash="test", role=user.role,
             trial_detection_quota=1000, formal_detection_quota=2000,
         ))
         db.commit()
@@ -51,10 +51,8 @@ def quota_case(monkeypatch):
 
 
 @pytest.mark.parametrize("amount", [200, 500, 1000])
-@pytest.mark.parametrize("role", ["customer", "admin"])
-def test_add_quota_replenishes_both_remaining_balances_without_changing_totals(quota_case, amount, role):
+def test_add_quota_replenishes_both_remaining_balances_without_changing_totals(quota_case, amount):
     db, user = quota_case
-    user = replace(user, role=role)
     add_event(db, user, "trial", 900)
     add_event(db, user, "formal", 1500)
     before = accounts.get_current_account_usage(user, db)
@@ -106,22 +104,33 @@ def test_add_quota_accepts_only_the_three_fixed_amounts(amount):
         AccountQuotaAddRequest(amount=amount)
 
 
-def test_add_quota_requires_authenticated_customer_or_admin():
+def test_add_quota_requires_authentication():
     client = TestClient(app)
     assert client.post("/api/accounts/me/add-quota", json={"amount": 200}).status_code == 401
-    app.dependency_overrides[get_current_user] = lambda: AuthenticatedUser(
-        id=uuid4(), username="reviewer", real_name=None, role="reviewer", organization=None,
-    )
-    try:
-        assert client.post("/api/accounts/me/add-quota", json={"amount": 200}).status_code == 403
-    finally:
-        app.dependency_overrides.pop(get_current_user, None)
 
 
-@pytest.mark.parametrize("role", ["customer", "admin"])
-def test_add_quota_route_allows_customers_and_admins(quota_case, role):
+@pytest.mark.parametrize("role", ["customer", "reviewer"])
+def test_add_quota_rejects_non_admin_without_changing_balances(quota_case, role):
     db, user = quota_case
     user = replace(user, role=role)
+    add_event(db, user, "trial", 400)
+    add_event(db, user, "formal", 800)
+    before = accounts.get_current_account_usage(user, db)
+    app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[get_db] = lambda: db
+    try:
+        assert TestClient(app).post("/api/accounts/me/add-quota", json={"amount": 200}).status_code == 403
+        assert accounts.get_current_account_usage(user, db) == before
+        assert not db.scalars(select(UsageEvent).where(
+            UsageEvent.event_type == photo_upload_quota.PHOTO_QUOTA_ADD_EVENT,
+        )).all()
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+        app.dependency_overrides.pop(get_db, None)
+
+
+def test_add_quota_route_allows_admin(quota_case):
+    db, user = quota_case
     add_event(db, user, "trial", 400)
     add_event(db, user, "formal", 800)
     app.dependency_overrides[get_current_user] = lambda: user

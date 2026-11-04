@@ -66,6 +66,7 @@ from app.services.defect_area import approximate_bbox_area_m2, approximate_bbox_
 from app.services.defect_numbering import number_defects
 from app.services.object_storage import get_object_bytes, signed_object_url
 from app.services.report_data import build_report_data
+from app.services.recognition_quality import ensure_baseline, persist_evaluation, validate_boxes
 
 router = APIRouter(
     tags=["review"],
@@ -434,6 +435,21 @@ def _review_result_read(result: ReviewResult) -> ReviewResultRead:
     return ReviewResultRead.model_validate(result)
 
 
+def _invalidate_quality_photo(db: Session, result: ReviewResult) -> None:
+    """Older result APIs must also revoke a previously confirmed photo."""
+    report = db.scalar(select(InspectionReport).where(
+        InspectionReport.detection_task_id == result.detection_task_id).with_for_update()
+        .execution_options(populate_existing=True))
+    if report is None:
+        return
+    edit = db.scalar(select(AnnotationPhotoEdit).where(
+        AnnotationPhotoEdit.report_id == report.id,
+        AnnotationPhotoEdit.photo_key == f"photo:{result.photo_id}"))
+    if edit is not None:
+        db.delete(edit)
+    report.quality_revision += 1
+
+
 @router.get("/review/detections", response_model=list[ReviewDetectionListItem])
 def list_review_detections(
     db: Session = Depends(get_db),
@@ -582,6 +598,10 @@ def _edit_read(edit: AnnotationPhotoEdit) -> AnnotationPhotoEditRead:
         result_id=edit.report_id,
         photo_key=edit.photo_key,
         annotations=edit.annotations_json,
+        review_state=edit.review_state,
+        exclusion_reason=edit.exclusion_reason,
+        reviewed_by=edit.reviewed_by,
+        reviewed_at=edit.reviewed_at,
         edited_by=edit.edited_by,
         created_at=edit.created_at,
         updated_at=edit.updated_at,
@@ -820,6 +840,7 @@ def save_review_detection_annotations(
     reviewer: AuthenticatedUser = Depends(get_current_user),
 ) -> AnnotationPhotoEditRead:
     task, report = _review_annotation_report(db, task_id)
+    db.refresh(report, with_for_update=True)
     _ensure_task_reviewable(db, task.id)
     allowed_defect_types = {
         DefectType.CRACK.value,
@@ -852,6 +873,18 @@ def save_review_detection_annotations(
         annotation.model_dump(mode="json")
         for annotation in payload.annotations
     ]
+    if payload.review_state != "pending":
+        try:
+            baseline = ensure_baseline(db, task)
+            photo = next((p for p in baseline.data_json["photos"] if p["photo_key"] == payload.photo_key), None)
+            if photo is None:
+                raise ValueError("照片无法对应到原始送检记录，不能纳入评估。")
+            if payload.review_state == "reviewed":
+                if photo.get("unavailable_reason"):
+                    raise ValueError(photo["unavailable_reason"])
+                validate_boxes(annotations_json, photo["width"], photo["height"])
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
     if edit is None:
         edit = AnnotationPhotoEdit(
             report_id=report.id,
@@ -864,6 +897,11 @@ def save_review_detection_annotations(
     else:
         edit.annotations_json = annotations_json
         edit.edited_by = reviewer.id
+    edit.review_state = payload.review_state
+    edit.exclusion_reason = payload.exclusion_reason.strip() if payload.review_state == "excluded" else None
+    edit.reviewed_by = reviewer.id if payload.review_state != "pending" else None
+    edit.reviewed_at = datetime.now(UTC) if payload.review_state != "pending" else None
+    report.quality_revision += 1
     db.commit()
     db.refresh(edit)
     return _edit_read(edit)
@@ -881,6 +919,7 @@ def reset_review_detection_annotations(
     _: AuthenticatedUser = Depends(get_current_user),
 ) -> DeleteResponse:
     task, report = _review_annotation_report(db, task_id)
+    db.refresh(report, with_for_update=True)
     _ensure_task_reviewable(db, task.id)
     result = _review_result_detail(db, request, report)
     if photo_key not in _valid_photo_keys(result):
@@ -896,6 +935,7 @@ def reset_review_detection_annotations(
     )
     if edit is not None:
         db.delete(edit)
+        report.quality_revision += 1
         db.commit()
     return DeleteResponse()
 
@@ -1080,6 +1120,7 @@ def create_review_result(
 
     project.updated_at = now
     operation_type = _operation_type(result.status, result.ai_result_id is not None)
+    _invalidate_quality_photo(db, result)
     _write_operation_log(
         db,
         result=result,
@@ -1148,6 +1189,7 @@ def update_review_result(
     result.updated_at = now
     project.updated_at = now
 
+    _invalidate_quality_photo(db, result)
     _write_operation_log(
         db,
         result=result,
@@ -1187,6 +1229,7 @@ def delete_review_result(
     result.updated_at = now
     project.updated_at = now
 
+    _invalidate_quality_photo(db, result)
     _write_operation_log(
         db,
         result=result,
@@ -1468,6 +1511,7 @@ def complete_detection_review(
     reviewer: AuthenticatedUser = Depends(get_current_user),
 ) -> InspectionReportRead:
     task, report = _review_annotation_report(db, task_id)
+    db.refresh(report, with_for_update=True)
     _ensure_task_reviewable(db, task.id)
     if task.status != DetectionTaskStatus.SUCCESS.value:
         raise HTTPException(
@@ -1525,6 +1569,13 @@ def complete_detection_review(
     project.completed_at = now
     project.current_report_id = report.id
     project.updated_at = now
+    report.quality_completed_revision = report.quality_revision
+    # Evaluation uses only explicit photo confirmations. Legacy or incomplete
+    # baselines do not prevent delivery of the existing customer report.
+    try:
+        persist_evaluation(db, task, report, reviewer.id)
+    except ValueError:
+        pass
     _write_operation_log(
         db,
         result=None,

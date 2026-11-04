@@ -14,6 +14,7 @@ from app.api import (
     projects,
     reports,
     review,
+    recognition_quality,
     system_settings,
     weather,
     yolo_models,
@@ -32,6 +33,7 @@ api_router.include_router(photo_library.router)
 api_router.include_router(detection_config.router)
 api_router.include_router(detection_tasks.router)
 api_router.include_router(review.router)
+api_router.include_router(recognition_quality.router)
 api_router.include_router(reports.router)
 api_router.include_router(system_settings.router)
 api_router.include_router(yolo_models.router)

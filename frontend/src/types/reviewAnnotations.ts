@@ -25,6 +25,10 @@ export interface AnnotationPhotoEdit {
   edited_by: string;
   created_at: string;
   updated_at: string;
+  review_state: "pending" | "reviewed" | "excluded";
+  exclusion_reason: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
 }
 
 export interface ReviewAnnotationDetail {
@@ -38,4 +42,6 @@ export interface ReviewAnnotationDetail {
 export interface SaveReviewAnnotationsPayload {
   photo_key: string;
   annotations: ManagedAnnotation[];
+  review_state?: "pending" | "reviewed" | "excluded";
+  exclusion_reason?: string;
 }

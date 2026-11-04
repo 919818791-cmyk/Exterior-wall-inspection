@@ -624,6 +624,8 @@ class InspectionReport(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     status: Mapped[str] = status_column(InspectionReportStatus.DRAFT)
     report_data_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    quality_revision: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    quality_completed_revision: Mapped[int | None] = mapped_column(Integer)
     docx_bucket: Mapped[str | None] = mapped_column(String(64))
     docx_object_key: Mapped[str | None] = mapped_column(String(512))
     generated_by: Mapped[UUID] = mapped_column(
@@ -663,7 +665,7 @@ class TrialDetectionResult(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin,
 
 
 class AnnotationPhotoEdit(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    """Administrator-only annotation copy; never used to build customer reports."""
+    """Saved workbench annotations and explicit per-photo quality review."""
 
     __tablename__ = "annotation_photo_edit"
     __table_args__ = (
@@ -680,6 +682,7 @@ class AnnotationPhotoEdit(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ),
         Index("idx_annotation_photo_edit_report_id", "report_id"),
         Index("idx_annotation_photo_edit_trial_result_id", "trial_result_id"),
+        CheckConstraint("review_state IN ('pending', 'reviewed', 'excluded')", name="annotation_review_state"),
     )
 
     report_id: Mapped[UUID | None] = mapped_column(
@@ -692,11 +695,42 @@ class AnnotationPhotoEdit(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     photo_key: Mapped[str] = mapped_column(String(512), nullable=False)
     annotations_json: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    review_state: Mapped[str] = mapped_column(String(16), default="pending", server_default="pending", nullable=False)
+    exclusion_reason: Mapped[str | None] = mapped_column(String(500))
+    reviewed_by: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("user_account.id", ondelete="RESTRICT"))
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     edited_by: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("user_account.id", ondelete="RESTRICT"),
         nullable=False,
     )
+
+
+class QualityBaseline(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
+    """Immutable original-image predictions and task provenance, frozen before review."""
+
+    __tablename__ = "quality_baseline"
+    detection_task_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("detection_task.id", ondelete="CASCADE"), unique=True, nullable=False)
+    data_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
+class QualityEvaluation(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
+    __tablename__ = "quality_evaluation"
+    __table_args__ = (
+        UniqueConstraint("project_id", "version", name="uq_quality_evaluation_project_version"),
+        UniqueConstraint("report_id", "input_revision", "rule_version", name="uq_quality_evaluation_input"),
+        Index("idx_quality_evaluation_task", "detection_task_id"),
+    )
+    project_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("project.id", ondelete="CASCADE"), nullable=False)
+    detection_task_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("detection_task.id", ondelete="CASCADE"), nullable=False)
+    report_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("inspection_report.id", ondelete="CASCADE"), nullable=False)
+    baseline_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("quality_baseline.id", ondelete="CASCADE"), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    input_revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    rule_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    summary_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    photos_json: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    created_by: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("user_account.id", ondelete="RESTRICT"), nullable=False)
 
 
 class QuickDetectionPhoto(UUIDPrimaryKeyMixin, TimestampMixin, Base):

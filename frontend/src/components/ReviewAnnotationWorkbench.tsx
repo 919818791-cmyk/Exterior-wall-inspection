@@ -631,7 +631,7 @@ export function ReviewAnnotationWorkbench({
 
           <aside className="annotation-photo-rail" aria-label="照片缩略图列表">
             <div className="annotation-photo-rail-heading">
-              <strong>照片列表</strong>
+              <strong>照片列表 · 已复核 {detailQuery.data.edits.filter(edit => edit.review_state === "reviewed").length}/{rows.length}</strong>
               <button
                 className="back-cancel-button annotation-photo-export"
                 disabled={originalPhotosExportMutation.isPending}
@@ -659,6 +659,7 @@ export function ReviewAnnotationWorkbench({
                       <span className="annotation-photo-thumbnail-index">{String(index + 1).padStart(2, "0")}</span>
                     </span>
                     <span className="annotation-photo-thumbnail-name" title={row.filename}>{row.filename}</span>
+                    <span className="block text-xs text-slate-500">{({ reviewed: "已复核", excluded: "无法评估", pending: "待复核" })[editsByPhoto.get(row.key)?.review_state ?? "pending"]}</span>
                   </button>
                 );
               })}
@@ -679,7 +680,7 @@ export function ReviewAnnotationWorkbench({
                     imageCache={imageCache}
                     photoCount={rows.length}
                     photoIndex={index}
-                    readOnly={readOnly}
+                    readOnly={readOnly || importMutation.isPending}
                     reviewTaskId={reviewTaskId}
                     row={row}
                     onAllocateDefectNumber={allocateDefectNumber}
@@ -756,6 +757,7 @@ const AnnotationPhotoEditor = memo(function AnnotationPhotoEditor({
   const [isDrawing, setIsDrawing] = useState(false);
   const [tilePreviewOpen, setTilePreviewOpen] = useState(false);
   const [touched, setTouched] = useState(false);
+  const [exclusionReason, setExclusionReason] = useState(edit?.exclusion_reason ?? "");
 
   useEffect(() => {
     if (touched) return;
@@ -807,22 +809,24 @@ const AnnotationPhotoEditor = memo(function AnnotationPhotoEditor({
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["review", "detections"] });
   const saveMutation = useMutation({
-    mutationFn: () => {
+    mutationFn: (reviewState: "pending" | "reviewed" | "excluded" = "pending") => {
       const payload = {
         photo_key: row.key,
-        annotations: cleanAnnotations(annotations)
+        annotations: cleanAnnotations(annotations),
+        review_state: reviewState,
+        exclusion_reason: reviewState === "excluded" ? exclusionReason.trim() : undefined
       };
       return saveReviewDetectionAnnotations(reviewTaskId, payload);
     },
     onSuccess: async () => {
       setTouched(false);
-      await invalidate();
+      await Promise.all([invalidate(), queryClient.invalidateQueries({ queryKey: ["recognition-quality"] })]);
     }
   });
 
   const saveCurrentAnnotations = useCallback(() => {
     if (readOnly || !dirty || saveMutation.isPending) return;
-    saveMutation.mutate();
+    saveMutation.mutate("pending");
   }, [dirty, readOnly, saveMutation.isPending, saveMutation.mutate]);
 
   useEffect(() => {
@@ -889,6 +893,17 @@ const AnnotationPhotoEditor = memo(function AnnotationPhotoEditor({
   return (
     <div className="annotation-photo-editor-module">
       {activeError ? <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-normal text-red-700">{errorMessage(activeError)}</p> : null}
+
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white p-3 text-sm" aria-label="照片质量复核">
+        <span role="status" className="mr-auto text-slate-600">{dirty ? "标注有修改，需重新确认" : edit?.review_state === "reviewed" ? "本图已复核" : edit?.review_state === "excluded" ? `无法评估：${edit.exclusion_reason}` : "本图待复核（无缺陷也需确认）"}</span>
+        <button className="button primary-action-button" type="button" disabled={readOnly || saveMutation.isPending || (!dirty && edit?.review_state === "reviewed") || !image || failed}
+          onClick={() => saveMutation.mutate("reviewed")}>保存并确认本图</button>
+        <label className="flex min-w-0 items-center gap-2"><span className="sr-only">无法评估的原因</span>
+          <input className="min-w-0 rounded border border-slate-300 p-2" maxLength={500} placeholder="无法评估的原因" value={exclusionReason} disabled={readOnly || saveMutation.isPending} onChange={event => setExclusionReason(event.target.value)} />
+        </label>
+        <button className="button back-cancel-button" type="button" disabled={readOnly || saveMutation.isPending || !exclusionReason.trim()}
+          onClick={() => saveMutation.mutate("excluded")}>标记无法评估</button>
+      </div>
 
       <AnnotationColumn title={row.filename}>
         <div className="mb-3 flex flex-wrap items-center gap-2">

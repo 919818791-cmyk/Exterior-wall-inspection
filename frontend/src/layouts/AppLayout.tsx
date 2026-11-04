@@ -14,6 +14,7 @@ import { AddQuotaModal } from "@/components/auth/AddQuotaModal";
 import { useAuthStore } from "@/stores/useAuthStore";
 
 function pageClass(pathname: string) {
+  if (pathname.startsWith("/recognition-quality")) return "project-page management-editor-route";
   if (pathname === "/") return "home-route";
   if (pathname === "/trials/new") return "project-page new-project-page project-list-chrome trial-route";
   if (pathname === "/trials") return "project-page project-list-route report-list-route";
@@ -37,7 +38,8 @@ function pageClass(pathname: string) {
 }
 
 function usesAppSidebar(pathname: string) {
-  return pathname === "/detections"
+  return pathname.startsWith("/recognition-quality")
+    || pathname === "/detections"
     || pathname === "/trials"
     || pathname === "/photos"
     || pathname === "/review"
@@ -73,7 +75,8 @@ export function AppLayout() {
   const isReviewBuildingModelRoute = /^\/review\/detections\/[^/]+\/model$/.test(location.pathname);
   const isReviewDetailRoute = /^\/review\/detections\/[^/]+$/.test(location.pathname);
   const isStandaloneManagementRoute = (
-    location.pathname === "/system-settings"
+    location.pathname.startsWith("/recognition-quality")
+    || location.pathname === "/system-settings"
     || location.pathname === "/detection-prompts"
     || location.pathname === "/model-management"
     || location.pathname.startsWith("/accounts")
@@ -263,11 +266,12 @@ export function AppLayout() {
       }
     ];
   const adminLinks = [
-    ...(canAccessAdmin ? [{ label: "账号管理", to: "/accounts" }, { label: "推理设置", to: "/system-settings" }, { label: "检测策略", to: "/detection-prompts" }, { label: "模型管理", to: "/model-management" }] : [])
+    ...(canAccessAdmin ? [{ label: "识别质量", to: "/recognition-quality" }, { label: "账号管理", to: "/accounts" }, { label: "推理设置", to: "/system-settings" }, { label: "检测策略", to: "/detection-prompts" }, { label: "模型管理", to: "/model-management" }] : [])
   ];
   const renderAccountDropdown = (id: string) => (
     <div id={id} className="account-dropdown" role="dialog" aria-label="本账号照片检测额度和账户操作">
       <AppSidebarUserMenuContent
+        canAccessAdmin={canAccessAdmin}
         onAddQuota={() => { setAccountMenuOpen(false); setAddQuotaModalOpen(true); }}
         onLogout={() => void handleLogout()}
         onPersonalInfo={() => {
@@ -377,7 +381,7 @@ export function AppLayout() {
       <main className="app-main">
         <Outlet context={{ requestAuthentication, requestRegistration, setProjectDetailListChrome, setListPageHeaderAction }} />
       </main>
-      {canUseQuota && addQuotaModalOpen ? <AddQuotaModal onClose={() => setAddQuotaModalOpen(false)} /> : null}
+      {canAccessAdmin && addQuotaModalOpen ? <AddQuotaModal onClose={() => setAddQuotaModalOpen(false)} /> : null}
       {user ? (
         <PersonalInfoModal
           isOpen={personalInfoModalOpen}

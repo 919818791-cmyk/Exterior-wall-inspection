@@ -156,6 +156,7 @@ function TrialResultDetail({
     mutationFn: () => completeDetectionReview(reviewTaskId ?? ""),
     onSuccess: async () => {
       await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["recognition-quality"] }),
         queryClient.invalidateQueries({ queryKey: ["review"] }),
         queryClient.invalidateQueries({ queryKey: ["projects"] }),
         queryClient.invalidateQueries({ queryKey: ["reports"] })

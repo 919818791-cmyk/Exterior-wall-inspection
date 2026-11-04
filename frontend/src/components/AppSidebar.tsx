@@ -1,5 +1,6 @@
 import {
   LayoutDashboard,
+  ChartNoAxesCombined,
   Boxes,
   FileText,
   Gauge,
@@ -29,6 +30,7 @@ interface AppSidebarProps {
 }
 
 interface AppSidebarUserMenuContentProps {
+  canAccessAdmin: boolean;
   onAddQuota: () => void;
   onLogout: () => void;
   onPersonalInfo: () => void;
@@ -37,6 +39,7 @@ interface AppSidebarUserMenuContentProps {
 }
 
 export function AppSidebarUserMenuContent({
+  canAccessAdmin,
   onAddQuota,
   onLogout,
   onPersonalInfo,
@@ -77,10 +80,10 @@ export function AppSidebarUserMenuContent({
               );
             })}
           </div>
-          <button className="app-sidebar-user-row app-sidebar-user-action" type="button" onClick={onAddQuota}>
+          {canAccessAdmin ? <button className="app-sidebar-user-row app-sidebar-user-action" type="button" onClick={onAddQuota}>
             <Plus aria-hidden="true" />
             <span>添加额度</span>
-          </button>
+          </button> : null}
         </>
       ) : null}
       <button className="app-sidebar-user-row app-sidebar-user-action" type="button" onClick={onPersonalInfo}>
@@ -138,6 +141,10 @@ export function AppSidebar({
         ) : null}
         {canAccessAdmin ? (
           <>
+            <NavLink aria-label="识别质量" className={({ isActive }) => `app-sidebar-menu-item${isActive ? " is-active" : ""}`} title="识别质量" to="/recognition-quality">
+              <ChartNoAxesCombined aria-hidden="true" />
+              <span className="app-sidebar-label">识别质量</span>
+            </NavLink>
             <NavLink aria-label="账号管理" className={({ isActive }) => `app-sidebar-menu-item${isActive ? " is-active" : ""}`} title="账号管理" to="/accounts">
               <Users aria-hidden="true" />
               <span className="app-sidebar-label">账号管理</span>
@@ -161,6 +168,7 @@ export function AppSidebar({
       <section aria-label="用户模块" className="app-sidebar-user">
         {user ? (
           <AppSidebarUserMenuContent
+            canAccessAdmin={canAccessAdmin}
             onAddQuota={onAddQuota}
             onLogout={onLogout}
             onPersonalInfo={onPersonalInfo}

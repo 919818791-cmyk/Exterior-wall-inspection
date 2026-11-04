@@ -277,11 +277,10 @@
 .defect-carousel-pagination button.is-active::before {
   content: "";
   position: absolute;
-  inset: 0;
+  inset: 0 auto 0 0;
+  width: calc(var(--defect-progress, 0) * 100%);
   border-radius: inherit;
   background: #000;
-  transform: scaleX(var(--defect-progress, 0));
-  transform-origin: left;
   pointer-events: none;
 }
 
@@ -8220,14 +8219,14 @@ a {
 
 }
 
-.management-list-page:is(.review-workbench-page, .account-management-page, .prompt-settings-page, .system-settings-page, .model-management-page) {
+.management-list-page:is(.review-workbench-page, .account-management-page, .prompt-settings-page, .system-settings-page, .model-management-page, .recognition-quality-page) {
   height: auto;
   min-height: calc(100svh - var(--site-header-height));
   overflow: visible;
   background: #fff;
 }
 
-.management-list-page:is(.review-workbench-page, .account-management-page, .prompt-settings-page, .system-settings-page, .model-management-page) .project-workspace {
+.management-list-page:is(.review-workbench-page, .account-management-page, .prompt-settings-page, .system-settings-page, .model-management-page, .recognition-quality-page) .project-workspace {
   height: auto;
   min-height: calc(100svh - var(--site-header-height));
   padding: 0;
@@ -8235,7 +8234,7 @@ a {
   gap: 0;
 }
 
-.management-list-page:is(.review-workbench-page, .account-management-page, .prompt-settings-page, .system-settings-page, .model-management-page) .project-list-panel {
+.management-list-page:is(.review-workbench-page, .account-management-page, .prompt-settings-page, .system-settings-page, .model-management-page, .recognition-quality-page) .project-list-panel {
   width: min(calc(100% - clamp(24px, 4.4vw, 64px) - var(--app-sidebar-width, 0px)), 1200px);
   min-height: 0;
   margin: 0 auto;
@@ -8256,7 +8255,7 @@ a {
 }
 
 @media (max-width: 560px) {
-  .management-list-page:is(.review-workbench-page, .account-management-page, .prompt-settings-page, .system-settings-page, .model-management-page) .project-list-panel {
+  .management-list-page:is(.review-workbench-page, .account-management-page, .prompt-settings-page, .system-settings-page, .model-management-page, .recognition-quality-page) .project-list-panel {
     width: calc(100% - 40px);
   }
 }
